@@ -1,6 +1,6 @@
 # meteor
 
-[中文](https://github.com/streetartist/meteor/READMEzh.md)
+[中文](READMEzh.md)
 
 Meteor program language.A fast and easy language
 
