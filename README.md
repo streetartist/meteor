@@ -1,4 +1,6 @@
 <p align="center">
+<img src="meteor_logo.png" alt="Meteor Logo" width="200">
+<br>
 <b style="font-size: 32px;">Meteor</b>
 <br>
 <i>一门编译型、静态类型的现代编程语言</i>
