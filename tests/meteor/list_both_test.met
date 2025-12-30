@@ -1,0 +1,30 @@
+# 方式1: 类型固定的list
+print("=== Fixed Type List ===")
+nums: list<int> = [1, 2, 3]
+print("nums[0]:")
+print(nums[0])
+print("nums[1]:")
+print(nums[1])
+print("nums[2]:")
+print(nums[2])
+
+nums.append(4)
+print("after append 4:")
+print(nums[3])
+
+# 方式2: 动态类型的list (啥都能放)
+print("=== Dynamic Type List ===")
+a: dynamic = 42
+b: dynamic = 3.14
+c: dynamic = "hello"
+d: dynamic = true
+
+arr = [a, b, c, d]
+print("arr[0] (int):")
+print(arr[0])
+print("arr[1] (float):")
+print(arr[1])
+print("arr[2] (str):")
+print(arr[2])
+print("arr[3] (bool):")
+print(arr[3])

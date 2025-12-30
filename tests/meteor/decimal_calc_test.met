@@ -1,0 +1,20 @@
+a: decimal = 3.14
+b: decimal = 2.5
+
+print("a:")
+print(a)
+
+print("b:")
+print(b)
+
+print("a + b:")
+c: decimal = a + b
+print(c)
+
+print("a - b:")
+d: decimal = a - b
+print(d)
+
+print("a * b:")
+e: decimal = a * b
+print(e)

@@ -1,0 +1,5 @@
+print("Testing input function...")
+name: str = input("Enter name: ")
+print("You entered:")
+print(name)
+print("Done!")

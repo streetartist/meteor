@@ -1,0 +1,42 @@
+class DemoClass
+    def new()
+        pass
+
+y = DemoClass()
+
+
+class Thing
+    a_thing: int
+    b_thing: float
+    def new(b_thing: float = 3.14)
+        self.a_thing = 1
+        self.b_thing = b_thing
+        print(5)
+        print(self.just_demo())
+        self.just_demo()
+
+    def another()
+        print(self.a_thing)
+        self.a_thing = 7
+        print(self.a_thing)
+
+    def just_demo() -> int
+        return 5
+
+
+x: Thing = Thing()
+print(x.a_thing)
+x.a_thing = 3
+print(x.a_thing)
+x.another()
+print(x.just_demo())
+print(x.b_thing)
+
+def giveMeAThing(some: Thing) -> Thing
+    some.a_thing = 99
+    return some
+
+z = giveMeAThing(x)
+print(z.b_thing)
+print(z.a_thing)
+print(z is Thing)

@@ -1,0 +1,16 @@
+a: decimal = 3.14
+b: int = 2
+
+print("a:")
+print(a)
+
+print("b:")
+print(b)
+
+print("a + b:")
+c: decimal = a + b
+print(c)
+
+print("a * b:")
+d: decimal = a * b
+print(d)

@@ -1,0 +1,34 @@
+
+# Test 1: Initialization from variable (Lvalue) -> Double Free Risk
+print("Test 1: Lvalue Init")
+def test_lvalue_init()
+    a: bigint = 10
+    b: bigint = a
+    # a and b share digits. 
+    # If refcount is not incremented, RC=1.
+    # When a is reassigned, old digits freed. b points to freed mem.
+    a = 20
+    print(b) # Should print 10
+
+test_lvalue_init()
+
+
+# Test 2: Assignment from Rvalue -> Leak Risk
+# Harder to detect automatically without memory tools, but we can check logic.
+# If we loop many times, memory should grow if leaking.
+print("Test 2: Rvalue Assign (Leak Check)")
+def test_leak()
+    i: int = 0
+    while i < 1000
+        a: bigint = 10
+        b: bigint = 20
+        c: bigint = a + b
+        # c = 30.
+        # if leak, a+b temp (RC=1) becomes c (RC=2).
+        # c dies at end of scope?
+        # If c is re-declared next iter, old c is freed.
+        # If RC was 2, it becomes 1. Memory leaked (RC never hits 0).
+        i = i + 1
+    print("Loop done")
+
+test_leak()

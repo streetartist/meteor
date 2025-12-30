@@ -1,0 +1,33 @@
+number: int = 0
+print(number)
+number += 5
+print(number)
+number -= 1
+print(number)
+number /= 2
+print(number)
+number *= 10
+print(number)
+number //= 7
+print(number)
+number ^= 3
+print(number)
+number %= 3
+print(number)
+
+number2: double = 0
+print(number2)
+number2 += 5
+print(number2)
+number2 -= 1
+print(number2)
+number2 /= 2
+print(number2)
+number2 *= 10
+print(number2)
+number2 //= 7
+print(number2)
+number2 ^= 3
+print(number2)
+number2 %= 3
+print(number2)

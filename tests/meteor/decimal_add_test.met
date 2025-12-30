@@ -1,0 +1,12 @@
+a: decimal = 3.14
+b: decimal = 2.86
+
+print("a:")
+print(a)
+
+print("b:")
+print(b)
+
+print("a + b:")
+c: decimal = a + b
+print(c)

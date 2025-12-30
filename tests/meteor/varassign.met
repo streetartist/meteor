@@ -1,0 +1,40 @@
+a1: int = 1
+a2: int8 = 2
+a3: int16 = 3
+a4: int32 = 4
+a5: int64 = 5
+a6: int128 = 6
+a7: double = 6.5
+a8: float = 7.69
+a9: bool = true
+a10: str = "Hey there"
+a11: list<int> = [1,2,3,4]
+a12: tuple<double> = (1.5,3.5,9.0)
+a13: list<str> = ["Hey", "There"]
+a14: list<bool> = [true, false, false]
+a15: double = inf
+a16: double = -inf
+
+b1 = 1 as int
+b2 = 2 as int8
+b3 = 3 as int16
+b4 = 4 as int32
+b5 = 5 as int64
+b6 = 6 as int128
+b7 = 6.5 as double
+b8 = 7.69 as float
+b9 = true
+b10 = "Hey there"
+b11 = [1,2,3,4]
+b12 = (1.5,3.5,9.0)
+b13 = ["Hey", "There"]
+b14 = [true, false, false]
+b15 = inf
+b16 = -inf
+
+x = 5
+y = 7.5
+z = "Hey there"
+print(x)
+print(y)
+print(z)

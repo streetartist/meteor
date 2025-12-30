@@ -1,0 +1,45 @@
+
+a: bigint = 10000000000000000000000000000000000000000000000000000
+b: bigint = 2500000000000000000000000000000000000000000000000000
+print("a:")
+print(a)
+print("b:")
+print(b)
+print("Add: ")
+print(a + b)
+print("Sub: ")
+print(a - b)
+print("Mul: ")
+print(a * b)
+print("Div: ")
+print(a // b)
+print("Mod: ")
+print(a % b)
+
+c: bigint = -30
+print("c:")
+print(c)
+print("Neg c: ")
+print(-c)
+print("Sub neg (a - c): ")
+print(a - c) 
+
+print("Eq (a == 100): ")
+val100: bigint = 100
+print(a == val100)
+
+print("Neq (a != b): ")
+print(a != b)
+print("Lt (b < a): ")
+print(b < a)
+print("Gt (a > b): ")
+print(a > b)
+
+big1: bigint = 100000000000000000000
+big2: bigint = 2
+print("Big1: ")
+print(big1)
+print("Big Mul (big1 * 2): ")
+print(big1 * big2)
+print("Big Div (big1 // 2): ")
+print(big1 // big2)

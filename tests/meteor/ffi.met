@@ -1,0 +1,7 @@
+# Extern functions (FFI)
+def extern abs(x: int) -> int # from C's stdlib
+def extern pow(x: double, y: double) -> double
+
+
+print(abs(-5))
+print(pow(2,4))

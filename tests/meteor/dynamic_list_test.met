@@ -1,0 +1,14 @@
+x: dynamic = 1
+y: dynamic = 3.14
+z: dynamic = "hello"
+
+arr = [x, y, z]
+
+print("arr[0] (int):")
+print(arr[0])
+
+print("arr[1] (float):")
+print(arr[1])
+
+print("arr[2] (str):")
+print(arr[2])

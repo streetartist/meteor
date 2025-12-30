@@ -1,0 +1,17 @@
+def demo_main()
+    print("--- Meteor Type System Demo ---")
+
+    print("[1] BigInt Declared")
+    huge: bigint
+    print("   (Declaration success, literals pending)")
+
+    print("[2] Decimal Declared")
+    prec: decimal
+    print("   (Declaration success, literals pending)")
+
+    print("[3] Dynamic Declared")
+    d: dynamic
+    d = 100
+    print("   (Assignments success, printing pending)")
+
+demo_main()

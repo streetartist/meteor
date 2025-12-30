@@ -1,0 +1,7 @@
+x = 5
+switch x
+    case 5
+        print(x)
+        fallthrough
+    case 1
+        print(x+1)

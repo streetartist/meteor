@@ -1,0 +1,31 @@
+# Printing Test
+x: bigint
+x = 1478127873812738217182738172873873287387428374836472637468276478923648762378462387647817383787936459173264781648762764
+y: decimal
+y = 66
+n: number
+n = 300
+print(x)
+print(y)
+print(n)
+
+# Arithmetic Test
+a: bigint
+a = 13243472387463746667676
+b: bigint
+b = 13624787647623746237432
+c = a + b
+print(c)
+
+print("Success")
+
+# Test single large digit
+a: bigint
+a = 1844674407370955161
+print(a)
+b: bigint
+b = 1844674407370955162
+print(b)
+
+print(a-b)
+print("Done")

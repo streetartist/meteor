@@ -1,0 +1,5 @@
+d:decimal = 1.233
+a = 1
+d = d + a
+print("d:")
+print(d)

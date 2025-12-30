@@ -1,0 +1,11 @@
+a: number = 10 as decimal
+print("a (10 as decimal):")
+print(a)
+
+b: number = 100 as bigint
+print("b (100 as bigint):")
+print(b)
+
+c: decimal = 3.14 as decimal
+print("c (3.14 as decimal):")
+print(c)

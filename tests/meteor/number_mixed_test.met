@@ -1,0 +1,16 @@
+a: number = 10
+b: int = 5
+
+print("a (number):")
+print(a)
+
+print("b (int):")
+print(b)
+
+print("a + b:")
+c: decimal = a + b
+print(c)
+
+print("a * b:")
+d: decimal = a * b
+print(d)

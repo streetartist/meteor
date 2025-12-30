@@ -1,0 +1,21 @@
+def fib(n: int) -> bigint
+    a: bigint = 0
+    b: bigint = 1
+    if n == 0
+        return a
+    if n == 1
+        return b
+    i: int = 2
+    while i <= n
+        c: bigint = a + b
+        a = b
+        b = c
+        i = i + 1
+    return b
+
+print("Enter n for Fibonacci: ")
+s: str = input("")
+n: int = parse(s)
+result: bigint = fib(n)
+print("Fibonacci result:")
+print(result)

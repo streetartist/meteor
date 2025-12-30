@@ -1,0 +1,23 @@
+things = [1, 2, 3] # List, homogeneous
+print(things[0])
+print(things[1*1+1])
+things[2] = 1002
+print(things[2])
+things[2]++
+print(things[2])
+
+x: list<double> = [1.5]
+print(x[0])
+x[0] = 5.5
+
+y = [2.5,3.5, inf]
+print(y[0])
+
+z = [1,2,3]
+print(z.length())
+z.append(99)
+print(z[3])
+print(z.length())
+
+z.set(3, 100)
+print(z.get(3))

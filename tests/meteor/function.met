@@ -1,0 +1,54 @@
+# Basic function
+def fib(n: int) -> int
+	a = 0
+	b = 1
+	for _ in 0..n
+		prev_a = a
+		a = b
+		b = prev_a + b
+	return a
+
+print(fib(10))
+
+# Recursive
+def fib_rec(n: int) -> int
+	if n == 0
+		return 0
+	if n == 1
+		return 1
+	return fib_rec(n - 1) + fib_rec(n - 2)
+
+print(fib_rec(10))
+
+# Default value
+def factorial(n: int = 5) -> int
+	if n <= 1
+		return 1
+	return n * factorial(n - 1)
+
+print(factorial())
+
+# Function as parameter
+def do_stuff(x: int, callback: func<int> -> int) -> int
+    return callback(5)
+
+def demo(x: int) -> int
+    return x
+
+print(do_stuff(2, demo))
+
+# Function as return type
+def func_as_ret() -> func<int> -> int
+	ret_func = def(y: int) -> int
+		return y + 10
+	return ret_func
+
+fun = func_as_ret()
+print(fun(3))
+
+# List as parameter
+def list_demo(x: list<int>) -> int
+	return 4
+
+basic_list = [1,2,3]
+print(list_demo(basic_list))

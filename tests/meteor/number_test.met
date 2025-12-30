@@ -1,0 +1,17 @@
+a: number = 42
+print("a (int):")
+print(a)
+
+b: number = 3.14
+print("b (float):")
+print(b)
+
+c: bigint = 100
+d: number = c
+print("d (bigint):")
+print(d)
+
+e: decimal = 2.718
+f: number = e
+print("f (decimal):")
+print(f)

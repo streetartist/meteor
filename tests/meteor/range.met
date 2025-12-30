@@ -1,0 +1,19 @@
+for i in 0..11
+    a = i
+    print(i)
+
+b = 0
+for i in 0..11
+    b = i
+
+x = 11
+for i in 0..x
+    print(i)
+
+y = 0..10
+print(y[5] == 5)
+
+y[5] = 20
+print(y[5] == 20)
+
+z: tuple<int> = 0..2

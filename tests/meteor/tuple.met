@@ -1,0 +1,6 @@
+x = (1,2,3,4)
+print(x[0])
+y = (1.5,3.5)
+print(y[1])
+z: tuple<double> = (2.5,3.5, inf)
+print(z[0])

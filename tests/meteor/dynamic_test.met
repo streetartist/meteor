@@ -1,0 +1,17 @@
+a: dynamic = 42
+print("a (int):")
+print(a)
+
+b: dynamic = 3.14
+print("b (float):")
+print(b)
+
+c: bigint = 12345
+d: dynamic = c
+print("d (bigint):")
+print(d)
+
+e: decimal = 2.718
+f: dynamic = e
+print("f (decimal):")
+print(f)

@@ -1,0 +1,3 @@
+s: str = "123"
+n: int = parse(s)
+print(n)

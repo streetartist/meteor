@@ -1,0 +1,44 @@
+# Fast Doubling Fibonacci Algorithm (O(log n))
+
+def fib_fast(n: int) -> bigint
+    if n == 0
+        return 0
+    if n == 1
+        return 1
+
+    a: bigint = 0
+    b: bigint = 1
+    # 32-bit integer for n
+    i: int = 30
+    started: bool = false
+
+    while i >= 0
+        bit: int = (n >> i) and 1
+
+        if bit == 1
+            started = true
+
+        if started
+            two_b: bigint = b + b
+            temp1: bigint = two_b - a
+            c: bigint = a * temp1
+
+            a_sq: bigint = a * a
+            b_sq: bigint = b * b
+            d: bigint = a_sq + b_sq
+
+            if bit == 0
+                a = c
+                b = d
+            else
+                a = d
+                b = c + d
+
+        i = i - 1
+
+    return a
+
+n: int = 10000000
+result: bigint = fib_fast(n)
+print("Fibonacci result:")
+print(result)

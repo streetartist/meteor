@@ -1,0 +1,12 @@
+a: number = 10
+b: number = 3
+
+print("a:")
+print(a)
+
+print("b:")
+print(b)
+
+print("a + b:")
+c: decimal = a + b
+print(c)

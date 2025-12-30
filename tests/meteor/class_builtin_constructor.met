@@ -1,0 +1,22 @@
+class Circle
+	radius: int
+	x: int
+	y: int = 99
+
+cir: Circle = Circle(radius=5, x=2)
+anotherCir = Circle(radius=1, x=3)
+
+print(anotherCir.x)
+print(cir.radius + cir.x)
+cir.x = 20
+print(cir.x)
+print(cir.y)
+
+def giveMeACircle(some: Circle) -> Circle
+    some.y = -1
+    return some
+
+a_circle = giveMeACircle(cir)
+print(a_circle.x)
+print(a_circle.y)
+print(a_circle is Circle)

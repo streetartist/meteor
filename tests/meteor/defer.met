@@ -1,0 +1,8 @@
+def demo()
+    defer print("Func!")
+    print("Hello")
+
+demo()
+
+defer print("World!")
+print("Hello")
