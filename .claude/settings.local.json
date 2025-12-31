@@ -7,7 +7,10 @@
       "Bash(git stash pop:*)",
       "Bash(echo:*)",
       "Bash(timeout 5 python:*)",
-      "Bash(timeout 30 python -m pytest:*)"
+      "Bash(timeout 30 python -m pytest:*)",
+      "Bash(set PYTHONPATH=src:*)",
+      "Bash(set:*)",
+      "Bash(timeout 3 python:*)"
     ]
   }
 }

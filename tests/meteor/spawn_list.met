@@ -1,0 +1,11 @@
+def list_worker(id: int)
+    arr = [1, 2, 3]
+    sum = 0
+    for x in arr
+        sum = sum + x
+    print(id)
+    print(sum)
+
+spawn list_worker(1)
+spawn list_worker(2)
+print(0)

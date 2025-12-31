@@ -1,0 +1,5 @@
+def worker(x: int)
+    print(x)
+
+spawn worker(99)
+print(0)

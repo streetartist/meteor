@@ -53,12 +53,12 @@ def int_to_bigint(self, int_val):
     append_func = self.module.get_global('i64.array.append')
     self.builder.call(append_func, [u64_array_ptr, abs_val])
 
-    # Store sign
-    sign_ptr = self.builder.gep(bigint_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    # Store sign (BigInt: { header, sign, digits } - sign at index 1)
+    sign_ptr = self.builder.gep(bigint_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
     self.builder.store(is_negative, sign_ptr)
 
-    # Store digits
-    digits_ptr = self.builder.gep(bigint_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
+    # Store digits (digits at index 2)
+    digits_ptr = self.builder.gep(bigint_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 2)])
     self.builder.store(u64_array_ptr, digits_ptr)
 
     return bigint_ptr
@@ -76,12 +76,12 @@ def int_to_decimal(self, int_val):
     # Convert int to bigint for mantissa
     bigint_ptr = int_to_bigint(self, int_val)
 
-    # Store mantissa (bigint pointer)
-    mantissa_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    # Store mantissa (Decimal: { header, mantissa, exponent } - mantissa at index 1)
+    mantissa_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
     self.builder.store(bigint_ptr, mantissa_ptr)
 
-    # Store exponent = 0
-    exp_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
+    # Store exponent = 0 (exponent at index 2)
+    exp_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 2)])
     self.builder.store(ir.Constant(type_map[INT64], 0), exp_ptr)
 
     return decimal_ptr
@@ -153,12 +153,12 @@ def bigint_to_decimal(self, bigint_val):
     else:
         bigint_ptr = bigint_val
 
-    # Store mantissa (bigint pointer)
-    mantissa_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    # Store mantissa (Decimal: { header, mantissa, exponent } - mantissa at index 1)
+    mantissa_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
     self.builder.store(bigint_ptr, mantissa_ptr)
 
-    # Store exponent = 0
-    exp_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
+    # Store exponent = 0 (exponent at index 2)
+    exp_ptr = self.builder.gep(decimal_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 2)])
     self.builder.store(ir.Constant(type_map[INT64], 0), exp_ptr)
 
     return decimal_ptr

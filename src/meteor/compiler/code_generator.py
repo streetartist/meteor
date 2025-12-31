@@ -217,7 +217,18 @@ class CodeGenerator(NodeVisitor):
         if hasattr(obj.type, 'pointee') and hasattr(obj.type.pointee, 'pointee'):
             obj = self.builder.load(obj)
 
-        return self.methodcall(node, method, obj)
+        result = self.methodcall(node, method, obj)
+
+        # Move semantics for channel.send - null out the sent variable
+        if type_name == 'meteor.channel' and node.name == 'send':
+            for arg_node in node.arguments:
+                if hasattr(arg_node, 'value'):
+                    var_ptr = self.search_scopes(arg_node.value)
+                    if var_ptr and hasattr(var_ptr, 'type') and hasattr(var_ptr.type, 'pointee'):
+                        null_val = ir.Constant(var_ptr.type.pointee, None)
+                        self.builder.store(null_val, var_ptr)
+
+        return result
 
     def methodcall(self, node, func, obj):
         func_type = func.function_type
@@ -323,7 +334,119 @@ class CodeGenerator(NodeVisitor):
 
         if isFunc:
             return self.builder.call(name, args)
-        return self.call(name, args)
+
+        result = self.call(name, args)
+
+        # Move semantics: null out owned arguments after call
+        if hasattr(func_type, 'param_modes'):
+            param_names = list(func_type.parameters.keys()) if hasattr(func_type, 'parameters') else []
+            for i, arg_node in enumerate(node.arguments):
+                if i < len(param_names):
+                    param_name = param_names[i]
+                    if func_type.param_modes.get(param_name) == 'owned':
+                        # Null out the local variable
+                        if hasattr(arg_node, 'value'):
+                            var_ptr = self.search_scopes(arg_node.value)
+                            if var_ptr and hasattr(var_ptr, 'type'):
+                                null_val = ir.Constant(var_ptr.type.pointee, None)
+                                self.builder.store(null_val, var_ptr)
+
+        return result
+
+    def visit_spawn(self, node):
+        """Generate code for spawn statement.
+
+        spawn worker(data) creates a new thread to execute worker(data).
+
+        Implementation:
+        1. Create argument struct to pass data to thread
+        2. Create wrapper function for pthread compatibility
+        3. Call meteor_spawn runtime function
+        """
+        func_call = node.func_call
+        func_name = func_call.name
+        func = self.search_scopes(func_name)
+
+        if func is None:
+            error(f"file={self.file_name} line={node.line_num} Unknown function: {func_name}")
+
+        i8_ptr = type_map[INT8].as_pointer()
+
+        # Evaluate arguments
+        args = [self.visit(arg) for arg in func_call.arguments]
+
+        if len(args) == 0:
+            # No arguments - simple case
+            func_ptr = self.builder.bitcast(func, i8_ptr)
+            null_ptr = ir.Constant(i8_ptr, None)
+            spawn_func = self.module.get_global('meteor_spawn')
+            return self.builder.call(spawn_func, [func_ptr, null_ptr])
+
+        # Create argument struct type
+        arg_types = [arg.type for arg in args]
+        arg_struct_type = ir.LiteralStructType(arg_types)
+
+        # Allocate argument struct on HEAP (not stack) so it survives after spawn returns
+        malloc_func = self.module.get_global('malloc')
+        struct_size = ir.Constant(type_map[INT64], sum(8 for _ in args))  # Approximate size
+        arg_mem = self.builder.call(malloc_func, [struct_size])
+        arg_struct_ptr = self.builder.bitcast(arg_mem, arg_struct_type.as_pointer())
+        for i, arg in enumerate(args):
+            ptr = self.builder.gep(arg_struct_ptr, [
+                ir.Constant(type_map[INT32], 0),
+                ir.Constant(type_map[INT32], i)
+            ], inbounds=True)
+            self.builder.store(arg, ptr)
+
+        # Create unique wrapper function name
+        wrapper_name = f"__spawn_wrapper_{func_name}_{id(node)}"
+
+        # Create wrapper function
+        # Windows: DWORD WINAPI ThreadProc(LPVOID) - returns i32
+        # Unix: void* thread_func(void*) - returns i8*
+        import sys
+        if sys.platform == 'win32':
+            wrapper_ret_type = type_map[INT32]
+        else:
+            wrapper_ret_type = i8_ptr
+
+        wrapper_type = ir.FunctionType(wrapper_ret_type, [i8_ptr])
+        wrapper_func = ir.Function(self.module, wrapper_type, wrapper_name)
+        wrapper_func.linkage = 'internal'
+
+        # Build wrapper function body
+        entry = wrapper_func.append_basic_block('entry')
+        wrapper_builder = ir.IRBuilder(entry)
+
+        # Cast void* back to argument struct pointer
+        raw_arg = wrapper_func.args[0]
+        struct_ptr = wrapper_builder.bitcast(raw_arg, arg_struct_type.as_pointer())
+
+        # Load arguments from struct
+        call_args = []
+        for i in range(len(args)):
+            ptr = wrapper_builder.gep(struct_ptr, [
+                ir.Constant(type_map[INT32], 0),
+                ir.Constant(type_map[INT32], i)
+            ], inbounds=True)
+            call_args.append(wrapper_builder.load(ptr))
+
+        # Call the actual function
+        wrapper_builder.call(func, call_args)
+
+        # Return appropriate type
+        import sys
+        if sys.platform == 'win32':
+            wrapper_builder.ret(ir.Constant(type_map[INT32], 0))
+        else:
+            wrapper_builder.ret(ir.Constant(i8_ptr, None))
+
+        # Call meteor_spawn with wrapper and packed args
+        wrapper_ptr = self.builder.bitcast(wrapper_func, i8_ptr)
+        arg_ptr = self.builder.bitcast(arg_struct_ptr, i8_ptr)
+
+        spawn_func = self.module.get_global('meteor_spawn')
+        return self.builder.call(spawn_func, [wrapper_ptr, arg_ptr])
 
     def comp_cast(self, arg, typ, node):
         if types_compatible(str(arg.type), typ):
@@ -520,7 +643,7 @@ class CodeGenerator(NodeVisitor):
             else:
                  # Void function uncaught raise
                  self.branch(self.exit_blocks[-1])
-        
+
         return True
 
     def visit_trystatement(self, node):
@@ -694,8 +817,8 @@ class CodeGenerator(NodeVisitor):
             collection_access = True
             var_name = self.search_scopes(node.left.collection.value)
             pointee = var_name.type.pointee
-            # Data pointer is at index 2: { size, capacity, data*, refcount }
-            data_ptr_elem = pointee.elements[2]
+            # Data pointer is at index 3: { header, size, capacity, data* }
+            data_ptr_elem = pointee.elements[3]
             if hasattr(data_ptr_elem, 'pointee'):
                 array_type = str(data_ptr_elem.pointee)
             else:
@@ -821,10 +944,11 @@ class CodeGenerator(NodeVisitor):
         one = self.const(1)
         array_type = None
         if node.iterator.value == RANGE:
-            iterator = self.alloc_and_store(self.visit(node.iterator), type_map[STR])
+            iterator = self.visit(node.iterator)
             array_type = "i64"
         else:
-            iterator = self.search_scopes(node.iterator.value)
+            iterator_ptr = self.search_scopes(node.iterator.value)
+            iterator = self.load(iterator_ptr)
             array_type = str(iterator.type.pointee.elements[-1].pointee)
 
         stop = self.call('{}.array.length'.format(array_type), [iterator])
@@ -837,12 +961,15 @@ class CodeGenerator(NodeVisitor):
         self.position_at_end(non_zero_length_block)
         varname = node.elements[0].value
         val = self.call('{}.array.get'.format(array_type), [iterator, zero])
-        self.alloc_define_store(val, varname, iterator.type.pointee.elements[2].pointee)
+        # Array: { header, size, capacity, data* } - data at index 3
+        self.alloc_define_store(val, varname, iterator.type.pointee.elements[3].pointee)
         position = self.alloc_define_store(zero, 'position', type_map[INT])
+        # Store stop in memory to ensure it's available across basic blocks
+        stop_ptr = self.alloc_define_store(stop, 'stop', type_map[INT])
         self.branch(cond_block)
 
         self.position_at_end(cond_block)
-        cond = self.builder.icmp_signed(LESS_THAN, self.load(position), stop)
+        cond = self.builder.icmp_signed(LESS_THAN, self.load(position), self.load(stop_ptr))
         self.cbranch(cond, body_block, end_block)
 
         self.position_at_end(body_block)
@@ -921,7 +1048,7 @@ class CodeGenerator(NodeVisitor):
         stop = self.visit(node.right)
         array_ptr = self.create_array(type_map[INT])
         self.call('@create_range', [array_ptr, start, stop])
-        return self.load(array_ptr)
+        return array_ptr
 
     def visit_assign(self, node):
         if hasattr(node.right, 'value') and isinstance(self.search_scopes(node.right.value), ir.Function):
@@ -1018,19 +1145,24 @@ class CodeGenerator(NodeVisitor):
                 if isinstance(node.right, Num) and isinstance(node.right.value, int):
                     # === Unconditional Release valid for loop iterations ===
                     # Now safe because get_entry_alloca zero-inits first time.
-                    old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                    # BigInt: { header, sign, digits } - digits at index 2
+                    old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                     old_digits = self.builder.load(old_digits_ptr)
                     null_ptr = ir.Constant(old_digits.type, None)
                     is_not_null = self.builder.icmp_unsigned('!=', old_digits, null_ptr)
 
                     with self.builder.if_then(is_not_null):
-                        rc_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
+                        # Array: { header, size, capacity, data } - RC in header at index 0
+                        from meteor.compiler.base import HEADER_STRONG_RC
+                        header_ptr = self.builder.gep(old_digits, [self.const(0), self.const(0, width=INT32)])
+                        rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
                         rc = self.builder.load(rc_ptr)
-                        new_rc = self.builder.sub(rc, self.const(1))
+                        new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
                         self.builder.store(new_rc, rc_ptr)
-                        is_zero = self.builder.icmp_signed('==', new_rc, self.const(0))
+                        is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
                         with self.builder.if_then(is_zero):
-                            data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(2, width=INT32)])
+                            # data at index 3
+                            data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
                             data = self.builder.load(data_ptr)
                             data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
                             self.call('free', [data_i8])
@@ -1054,12 +1186,12 @@ class CodeGenerator(NodeVisitor):
                             self.call('i64.array.append', [u64_array_ptr, self.const(digit)])
                             abs_val //= BASE
                     
-                    # Store sign
-                    sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                    # Store sign (BigInt: { header, sign, digits } - sign at index 1)
+                    sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                     self.builder.store(ir.Constant(type_map[BOOL], is_negative), sign_ptr)
-                    
-                    # Store digits array pointer
-                    digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+
+                    # Store digits array pointer (digits at index 2)
+                    digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                     self.builder.store(u64_array_ptr, digits_ptr)
                     
                     self.define(var_name, bigint_ptr)
@@ -1078,43 +1210,51 @@ class CodeGenerator(NodeVisitor):
                               src_ptr = tmp
 
                          # === Unconditional Release valid for loop iterations ===
-                         old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                         # BigInt: { header, sign, digits } - digits at index 2
+                         old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                          old_digits = self.builder.load(old_digits_ptr)
                          null_ptr = ir.Constant(old_digits.type, None)
                          is_not_null = self.builder.icmp_unsigned('!=', old_digits, null_ptr)
 
                          with self.builder.if_then(is_not_null):
-                             rc_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
+                             # Array: { header, size, capacity, data } - RC in header
+                             from meteor.compiler.base import HEADER_STRONG_RC
+                             header_ptr = self.builder.gep(old_digits, [self.const(0), self.const(0, width=INT32)])
+                             rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
                              rc = self.builder.load(rc_ptr)
-                             new_rc = self.builder.sub(rc, self.const(1))
+                             new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
                              self.builder.store(new_rc, rc_ptr)
-                             is_zero = self.builder.icmp_signed('==', new_rc, self.const(0))
+                             is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
                              with self.builder.if_then(is_zero):
-                                 data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(2, width=INT32)])
+                                 # data at index 3
+                                 data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
                                  data = self.builder.load(data_ptr)
                                  data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
                                  self.call('free', [data_i8])
                                  digits_i8 = self.builder.bitcast(old_digits, type_map[INT8].as_pointer())
                                  self.call('free', [digits_i8])
 
-                         # Copy Sign
-                         src_sign_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(0, width=INT32)])
+                         # Copy Sign (sign at index 1)
+                         src_sign_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(1, width=INT32)])
                          sign = self.builder.load(src_sign_ptr)
-                         dst_sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                         dst_sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                          self.builder.store(sign, dst_sign_ptr)
 
-                         # Copy Digits Pointer
-                         src_digits_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(1, width=INT32)])
+                         # Copy Digits Pointer (digits at index 2)
+                         src_digits_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(2, width=INT32)])
                          digits = self.builder.load(src_digits_ptr)
-                         dst_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                         dst_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                          self.builder.store(digits, dst_digits_ptr)
 
                          # Shared ownership: if initializing from an L-value, increment RC
                          is_lvalue = isinstance(node.right, (Var, DotAccess, CollectionAccess))
                          if is_lvalue:
-                             new_rc_ptr = self.builder.gep(digits, [self.const(0), self.const(3, width=INT32)])
+                             # RC in header at index 0
+                             from meteor.compiler.base import HEADER_STRONG_RC
+                             header_ptr = self.builder.gep(digits, [self.const(0), self.const(0, width=INT32)])
+                             new_rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
                              cur_rc = self.builder.load(new_rc_ptr)
-                             inc_rc = self.builder.add(cur_rc, self.const(1))
+                             inc_rc = self.builder.add(cur_rc, ir.Constant(type_map[UINT32], 1))
                              self.builder.store(inc_rc, new_rc_ptr)
 
                          self.define(var_name, bigint_ptr)
@@ -1130,12 +1270,12 @@ class CodeGenerator(NodeVisitor):
                          u64_array_ptr = self.create_array(type_map[UINT64])
                          self.call('i64.array.append', [u64_array_ptr, abs_val])
                          
-                         # Store sign
-                         sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                         # Store sign (BigInt: { header, sign, digits } - sign at index 1)
+                         sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                          self.builder.store(is_negative, sign_ptr)
-                         
-                         # Store digits array pointer
-                         digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+
+                         # Store digits array pointer (digits at index 2)
+                         digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                          self.builder.store(u64_array_ptr, digits_ptr)
                          
                          self.define(var_name, bigint_ptr)
@@ -1366,6 +1506,9 @@ class CodeGenerator(NodeVisitor):
                     if hasattr(val.type.pointee, 'name') and hasattr(elem.type.pointee, 'name'):
                         val = self.builder.load(val)
 
+                # Check frozen before writing to field
+                self.check_frozen_write(loaded_obj)
+
                 # Check if this is a weak field and handle RC accordingly
                 is_weak_field = hasattr(obj_type, 'weak_fields') and node.left.field in obj_type.weak_fields
                 if is_weak_field and self.is_managed_type(elem.type.pointee):
@@ -1382,8 +1525,8 @@ class CodeGenerator(NodeVisitor):
                 right = self.visit(node.right)
                 collection_var = self.search_scopes(node.left.collection.value)
                 pointee = collection_var.type.pointee
-                # Data pointer is at index 2: { size, capacity, data*, refcount }
-                data_ptr_elem = pointee.elements[2]
+                # Data pointer is at index 3: { header, size, capacity, data* }
+                data_ptr_elem = pointee.elements[3]
                 if hasattr(data_ptr_elem, 'pointee'):
                     array_type = str(data_ptr_elem.pointee)
                 else:
@@ -1495,45 +1638,52 @@ class CodeGenerator(NodeVisitor):
                                     src_ptr = tmp
 
                                 # === Reference counting: decrement old digits ===
-                                old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                                # BigInt: { header, sign, digits } - digits at index 2
+                                old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                                 old_digits = self.builder.load(old_digits_ptr)
                                 null_ptr = ir.Constant(old_digits.type, None)
                                 is_not_null = self.builder.icmp_unsigned('!=', old_digits, null_ptr)
 
                                 with self.builder.if_then(is_not_null):
-                                    # Decrement refcount
-                                    rc_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
+                                    # Decrement refcount - RC in header
+                                    from meteor.compiler.base import HEADER_STRONG_RC
+                                    header_ptr = self.builder.gep(old_digits, [self.const(0), self.const(0, width=INT32)])
+                                    rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
                                     rc = self.builder.load(rc_ptr)
-                                    new_rc = self.builder.sub(rc, self.const(1))
+                                    new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
                                     self.builder.store(new_rc, rc_ptr)
                                     # Free if refcount == 0
-                                    is_zero = self.builder.icmp_signed('==', new_rc, self.const(0))
+                                    is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
                                     with self.builder.if_then(is_zero):
-                                        data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(2, width=INT32)])
+                                        # data at index 3
+                                        data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
                                         data = self.builder.load(data_ptr)
                                         data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
                                         self.call('free', [data_i8])
                                         digits_i8 = self.builder.bitcast(old_digits, type_map[INT8].as_pointer())
                                         self.call('free', [digits_i8])
 
-                                # Copy sign
-                                src_sign_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(0, width=INT32)])
+                                # Copy sign (sign at index 1)
+                                src_sign_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(1, width=INT32)])
                                 sign = self.builder.load(src_sign_ptr)
-                                dst_sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                                dst_sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                                 self.builder.store(sign, dst_sign_ptr)
 
-                                # Copy digits pointer
-                                src_digits_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(1, width=INT32)])
+                                # Copy digits pointer (digits at index 2)
+                                src_digits_ptr = self.builder.gep(src_ptr, [self.const(0), self.const(2, width=INT32)])
                                 digits = self.builder.load(src_digits_ptr)
-                                dst_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                                dst_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                                 self.builder.store(digits, dst_digits_ptr)
 
                                 # Shared ownership: if assigning from an L-value, increment RC
                                 is_lvalue = isinstance(node.right, (Var, DotAccess, CollectionAccess))
                                 if is_lvalue:
-                                    new_rc_ptr = self.builder.gep(digits, [self.const(0), self.const(3, width=INT32)])
+                                    # RC in header
+                                    from meteor.compiler.base import HEADER_STRONG_RC
+                                    header_ptr = self.builder.gep(digits, [self.const(0), self.const(0, width=INT32)])
+                                    new_rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
                                     cur_rc = self.builder.load(new_rc_ptr)
-                                    inc_rc = self.builder.add(cur_rc, self.const(1))
+                                    inc_rc = self.builder.add(cur_rc, ir.Constant(type_map[UINT32], 1))
                                     self.builder.store(inc_rc, new_rc_ptr)
                             else:
                                 # Existing logic for runtime int values
@@ -1748,7 +1898,16 @@ class CodeGenerator(NodeVisitor):
         loaded = self.load(node.obj)
         if hasattr(loaded.type, 'pointee'):
             loaded = self.builder.load(loaded)
-        return self.builder.extract_value(loaded, obj_type.fields.index(node.field))
+
+        field_idx = obj_type.fields.index(node.field)
+        result = self.builder.extract_value(loaded, field_idx)
+
+        # Check if accessing a weak field - need to upgrade
+        is_weak = hasattr(obj_type, 'weak_fields') and node.field in obj_type.weak_fields
+        if is_weak and hasattr(result.type, 'pointee'):
+            result = self.rc_weak_upgrade(result)
+
+        return result
 
     def visit_opassign(self, node):
         right = self.visit(node.right)
@@ -1758,8 +1917,8 @@ class CodeGenerator(NodeVisitor):
             collection_access = True
             var_name = self.search_scopes(node.left.collection.value)
             pointee = var_name.type.pointee
-            # Data pointer is at index 2: { size, capacity, data*, refcount }
-            data_ptr_elem = pointee.elements[2]
+            # Data pointer is at index 3: { header, size, capacity, data* }
+            data_ptr_elem = pointee.elements[3]
             if hasattr(data_ptr_elem, 'pointee'):
                 array_type = str(data_ptr_elem.pointee)
             else:
@@ -1884,20 +2043,26 @@ class CodeGenerator(NodeVisitor):
         array_ptr = self.create_array(array_type)
         for element in elements:
             self.call('{}.array.append'.format(str(array_type)), [array_ptr, element])
-        return self.load(array_ptr)
+        return array_ptr
 
     def create_array(self, array_type):
-        dyn_array_type = self.module.context.get_identified_type('{}.array'.format(str(array_type)))
-        if self.search_scopes('{}.array'.format(str(array_type))) is None:
-            dyn_array_type.name = '{}.array'.format(str(array_type))
+        array_type_name = '{}.array'.format(str(array_type))
+        existing_type = self.search_scopes(array_type_name)
+        if existing_type is not None:
+            dyn_array_type = existing_type
+        else:
+            dyn_array_type = self.module.context.get_identified_type(array_type_name)
+            dyn_array_type.name = array_type_name
             dyn_array_type.type = CLASS
-            # 0: size, 1: capacity, 2: data pointer, 3: refcount
-            dyn_array_type.set_body(type_map[INT], type_map[INT], array_type.as_pointer(), type_map[INT])
-            self.define('{}.array'.format(str(array_type)), dyn_array_type)
+            # 0: header, 1: size, 2: capacity, 3: data pointer
+            header_struct = self.search_scopes(OBJECT_HEADER)
+            dyn_array_type.set_body(header_struct, type_map[INT], type_map[INT], array_type.as_pointer())
+            self.define(array_type_name, dyn_array_type)
 
         # Use malloc instead of alloca for proper memory management
+        # header(16) + size(8) + capacity(8) + data*(8) = 40 bytes
         malloc_func = self.module.get_global('malloc')
-        array_mem = self.builder.call(malloc_func, [self.const(32)])  # 4 fields * 8 bytes
+        array_mem = self.builder.call(malloc_func, [self.const(40)])
         array = self.builder.bitcast(array_mem, dyn_array_type.as_pointer())
 
         create_dynamic_array_methods(self, array_type)
@@ -1912,7 +2077,7 @@ class CodeGenerator(NodeVisitor):
         array_ptr = self.create_array(array_type)
         for element in elements:
             self.call('{}.array.append'.format(str(array_type)), [array_ptr, element])
-        return self.load(array_ptr)
+        return array_ptr
 
     def visit_hashmap(self, node):
         raise NotImplementedError
@@ -2334,6 +2499,55 @@ class CodeGenerator(NodeVisitor):
         if func and obj_ptr:
             header = self.get_object_header(obj_ptr)
             self.builder.call(func, [header])
+
+    def rc_weak_upgrade(self, obj_ptr):
+        """Call meteor_weak_upgrade to safely access a weak reference.
+        Returns the upgraded pointer (or NULL if zombie).
+        """
+        func = self.module.get_global('meteor_weak_upgrade')
+        if func and obj_ptr:
+            header = self.get_object_header(obj_ptr)
+            return self.builder.call(func, [header])
+        return obj_ptr
+
+    def check_frozen_write(self, obj_ptr):
+        """Check if object is frozen and abort if trying to write.
+        Generates runtime check for IS_FROZEN flag.
+        """
+        from meteor.compiler.base import OBJECT_HEADER, HEADER_FLAGS, FLAG_IS_FROZEN
+
+        if not self.is_managed_type(obj_ptr.type):
+            return
+
+        header = self.get_object_header(obj_ptr)
+        header_struct = self.search_scopes(OBJECT_HEADER)
+        if not header_struct:
+            return
+
+        # Load flags
+        flags_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_FLAGS, width=INT32)])
+        flags = self.builder.load(flags_ptr)
+
+        # Check IS_FROZEN
+        frozen_mask = ir.Constant(type_map[UINT8], FLAG_IS_FROZEN)
+        is_frozen = self.builder.and_(flags, frozen_mask)
+        is_frozen_bool = self.builder.icmp_unsigned('!=', is_frozen, ir.Constant(type_map[UINT8], 0))
+
+        # If frozen, call abort (simplified - real impl should raise error)
+        frozen_block = self.add_block('frozen.abort')
+        continue_block = self.add_block('frozen.continue')
+        self.builder.cbranch(is_frozen_bool, frozen_block, continue_block)
+
+        self.builder.position_at_end(frozen_block)
+        try:
+            abort_func = self.module.get_global('abort')
+        except KeyError:
+            abort_type = ir.FunctionType(type_map[VOID], [])
+            abort_func = ir.Function(self.module, abort_type, 'abort')
+        self.builder.call(abort_func, [])
+        self.builder.unreachable()
+
+        self.builder.position_at_end(continue_block)
 
     def rc_assign(self, target_ptr, new_value):
         """RC-safe assignment: release old, retain new, store."""

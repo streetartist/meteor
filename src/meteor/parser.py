@@ -333,6 +333,16 @@ class Parser(object):
         
         return TryStatement(try_body, catch_clauses, self.line_num)
 
+    def spawn_statement(self):
+        """Parse a spawn statement.
+
+        Syntax:
+            spawn func_name(args...)
+        """
+        self.eat_value(SPAWN)
+        func_call = self.expr()
+        return Spawn(func_call, self.line_num)
+
     def variable_declaration(self):
         var_node = Var(self.current_token.value, self.line_num)
         self.eat_type(NAME)
@@ -686,6 +696,8 @@ class Parser(object):
             node = self.raise_statement()
         elif self.current_token.value == TRY:
             node = self.try_statement()
+        elif self.current_token.value == SPAWN:
+            node = self.spawn_statement()
         elif self.current_token.value == EOF:
             return None
         else:

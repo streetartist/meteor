@@ -188,12 +188,23 @@ class UnionType(AST):
 
 class Raise(AST):
     """Raise an error value.
-    
+
     Example:
         raise IOError.NotFound
     """
     def __init__(self, error_value, line_num):
         self.error_value = error_value
+        self.line_num = line_num
+
+
+class Spawn(AST):
+    """Spawn a new thread to execute a function.
+
+    Example:
+        spawn worker(data)
+    """
+    def __init__(self, func_call, line_num):
+        self.func_call = func_call
         self.line_num = line_num
 
 

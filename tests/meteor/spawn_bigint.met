@@ -1,0 +1,9 @@
+def bigint_worker(id: int)
+    x: bigint = 1000000000000
+    y: bigint = id
+    z = x + y
+    print(z)
+
+spawn bigint_worker(1)
+spawn bigint_worker(2)
+print(0)

@@ -514,6 +514,10 @@ class Preprocessor(NodeVisitor):
         #     method.accessed = True
         #     return method.return_type
 
+    def visit_spawn(self, node):
+        """Type check spawn statement - validates the function call inside."""
+        return self.visit(node.func_call)
+
     def visit_enumdeclaration(self, node):
         sym = EnumSymbol(node.name, node.fields)
         self.define(sym.name, sym)

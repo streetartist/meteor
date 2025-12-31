@@ -15,18 +15,42 @@ zero_32 = ir.Constant(type_map[INT32], 0)
 one_32 = ir.Constant(type_map[INT32], 1)
 two_32 = ir.Constant(type_map[INT32], 2)
 
+# BigInt field indices (after adding header)
+BIGINT_HEADER = ir.Constant(type_map[INT32], 0)
+BIGINT_SIGN = ir.Constant(type_map[INT32], 1)
+BIGINT_DIGITS = ir.Constant(type_map[INT32], 2)
+
+# Decimal field indices (after adding header)
+DECIMAL_HEADER = ir.Constant(type_map[INT32], 0)
+DECIMAL_MANTISSA = ir.Constant(type_map[INT32], 1)
+DECIMAL_EXPONENT = ir.Constant(type_map[INT32], 2)
+
+# Dynamic array field indices (after adding header)
+ARRAY_HEADER = ir.Constant(type_map[INT32], 0)
+ARRAY_SIZE = ir.Constant(type_map[INT32], 1)
+ARRAY_CAPACITY = ir.Constant(type_map[INT32], 2)
+ARRAY_DATA = ir.Constant(type_map[INT32], 3)
+
 array_types = [type_map[INT]]
 
 
 def define_builtins(self):
-    # 0: int size
-    # 1: int capacity
-    # 2: int *data
-    # 3: int refcount (for memory management)
+    # Dynamic array with object header for RC
+    # Layout: { header, size, capacity, data* }
+    # 0: meteor.header (for RC)
+    # 1: int size
+    # 2: int capacity
+    # 3: int *data
+    from meteor.compiler.base import OBJECT_HEADER
+
+    # First define object header (needed for array)
+    define_object_header(self)
+    header_struct = self.search_scopes(OBJECT_HEADER)
+
     str_struct = self.module.context.get_identified_type('i64.array')
     str_struct.name = 'i64.array'
     str_struct.type = CLASS
-    str_struct.set_body(type_map[INT], type_map[INT], type_map[INT].as_pointer(), type_map[INT])
+    str_struct.set_body(header_struct, type_map[INT], type_map[INT], type_map[INT].as_pointer())
 
     self.define('str', str_struct)
     self.define('i64.array', str_struct)
@@ -61,9 +85,13 @@ def define_builtins(self):
     define_free_bigint(self)
 
     # RFC-001 Memory Management Runtime
-    define_object_header(self)
+    # Note: define_object_header already called above for array structure
     define_channel_type(self)  # Channel for concurrency
     define_spawn_runtime(self)  # Thread spawning
+    define_channel_create(self)  # Channel creation
+    define_channel_send(self)   # Channel send
+    define_channel_recv(self)   # Channel recv (blocking)
+    define_channel_try_recv(self)  # Channel try_recv (non-blocking)
     define_meteor_destroy(self)  # Must be before retain/release
     define_meteor_retain(self)
     define_meteor_release(self)
@@ -173,13 +201,13 @@ def dynamic_array_init(self, dyn_array_ptr, array_type):
     builder.store(dyn_array_init.args[0], array_ptr)
 
     # BODY
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     builder.store(zero, size_ptr)
 
-    capacity_ptr = builder.gep(builder.load(array_ptr), [zero_32, one_32], inbounds=True)
+    capacity_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_CAPACITY], inbounds=True)
     builder.store(ARRAY_INITIAL_CAPACITY, capacity_ptr)
 
-    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, two_32], inbounds=True)
+    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
     # For 1-based indexing, we need (capacity + 1) elements: data[0] is unused, data[1] to data[capacity] are used
     capacity_plus_one = builder.add(builder.load(capacity_ptr), one)
     size_of = builder.mul(capacity_plus_one, eight)
@@ -187,10 +215,11 @@ def dynamic_array_init(self, dyn_array_ptr, array_type):
     mem_alloc = builder.bitcast(mem_alloc, array_type.as_pointer())
     builder.store(mem_alloc, data_ptr)
 
-    # Initialize refcount to 1
-    three_32 = ir.Constant(type_map[INT32], 3)
-    refcount_ptr = builder.gep(builder.load(array_ptr), [zero_32, three_32], inbounds=True)
-    builder.store(one, refcount_ptr)
+    # Initialize header strong_rc to 1
+    from meteor.compiler.base import HEADER_STRONG_RC
+    header_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_HEADER], inbounds=True)
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)], inbounds=True)
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
 
     builder.branch(dyn_array_init_exit)
 
@@ -214,13 +243,13 @@ def dynamic_array_double_if_full(self, dyn_array_ptr, array_type):
     builder.store(dyn_array_double_capacity_if_full.args[0], array_ptr)
 
     # BODY
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
-    capacity_ptr = builder.gep(builder.load(array_ptr), [zero_32, one_32], inbounds=True)
+    capacity_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_CAPACITY], inbounds=True)
     capacity_val = builder.load(capacity_ptr)
 
-    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, two_32], inbounds=True)
+    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
     compare_size_to_capactiy = builder.icmp_signed(GREATER_THAN_OR_EQUAL_TO, size_val, capacity_val)
 
@@ -265,13 +294,13 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
     # BODY
     builder.call(self.module.get_global('{}.array.double_capacity_if_full'.format(str(array_type))), [builder.load(array_ptr)])
 
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
     size_val = builder.add(size_val, one)
     builder.store(size_val, size_ptr)
 
-    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, two_32], inbounds=True)
+    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
     data_element_ptr = builder.gep(builder.load(data_ptr), [size_val], inbounds=True)
 
@@ -306,7 +335,7 @@ def dynamic_array_get(self, dyn_array_ptr, array_type):
 
     # BODY
     index_val = builder.load(index_ptr)
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
     compare_index_to_size = builder.icmp_signed(GREATER_THAN_OR_EQUAL_TO, index_val, size_val)
@@ -335,7 +364,7 @@ def dynamic_array_get(self, dyn_array_ptr, array_type):
 
     builder.position_at_end(dyn_array_get_block)
 
-    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, two_32], inbounds=True)
+    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
     # Load index (may have been modified for negative index)
     index_val = builder.load(index_ptr)
@@ -376,7 +405,7 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
     # BODY
     index_val = builder.load(index_ptr)
 
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
     compare_index_to_size = builder.icmp_signed(GREATER_THAN_OR_EQUAL_TO, index_val, size_val)
@@ -402,7 +431,7 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
 
     builder.position_at_end(dyn_array_set_block)
 
-    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, two_32], inbounds=True)
+    data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
     # Load index (may have been modified for negative index)
     index_val = builder.load(index_ptr)
@@ -434,7 +463,7 @@ def dynamic_array_length(self, dyn_array_ptr, array_type):
     array_ptr = builder.alloca(dyn_array_ptr)
     builder.store(dyn_array_length.args[0], array_ptr)
 
-    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, zero_32], inbounds=True)
+    size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
 
     # CLOSE
     self.define('{}.array.length'.format(str(array_type)), dyn_array_length)
@@ -510,12 +539,12 @@ def define_print_bigint(self):
 
     bigint_ptr = func.args[0]
 
-    # Get sign
-    sign_ptr = builder.gep(bigint_ptr, [zero_32, zero_32])
+    # Get sign (index 1 after header)
+    sign_ptr = builder.gep(bigint_ptr, [zero_32, BIGINT_SIGN])
     sign_val = builder.load(sign_ptr)
 
-    # Get digits array
-    digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, one_32])
+    # Get digits array (index 2 after header)
+    digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, BIGINT_DIGITS])
     digits_array = builder.load(digits_ptr_ptr)
 
     # Declare printf if not exists
@@ -546,11 +575,11 @@ def define_print_bigint(self):
     builder.position_at_end(merge_block)
 
     # Get number of digits (direct access to size field)
-    num_digits_ptr = builder.gep(digits_array, [zero_32, zero_32])
+    num_digits_ptr = builder.gep(digits_array, [zero_32, ARRAY_SIZE])
     num_digits = builder.load(num_digits_ptr)
 
     # Get data pointer for 1-based access
-    src_data_ptr_ptr = builder.gep(digits_array, [zero_32, two_32])
+    src_data_ptr_ptr = builder.gep(digits_array, [zero_32, ARRAY_DATA])
     src_data_ptr = builder.load(src_data_ptr_ptr)
 
     # If single digit, print as decimal number (1-based: first element at index 1)
@@ -634,7 +663,7 @@ def define_print_bigint(self):
 
     builder.position_at_end(div_loop)
     # Get work_array length (direct access to size field)
-    work_size_ptr = builder.gep(work_array, [zero_32, zero_32])
+    work_size_ptr = builder.gep(work_array, [zero_32, ARRAY_SIZE])
     work_len = builder.load(work_size_ptr)
     builder.store(work_len, work_len_slot)
 
@@ -643,7 +672,7 @@ def define_print_bigint(self):
 
     builder.position_at_end(div_check_zero)
     # Get work_array data pointer for 1-based access
-    work_data_ptr_ptr = builder.gep(work_array, [zero_32, two_32])
+    work_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr = builder.load(work_data_ptr_ptr)
 
     # Check if highest digit is zero (1-based: highest at index work_len)
@@ -677,7 +706,7 @@ def define_print_bigint(self):
 
     builder.position_at_end(div_inner_body)
     # Get work_array data pointer again (for SSA correctness)
-    work_data_ptr_ptr2 = builder.gep(work_array, [zero_32, two_32])
+    work_data_ptr_ptr2 = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr2 = builder.load(work_data_ptr_ptr2)
 
     # Get current digit using 1-based access
@@ -740,14 +769,14 @@ def define_print_bigint(self):
 
     builder.position_at_end(trim_cond)
     # Get current work_array length (direct access)
-    trim_size_ptr = builder.gep(work_array, [zero_32, zero_32])
+    trim_size_ptr = builder.gep(work_array, [zero_32, ARRAY_SIZE])
     cur_work_len = builder.load(trim_size_ptr)
     has_elements = builder.icmp_signed('>', cur_work_len, zero)
     builder.cbranch(has_elements, trim_body, trim_end)
 
     builder.position_at_end(trim_body)
     # Get top element using 1-based access (top at index cur_work_len)
-    trim_data_ptr_ptr = builder.gep(work_array, [zero_32, two_32])
+    trim_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     trim_data_ptr = builder.load(trim_data_ptr_ptr)
     top_val_ptr = builder.gep(trim_data_ptr, [cur_work_len])  # 1-based
     top_val = builder.load(top_val_ptr)
@@ -772,7 +801,7 @@ def define_print_bigint(self):
 
     # Print decimal digits in reverse order (they were collected low to high)
     # Get decimal_digits length (direct access)
-    dec_size_ptr = builder.gep(decimal_digits, [zero_32, zero_32])
+    dec_size_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_SIZE])
     dec_len = builder.load(dec_size_ptr)
 
     # Handle edge case: if no digits, print 0
@@ -818,7 +847,7 @@ def define_print_bigint(self):
 
     builder.position_at_end(print_dec_body)
     # Get decimal digit using 1-based access
-    dec_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, two_32])
+    dec_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_DATA])
     dec_data_ptr = builder.load(dec_data_ptr_ptr)
     
     d_val_ptr = builder.gep(dec_data_ptr, [p_idx])
@@ -856,7 +885,7 @@ def define_print_bigint(self):
         free_func = ir.Function(self.module, free_type, 'free')
 
     # Free work_array data
-    wa_data_ptr_ptr = builder.gep(work_array, [zero_32, two_32])
+    wa_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     wa_data_ptr = builder.load(wa_data_ptr_ptr)
     wa_data_i8 = builder.bitcast(wa_data_ptr, type_map[INT8].as_pointer())
     builder.call(free_func, [wa_data_i8])
@@ -866,7 +895,7 @@ def define_print_bigint(self):
     builder.call(free_func, [wa_i8])
 
     # Free decimal_digits data
-    dd_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, two_32])
+    dd_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_DATA])
     dd_data_ptr = builder.load(dd_data_ptr_ptr)
     dd_data_i8 = builder.bitcast(dd_data_ptr, type_map[INT8].as_pointer())
     builder.call(free_func, [dd_data_i8])
@@ -951,18 +980,18 @@ def define_print_decimal(self):
     end_block = func.append_basic_block('end_block')
 
     # === Entry block: setup ===
-    mantissa_ptr_ptr = builder.gep(decimal_ptr, [zero_32, zero_32])
+    mantissa_ptr_ptr = builder.gep(decimal_ptr, [zero_32, DECIMAL_MANTISSA])
     mantissa_ptr = builder.load(mantissa_ptr_ptr)
-    exponent_ptr = builder.gep(decimal_ptr, [zero_32, one_32])
+    exponent_ptr = builder.gep(decimal_ptr, [zero_32, DECIMAL_EXPONENT])
     exponent_val = builder.load(exponent_ptr)
 
-    sign_ptr = builder.gep(mantissa_ptr, [zero_32, zero_32])
+    sign_ptr = builder.gep(mantissa_ptr, [zero_32, BIGINT_SIGN])
     sign_val = builder.load(sign_ptr)
-    digits_ptr_ptr = builder.gep(mantissa_ptr, [zero_32, one_32])
+    digits_ptr_ptr = builder.gep(mantissa_ptr, [zero_32, BIGINT_DIGITS])
     digits_array = builder.load(digits_ptr_ptr)
 
     # Get length of bigint digits
-    len_ptr = builder.gep(digits_array, [zero_32, zero_32])
+    len_ptr = builder.gep(digits_array, [zero_32, ARRAY_SIZE])
     num_u64 = builder.load(len_ptr)
 
     # Check if mantissa is zero
@@ -1001,7 +1030,7 @@ def define_print_decimal(self):
 
     # === copy_body ===
     builder.position_at_end(copy_body)
-    src_data_ptr_ptr = builder.gep(digits_array, [zero_32, two_32])
+    src_data_ptr_ptr = builder.gep(digits_array, [zero_32, ARRAY_DATA])
     src_data_ptr = builder.load(src_data_ptr_ptr)
     src_idx = builder.add(c_idx, one)  # 1-based
     src_val_ptr = builder.gep(src_data_ptr, [src_idx])
@@ -1012,7 +1041,7 @@ def define_print_decimal(self):
 
     # === copy_end: start division loop ===
     builder.position_at_end(copy_end)
-    work_len_ptr = builder.gep(work_array, [zero_32, zero_32])
+    work_len_ptr = builder.gep(work_array, [zero_32, ARRAY_SIZE])
     init_work_len = builder.load(work_len_ptr)
     builder.store(init_work_len, work_len_slot)
     builder.branch(div_loop)
@@ -1025,7 +1054,7 @@ def define_print_decimal(self):
 
     # === div_check_zero: check if highest digit is zero ===
     builder.position_at_end(div_check_zero)
-    work_data_ptr_ptr = builder.gep(work_array, [zero_32, two_32])
+    work_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr = builder.load(work_data_ptr_ptr)
     high_digit_ptr = builder.gep(work_data_ptr, [work_len])
     high_digit = builder.load(high_digit_ptr)
@@ -1053,7 +1082,7 @@ def define_print_decimal(self):
 
     # === div_inner_body: compute (carry * 2^64 + digit) / 10 ===
     builder.position_at_end(div_inner_body)
-    work_data_ptr_ptr2 = builder.gep(work_array, [zero_32, two_32])
+    work_data_ptr_ptr2 = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr2 = builder.load(work_data_ptr_ptr2)
     cur_digit_ptr = builder.gep(work_data_ptr2, [i_val])
     cur_digit = builder.load(cur_digit_ptr)
@@ -1092,13 +1121,13 @@ def define_print_decimal(self):
     builder.branch(trim_cond)
 
     builder.position_at_end(trim_cond)
-    trim_size_ptr = builder.gep(work_array, [zero_32, zero_32])
+    trim_size_ptr = builder.gep(work_array, [zero_32, ARRAY_SIZE])
     cur_work_len = builder.load(trim_size_ptr)
     has_elements = builder.icmp_signed('>', cur_work_len, zero)
     builder.cbranch(has_elements, trim_body, trim_end)
 
     builder.position_at_end(trim_body)
-    trim_data_ptr_ptr = builder.gep(work_array, [zero_32, two_32])
+    trim_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     trim_data_ptr = builder.load(trim_data_ptr_ptr)
     top_val_ptr = builder.gep(trim_data_ptr, [cur_work_len])
     top_val = builder.load(top_val_ptr)
@@ -1119,7 +1148,7 @@ def define_print_decimal(self):
 
     # === div_end: done converting, now print ===
     builder.position_at_end(div_end)
-    dec_size_ptr = builder.gep(decimal_digits, [zero_32, zero_32])
+    dec_size_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_SIZE])
     dec_len = builder.load(dec_size_ptr)
     has_dec = builder.icmp_signed('>', dec_len, zero)
     builder.cbranch(has_dec, print_digits, print_zero)
@@ -1156,7 +1185,7 @@ def define_print_decimal(self):
     # === print_first: print first digit ===
     builder.position_at_end(print_first)
     p_idx = builder.load(print_idx)
-    dec_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, two_32])
+    dec_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_DATA])
     dec_data_ptr = builder.load(dec_data_ptr_ptr)
     first_val_ptr = builder.gep(dec_data_ptr, [p_idx])
     first_val = builder.load(first_val_ptr)
@@ -1193,7 +1222,7 @@ def define_print_decimal(self):
 
     # === frac_body ===
     builder.position_at_end(frac_body)
-    dec_data_ptr_ptr2 = builder.gep(decimal_digits, [zero_32, two_32])
+    dec_data_ptr_ptr2 = builder.gep(decimal_digits, [zero_32, ARRAY_DATA])
     dec_data_ptr2 = builder.load(dec_data_ptr_ptr2)
     frac_val_ptr = builder.gep(dec_data_ptr2, [f_idx])
     frac_val = builder.load(frac_val_ptr)
@@ -1244,7 +1273,8 @@ def define_print_number(self):
     self.builder = builder
     
     num_ptr = func.args[0]
-    tag_ptr = builder.gep(num_ptr, [zero_32, zero_32])
+    # Number: { header, type_tag, data } - tag is at index 1
+    tag_ptr = builder.gep(num_ptr, [zero_32, one_32])
     tag = builder.load(tag_ptr)
     
     # Switch on tag
@@ -1264,7 +1294,8 @@ def define_print_number(self):
     
     # Case Int
     builder.position_at_end(int_block)
-    data_field_ptr = builder.gep(num_ptr, [zero_32, one_32]) # i8*
+    # Number: { header, type_tag, data } - data at index 2
+    data_field_ptr = builder.gep(num_ptr, [zero_32, two_32])
     data_ptr = builder.load(data_field_ptr)
     int_ptr = builder.bitcast(data_ptr, type_map[INT].as_pointer())
     val_int = builder.load(int_ptr)
@@ -1315,7 +1346,8 @@ def define_print_number(self):
     
     # Case Float
     builder.position_at_end(float_block)
-    data_field_ptr = builder.gep(num_ptr, [zero_32, one_32])
+    # data at index 2
+    data_field_ptr = builder.gep(num_ptr, [zero_32, two_32])
     data_ptr = builder.load(data_field_ptr)
     dbl_ptr = builder.bitcast(data_ptr, type_map[DOUBLE].as_pointer())
     val_dbl = builder.load(dbl_ptr)
@@ -1330,7 +1362,8 @@ def define_print_number(self):
 
     # Case BigInt
     builder.position_at_end(bigint_block)
-    data_field_ptr = builder.gep(num_ptr, [zero_32, one_32])
+    # data at index 2
+    data_field_ptr = builder.gep(num_ptr, [zero_32, two_32])
     data_ptr = builder.load(data_field_ptr)
     # Here data_ptr matches bigint* layout (it was bitcasted from bigint*)
     # So we can just cast it back and call print_bigint
@@ -1343,7 +1376,8 @@ def define_print_number(self):
 
     # Case Decimal
     builder.position_at_end(decimal_block)
-    data_field_ptr = builder.gep(num_ptr, [zero_32, one_32])
+    # data at index 2
+    data_field_ptr = builder.gep(num_ptr, [zero_32, two_32])
     data_ptr = builder.load(data_field_ptr)
     decimal_ptr = builder.bitcast(data_ptr, type_map[DECIMAL].as_pointer())
     builder.call(self.module.get_global('print_decimal'), [decimal_ptr])
@@ -1372,12 +1406,12 @@ def define_bigint_add(self):
     # 1. Allocate Result BigInt
     res_ptr = builder.alloca(bigint_struct, name="res")
     
-    # 2. Get Arrays
+    # 2. Get Arrays (BigInt: { header, sign, digits* } - digits at index 2)
     # a.digits
-    a_digits_ptr_ptr = builder.gep(a_ptr, [zero_32, one_32])
+    a_digits_ptr_ptr = builder.gep(a_ptr, [zero_32, two_32])
     a_digits = builder.load(a_digits_ptr_ptr)
     # b.digits
-    b_digits_ptr_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_digits_ptr_ptr = builder.gep(b_ptr, [zero_32, two_32])
     b_digits = builder.load(b_digits_ptr_ptr)
     
     # 3. Create Result Array (Heap Allocated)
@@ -1475,11 +1509,11 @@ def define_bigint_add(self):
     builder.position_at_end(end_block)
     
     # Assign digits to result
-    res_digits_ptr = builder.gep(res_ptr, [zero_32, one_32])
+    res_digits_ptr = builder.gep(res_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(res_digits, res_digits_ptr)
-    
+
     # Sign (positive)
-    res_sign_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    res_sign_ptr = builder.gep(res_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), res_sign_ptr)
     
     res_val = builder.load(res_ptr)
@@ -1518,15 +1552,15 @@ def define_bigint_neg(self):
     builder.call(init_func, [res_digits])
     
     # Copy sign and flip
-    sign_ptr = builder.gep(val_ptr, [zero_32, zero_32])
+    sign_ptr = builder.gep(val_ptr, [zero_32, BIGINT_SIGN])
     sign_val = builder.load(sign_ptr)
     new_sign = builder.not_(sign_val)
-    
-    res_sign_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+
+    res_sign_ptr = builder.gep(res_ptr, [zero_32, BIGINT_SIGN])
     builder.store(new_sign, res_sign_ptr)
-    
+
     # Copy Digits
-    digits_ptr_ptr = builder.gep(val_ptr, [zero_32, one_32])
+    digits_ptr_ptr = builder.gep(val_ptr, [zero_32, BIGINT_DIGITS])
     digits = builder.load(digits_ptr_ptr)
     
     num_digits = builder.call(len_func, [digits])
@@ -1554,7 +1588,7 @@ def define_bigint_neg(self):
     
     builder.position_at_end(end_block)
     
-    res_digits_ptr = builder.gep(res_ptr, [zero_32, one_32])
+    res_digits_ptr = builder.gep(res_ptr, [zero_32, two_32])  # digits at index 2
     builder.store(res_digits, res_digits_ptr)
     
     builder.ret(builder.load(res_ptr))
@@ -1580,9 +1614,9 @@ def define_bigint_cmp(self):
     get_func = self.module.get_global('i64.array.get')
     
     # 1. Check signs
-    a_sign_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_sign_ptr = builder.gep(a_ptr, [zero_32, BIGINT_SIGN])
     a_sign = builder.load(a_sign_ptr) # 1 = neg, 0 = pos
-    b_sign_ptr = builder.gep(b_ptr, [zero_32, zero_32])
+    b_sign_ptr = builder.gep(b_ptr, [zero_32, BIGINT_SIGN])
     b_sign = builder.load(b_sign_ptr)
     
     # If a is neg (1) and b is pos (0) -> -1
@@ -1609,8 +1643,8 @@ def define_bigint_cmp(self):
     builder.position_at_end(same_signs_block)
 
     # Compare Magnitudes and Lengths
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
-    b_digits = builder.load(builder.gep(b_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, two_32]))  # digits at index 2
+    b_digits = builder.load(builder.gep(b_ptr, [zero_32, two_32]))  # digits at index 2
     
     len_a = builder.call(len_func, [a_digits])
     len_b = builder.call(len_func, [b_digits])
@@ -1713,9 +1747,9 @@ def define_bigint_sub(self):
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
     # 1. Check signs
-    a_sign_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_sign_ptr = builder.gep(a_ptr, [zero_32, BIGINT_SIGN])
     a_sign = builder.load(a_sign_ptr)
-    b_sign_ptr = builder.gep(b_ptr, [zero_32, zero_32])
+    b_sign_ptr = builder.gep(b_ptr, [zero_32, BIGINT_SIGN])
     b_sign = builder.load(b_sign_ptr)
     
     signs_diff_block = func.append_basic_block('signs_diff')
@@ -1735,7 +1769,7 @@ def define_bigint_sub(self):
     builder.store(res_add, res_add_ptr)
     
     # Modification: if a is neg, res is neg.
-    res_add_sign_ptr = builder.gep(res_add_ptr, [zero_32, zero_32])
+    res_add_sign_ptr = builder.gep(res_add_ptr, [zero_32, BIGINT_SIGN])
     builder.store(a_sign, res_add_sign_ptr)
     
     builder.ret(builder.load(res_add_ptr))
@@ -1744,8 +1778,8 @@ def define_bigint_sub(self):
     builder.position_at_end(signs_same_block)
 
     # Compare Magnitudes
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
-    b_digits = builder.load(builder.gep(b_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, two_32]))  # digits at index 2
+    b_digits = builder.load(builder.gep(b_ptr, [zero_32, two_32]))  # digits at index 2
     
     len_a = builder.call(len_func, [a_digits])
     len_b = builder.call(len_func, [b_digits])
@@ -1826,8 +1860,8 @@ def define_bigint_sub(self):
     x_final = builder.load(x_ptr_mem)
     y_final = builder.load(y_ptr_mem)
     
-    x_digits = builder.load(builder.gep(x_final, [zero_32, one_32]))
-    y_digits = builder.load(builder.gep(y_final, [zero_32, one_32]))
+    x_digits = builder.load(builder.gep(x_final, [zero_32, two_32]))  # digits at index 2
+    y_digits = builder.load(builder.gep(y_final, [zero_32, two_32]))  # digits at index 2
     len_x = builder.call(len_func, [x_digits])
     len_y = builder.call(len_func, [y_digits])
     
@@ -1916,17 +1950,17 @@ def define_bigint_sub(self):
     builder.cbranch(is_zero, trim_body, trim_end)
     
     builder.position_at_end(trim_body)
-    size_ptr = builder.gep(res_digits, [zero_32, zero_32])
+    size_ptr = builder.gep(res_digits, [zero_32, ARRAY_SIZE])
     new_size = builder.sub(cur_len, one)
     builder.store(new_size, size_ptr)
     builder.branch(trim_cond)
     
     builder.position_at_end(trim_end)
     
-    res_digits_res_ptr = builder.gep(res_sub_ptr, [zero_32, one_32])
+    res_digits_res_ptr = builder.gep(res_sub_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(res_digits, res_digits_res_ptr)
-    
-    final_sign_ptr = builder.gep(res_sub_ptr, [zero_32, zero_32])
+
+    final_sign_ptr = builder.gep(res_sub_ptr, [zero_32, BIGINT_SIGN])
     
     sign_if_swapped = builder.not_(a_sign)
     sign_if_not = a_sign
@@ -1969,8 +2003,8 @@ def define_free_bigint(self):
     
     builder.position_at_end(not_null_block)
     
-    # Get digits pointer
-    digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, one_32])
+    # Get digits pointer (BigInt: { header, sign, digits* } - digits at index 2)
+    digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, two_32])
     digits = builder.load(digits_ptr_ptr)
     
     # Check if digits is null
@@ -1983,11 +2017,14 @@ def define_free_bigint(self):
     builder.cbranch(digits_not_null, free_digits_block, end_block)
     
     builder.position_at_end(free_digits_block)
-    
-    # Check RefCount
-    rc_ptr = builder.gep(digits, [zero_32, ir.Constant(type_map[INT32], 3)])
+
+    # Check RefCount from header (Array: { header, size, capacity, data })
+    # Header is at index 0, strong_rc is at HEADER_STRONG_RC (0) within header
+    from meteor.compiler.base import HEADER_STRONG_RC
+    header_ptr = builder.gep(digits, [zero_32, ARRAY_HEADER], inbounds=True)
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)], inbounds=True)
     rc = builder.load(rc_ptr)
-    new_rc = builder.sub(rc, one)
+    new_rc = builder.sub(rc, ir.Constant(type_map[UINT32], 1))
     builder.store(new_rc, rc_ptr)
     
     should_free = builder.icmp_signed(EQUALS, new_rc, zero)
@@ -1999,7 +2036,7 @@ def define_free_bigint(self):
     builder.position_at_end(do_free_block)
     
     # Free data
-    data_ptr_ptr = builder.gep(digits, [zero_32, two_32])
+    data_ptr_ptr = builder.gep(digits, [zero_32, ARRAY_DATA])
     data_ptr = builder.load(data_ptr_ptr)
     data_i8 = builder.bitcast(data_ptr, type_map[INT8].as_pointer())
     
@@ -2046,13 +2083,13 @@ def define_bigint_mul_naive(self):
     one = ir.Constant(type_map[INT], 1)
     
     # 1. Sign
-    a_sign = builder.load(builder.gep(a_ptr, [zero_32, zero_32]))
-    b_sign = builder.load(builder.gep(b_ptr, [zero_32, zero_32]))
+    a_sign = builder.load(builder.gep(a_ptr, [zero_32, BIGINT_SIGN]))
+    b_sign = builder.load(builder.gep(b_ptr, [zero_32, BIGINT_SIGN]))
     res_sign = builder.xor(a_sign, b_sign)
     
     # 2. Digits
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
-    b_digits = builder.load(builder.gep(b_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, BIGINT_DIGITS]))
+    b_digits = builder.load(builder.gep(b_ptr, [zero_32, BIGINT_DIGITS]))
     len_a = builder.call(len_func, [a_digits])
     len_b = builder.call(len_func, [b_digits])
     
@@ -2193,7 +2230,7 @@ def define_bigint_mul_naive(self):
     builder.cbranch(is_zero, trim_body, trim_end)
     
     builder.position_at_end(trim_body)
-    size_ptr = builder.gep(res_digits, [zero_32, zero_32])
+    size_ptr = builder.gep(res_digits, [zero_32, ARRAY_SIZE])
     new_size = builder.sub(cur_len, one)
     builder.store(new_size, size_ptr)
     builder.branch(trim_cond)
@@ -2201,10 +2238,10 @@ def define_bigint_mul_naive(self):
     builder.position_at_end(trim_end)
     
     # Store results
-    res_digits_res_ptr = builder.gep(res_mul_ptr, [zero_32, one_32])
+    res_digits_res_ptr = builder.gep(res_mul_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(res_digits, res_digits_res_ptr)
-    
-    final_sign_ptr = builder.gep(res_mul_ptr, [zero_32, zero_32])
+
+    final_sign_ptr = builder.gep(res_mul_ptr, [zero_32, BIGINT_SIGN])
     builder.store(res_sign, final_sign_ptr)
     
     # If result is zero, sign pos
@@ -2238,7 +2275,7 @@ def define_bigint_split_low(self):
     malloc_func = self.module.get_global('malloc')
 
     # Get source digits
-    src_digits = builder.load(builder.gep(src_ptr, [zero_32, one_32]))
+    src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
     # Result
@@ -2280,9 +2317,9 @@ def define_bigint_split_low(self):
         builder.call(append_func, [res_digits, ir.Constant(type_map[INT64], 0)])
 
     # Copy sign
-    src_sign = builder.load(builder.gep(src_ptr, [zero_32, zero_32]))
-    builder.store(src_sign, builder.gep(res_ptr, [zero_32, zero_32]))
-    builder.store(res_digits, builder.gep(res_ptr, [zero_32, one_32]))
+    src_sign = builder.load(builder.gep(src_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
     builder.ret(builder.load(res_ptr))
 
@@ -2305,7 +2342,7 @@ def define_bigint_split_high(self):
     malloc_func = self.module.get_global('malloc')
 
     # Get source digits
-    src_digits = builder.load(builder.gep(src_ptr, [zero_32, one_32]))
+    src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
     # Result
@@ -2344,9 +2381,9 @@ def define_bigint_split_high(self):
         builder.call(append_func, [res_digits, ir.Constant(type_map[INT64], 0)])
 
     # Copy sign
-    src_sign = builder.load(builder.gep(src_ptr, [zero_32, zero_32]))
-    builder.store(src_sign, builder.gep(res_ptr, [zero_32, zero_32]))
-    builder.store(res_digits, builder.gep(res_ptr, [zero_32, one_32]))
+    src_sign = builder.load(builder.gep(src_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
     builder.ret(builder.load(res_ptr))
 
@@ -2369,7 +2406,7 @@ def define_bigint_shift_left(self):
     malloc_func = self.module.get_global('malloc')
 
     # Get source digits
-    src_digits = builder.load(builder.gep(src_ptr, [zero_32, one_32]))
+    src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
     # Result
@@ -2423,9 +2460,9 @@ def define_bigint_shift_left(self):
     builder.position_at_end(copy_end)
 
     # Copy sign
-    src_sign = builder.load(builder.gep(src_ptr, [zero_32, zero_32]))
-    builder.store(src_sign, builder.gep(res_ptr, [zero_32, zero_32]))
-    builder.store(res_digits, builder.gep(res_ptr, [zero_32, one_32]))
+    src_sign = builder.load(builder.gep(src_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
+    builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
     builder.ret(builder.load(res_ptr))
 
@@ -2451,8 +2488,8 @@ def define_bigint_mul(self):
     shift_func = self.module.get_global('bigint_shift_left')
 
     # Get lengths
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
-    b_digits = builder.load(builder.gep(b_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, two_32]))  # digits at index 2
+    b_digits = builder.load(builder.gep(b_ptr, [zero_32, two_32]))  # digits at index 2
     len_a = builder.call(len_func, [a_digits])
     len_b = builder.call(len_func, [b_digits])
 
@@ -2621,7 +2658,7 @@ def define_bigint_div(self):
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
     # 0. Check Divisor 0
-    b_digits_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_digits_ptr = builder.gep(b_ptr, [zero_32, two_32])  # digits at index 2
     b_digits = builder.load(b_digits_ptr)
     b_len = builder.call(len_func, [b_digits])
     # if len is 1 and val is 0 -> Error
@@ -2643,30 +2680,27 @@ def define_bigint_div(self):
     builder.position_at_end(start_div_block)
     
     # 1. Signs
-    a_sign = builder.load(builder.gep(a_ptr, [zero_32, zero_32]))
-    b_sign = builder.load(builder.gep(b_ptr, [zero_32, zero_32]))
+    a_sign = builder.load(builder.gep(a_ptr, [zero_32, BIGINT_SIGN]))
+    b_sign = builder.load(builder.gep(b_ptr, [zero_32, BIGINT_SIGN]))
     res_sign = builder.xor(a_sign, b_sign)
-    
+
     # 2. Magnitudes setup
     # Make a copy of b with sign 0 (b_abs)
-    # We can probably use a stack struct for b_abs_ptr, 
-    # and reuse b's digit pointer? 
-    # bigint is { i1, i64.array* }.
-    # Yes, we can make b_abs share the array of b, but force sign 0.
-    # Safe because we only read.
-    
+    # bigint is { header, sign, digits* }.
+    # We can make b_abs share the array of b, but force sign 0.
+
     b_abs = builder.alloca(bigint_struct)
-    b_abs_sign = builder.gep(b_abs, [zero_32, zero_32])
+    b_abs_sign = builder.gep(b_abs, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), b_abs_sign)
-    b_abs_digits = builder.gep(b_abs, [zero_32, one_32])
+    b_abs_digits = builder.gep(b_abs, [zero_32, BIGINT_DIGITS])
     builder.store(b_digits, b_abs_digits)
-    
+
     # R starts as 0 (positive)
     r_ptr = builder.alloca(bigint_struct)
-    r_sign = builder.gep(r_ptr, [zero_32, zero_32])
+    r_sign = builder.gep(r_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), r_sign)
-    r_digits_slot = builder.gep(r_ptr, [zero_32, one_32])
-    
+    r_digits_slot = builder.gep(r_ptr, [zero_32, BIGINT_DIGITS])
+
     malloc_func = self.module.get_global('malloc')
     r_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     r_digits = builder.bitcast(r_mem, u64_array_type.as_pointer())
@@ -2680,13 +2714,13 @@ def define_bigint_div(self):
     q_digits = builder.bitcast(q_mem, u64_array_type.as_pointer())
     builder.call(init_func, [q_digits])
     
-    q_digits_slot = builder.gep(q_ptr, [zero_32, one_32])
+    q_digits_slot = builder.gep(q_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(q_digits, q_digits_slot)
-    q_sign_ptr = builder.gep(q_ptr, [zero_32, zero_32])
+    q_sign_ptr = builder.gep(q_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), q_sign_ptr) # Final sign applied at end
-    
+
     # Pre-allocate Q with len_a zeros
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, BIGINT_DIGITS]))
     len_a = builder.call(len_func, [a_digits])
     
     # Loop fill Q
@@ -2813,10 +2847,10 @@ def define_bigint_div(self):
     # Store sub_res to stack to access fields
     temp_res = builder.alloca(bigint_struct)
     builder.store(sub_res_struct, temp_res)
-    
-    temp_digits = builder.load(builder.gep(temp_res, [zero_32, one_32]))
-    temp_sign = builder.load(builder.gep(temp_res, [zero_32, zero_32]))
-    
+
+    temp_digits = builder.load(builder.gep(temp_res, [zero_32, BIGINT_DIGITS]))
+    temp_sign = builder.load(builder.gep(temp_res, [zero_32, BIGINT_SIGN]))
+
     # Free old R contents before overwriting
     free_bg = self.module.get_global('free_bigint')
     builder.call(free_bg, [r_ptr])
@@ -2857,7 +2891,7 @@ def define_bigint_div(self):
     is_zero = builder.icmp_unsigned(EQUALS, last_val, ir.Constant(type_map[INT64], 0))
     builder.cbranch(is_zero, trim_body, trim_end)
     builder.position_at_end(trim_body)
-    size_ptr = builder.gep(q_digits, [zero_32, zero_32])
+    size_ptr = builder.gep(q_digits, [zero_32, ARRAY_SIZE])
     new_size = builder.sub(cur_len, one)
     builder.store(new_size, size_ptr)
     builder.branch(trim_cond)
@@ -2916,7 +2950,7 @@ def define_bigint_mod(self):
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
     # 0. Check Divisor 0
-    b_digits_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_digits_ptr = builder.gep(b_ptr, [zero_32, two_32])  # digits at index 2
     b_digits = builder.load(b_digits_ptr)
     b_len = builder.call(len_func, [b_digits])
     is_one = builder.icmp_signed(EQUALS, b_len, one)
@@ -2937,22 +2971,22 @@ def define_bigint_mod(self):
     builder.position_at_end(start_div_block)
     
     # 1. Signs
-    a_sign = builder.load(builder.gep(a_ptr, [zero_32, zero_32]))
+    a_sign = builder.load(builder.gep(a_ptr, [zero_32, BIGINT_SIGN]))
     # mod sign matches a_sign
     res_sign = a_sign
-    
+
     # 2. Magnitudes setup
     b_abs = builder.alloca(bigint_struct)
-    b_abs_sign = builder.gep(b_abs, [zero_32, zero_32])
+    b_abs_sign = builder.gep(b_abs, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), b_abs_sign)
-    b_abs_digits = builder.gep(b_abs, [zero_32, one_32])
+    b_abs_digits = builder.gep(b_abs, [zero_32, BIGINT_DIGITS])
     builder.store(b_digits, b_abs_digits)
-    
+
     r_ptr = builder.alloca(bigint_struct)
-    r_sign = builder.gep(r_ptr, [zero_32, zero_32])
+    r_sign = builder.gep(r_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), r_sign)
-    r_digits_slot = builder.gep(r_ptr, [zero_32, one_32])
-    
+    r_digits_slot = builder.gep(r_ptr, [zero_32, BIGINT_DIGITS])
+
     malloc_func = self.module.get_global('malloc')
     r_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     r_digits = builder.bitcast(r_mem, u64_array_type.as_pointer())
@@ -2963,7 +2997,7 @@ def define_bigint_mod(self):
     q_digits = r_digits # Dummy for shared code structure if needed
     
     # Pre-allocate a_digits
-    a_digits = builder.load(builder.gep(a_ptr, [zero_32, one_32]))
+    a_digits = builder.load(builder.gep(a_ptr, [zero_32, two_32]))  # digits at index 2
     len_a = builder.call(len_func, [a_digits])
     
     # Loop over bits of a
@@ -3044,9 +3078,9 @@ def define_bigint_mod(self):
     
     temp_res = builder.alloca(bigint_struct)
     builder.store(sub_res_struct, temp_res)
-    temp_digits = builder.load(builder.gep(temp_res, [zero_32, one_32]))
-    temp_sign = builder.load(builder.gep(temp_res, [zero_32, zero_32]))
-    
+    temp_digits = builder.load(builder.gep(temp_res, [zero_32, BIGINT_DIGITS]))
+    temp_sign = builder.load(builder.gep(temp_res, [zero_32, BIGINT_SIGN]))
+
     # Free old R contents before overwriting
     free_bg = self.module.get_global('free_bigint')
     builder.call(free_bg, [r_ptr])
@@ -3078,45 +3112,44 @@ def define_bigint_mod(self):
 
     builder.ret(builder.load(r_ptr))
 def define_new_types(self):
-    # BIGINT: { sign: i1, digits: [u64] }
+    # BIGINT: { header: meteor.header, sign: i1, digits: [u64] }
+    from meteor.compiler.base import OBJECT_HEADER
+    header_struct = self.search_scopes(OBJECT_HEADER)
+
     bigint_struct = self.module.context.get_identified_type('bigint')
     bigint_struct.name = 'bigint'
     bigint_struct.type = CLASS
-    # We need to define dynamic array for u64 first if not exists, but for now we might just use void pointer or assume it exists
-    # reusing logic from create_array would be best, but for definitions we can just pointer to void or generic array
-    # Let's use the standard dynamic array struct we defined earlier i64.array but logically it stores u64
-    # Actually, builtins.py doesn't easily expose the generic array creation without an instance.
-    # Let's define it as having a pointer to a u64 array.
-    
+
     # Reusing i64.array for simplicity as the digit storage backend
-    digit_array_type = self.module.context.get_identified_type('i64.array') 
-    
-    bigint_struct.set_body(ir.IntType(1), digit_array_type.as_pointer())
+    digit_array_type = self.module.context.get_identified_type('i64.array')
+
+    # New layout with object header
+    bigint_struct.set_body(header_struct, ir.IntType(1), digit_array_type.as_pointer())
     self.define('bigint', bigint_struct)
     type_map[BIGINT] = bigint_struct
-    
-    # DECIMAL: { mantissa: bigint*, exponent: i64 }
+
+    # DECIMAL: { header: meteor.header, mantissa: bigint*, exponent: i64 }
     decimal_struct = self.module.context.get_identified_type('decimal')
     decimal_struct.name = 'decimal'
     decimal_struct.type = CLASS
-    decimal_struct.set_body(bigint_struct.as_pointer(), type_map[INT64])
+    decimal_struct.set_body(header_struct, bigint_struct.as_pointer(), type_map[INT64])
     self.define('decimal', decimal_struct)
     type_map[DECIMAL] = decimal_struct
-    
-    # DYNAMIC: { type_id: i32, data: i8* }
+
+    # DYNAMIC: { header: meteor.header, type_id: i32, data: i8* }
     dynamic_struct = self.module.context.get_identified_type('dynamic')
     dynamic_struct.name = 'dynamic'
     dynamic_struct.type = CLASS
-    dynamic_struct.set_body(ir.IntType(32), ir.IntType(8).as_pointer())
+    dynamic_struct.set_body(header_struct, ir.IntType(32), ir.IntType(8).as_pointer())
     self.define('dynamic', dynamic_struct)
     type_map[DYNAMIC] = dynamic_struct
 
-    # NUMBER: { type_tag: i8, data: i8* }
+    # NUMBER: { header: meteor.header, type_tag: i8, data: i8* }
     # 0=int, 1=float, 2=bigint, 3=decimal
     number_struct = self.module.context.get_identified_type('number')
     number_struct.name = 'number'
     number_struct.type = CLASS
-    number_struct.set_body(ir.IntType(8), ir.IntType(8).as_pointer())
+    number_struct.set_body(header_struct, ir.IntType(8), ir.IntType(8).as_pointer())
     self.define('number', number_struct)
     type_map[NUMBER] = number_struct
 
@@ -3207,9 +3240,9 @@ def define_decimal_neg(self):
     malloc_func = self.module.get_global('malloc')
 
     # Get mantissa and exponent from a
-    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_MANTISSA])
     a_mantissa_ptr = builder.load(a_mantissa_ptr_ptr)
-    a_exp_ptr = builder.gep(a_ptr, [zero_32, one_32])
+    a_exp_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_EXPONENT])
     a_exp = builder.load(a_exp_ptr)
 
     # Negate mantissa
@@ -3219,15 +3252,15 @@ def define_decimal_neg(self):
     res_ptr = builder.alloca(decimal_struct)
 
     # Store negated mantissa on heap
-    neg_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    neg_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 24)])
     neg_mantissa_ptr = builder.bitcast(neg_mantissa_mem, bigint_struct.as_pointer())
     builder.store(neg_mantissa, neg_mantissa_ptr)
 
-    res_mantissa_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    res_mantissa_ptr = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
     builder.store(neg_mantissa_ptr, res_mantissa_ptr)
 
     # Copy exponent
-    res_exp_ptr = builder.gep(res_ptr, [zero_32, one_32])
+    res_exp_ptr = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
     builder.store(a_exp, res_exp_ptr)
 
     builder.ret(builder.load(res_ptr))
@@ -3254,15 +3287,15 @@ def define_decimal_mul(self):
     malloc_func = self.module.get_global('malloc')
 
     # Get mantissa and exponent from a
-    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_MANTISSA])
     a_mantissa_ptr = builder.load(a_mantissa_ptr_ptr)
-    a_exp_ptr = builder.gep(a_ptr, [zero_32, one_32])
+    a_exp_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_EXPONENT])
     a_exp = builder.load(a_exp_ptr)
 
     # Get mantissa and exponent from b
-    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, zero_32])
+    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_MANTISSA])
     b_mantissa_ptr = builder.load(b_mantissa_ptr_ptr)
-    b_exp_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_exp_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_EXPONENT])
     b_exp = builder.load(b_exp_ptr)
 
     # Multiply mantissas
@@ -3279,11 +3312,11 @@ def define_decimal_mul(self):
     res_mantissa_ptr = builder.bitcast(res_mantissa_mem, bigint_struct.as_pointer())
     builder.store(res_mantissa, res_mantissa_ptr)
 
-    res_mantissa_slot = builder.gep(res_ptr, [zero_32, zero_32])
+    res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
     builder.store(res_mantissa_ptr, res_mantissa_slot)
 
     # Store result exponent
-    res_exp_slot = builder.gep(res_ptr, [zero_32, one_32])
+    res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
     builder.store(res_exp, res_exp_slot)
 
     builder.ret(builder.load(res_ptr))
@@ -3316,15 +3349,15 @@ def define_decimal_add(self):
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
     # Get mantissa and exponent from a
-    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_MANTISSA])
     a_mantissa_ptr = builder.load(a_mantissa_ptr_ptr)
-    a_exp_ptr = builder.gep(a_ptr, [zero_32, one_32])
+    a_exp_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_EXPONENT])
     a_exp = builder.load(a_exp_ptr)
 
     # Get mantissa and exponent from b
-    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, zero_32])
+    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_MANTISSA])
     b_mantissa_ptr = builder.load(b_mantissa_ptr_ptr)
-    b_exp_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_exp_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_EXPONENT])
     b_exp = builder.load(b_exp_ptr)
 
     # Compare exponents
@@ -3359,9 +3392,9 @@ def define_decimal_add(self):
     ten_digits = builder.bitcast(ten_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [ten_digits])
     builder.call(append_func, [ten_digits, ir.Constant(type_map[INT64], 10)])
-    ten_sign_ptr = builder.gep(ten_bigint_ptr, [zero_32, zero_32])
+    ten_sign_ptr = builder.gep(ten_bigint_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), ten_sign_ptr)
-    ten_digits_ptr = builder.gep(ten_bigint_ptr, [zero_32, one_32])
+    ten_digits_ptr = builder.gep(ten_bigint_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(ten_digits, ten_digits_ptr)
 
     # Multiply b by 10^diff using loop
@@ -3413,9 +3446,9 @@ def define_decimal_add(self):
     ten_digits2 = builder.bitcast(ten_digits_mem2, u64_array_type.as_pointer())
     builder.call(init_func, [ten_digits2])
     builder.call(append_func, [ten_digits2, ir.Constant(type_map[INT64], 10)])
-    ten_sign_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, zero_32])
+    ten_sign_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), ten_sign_ptr2)
-    ten_digits_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, one_32])
+    ten_digits_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, BIGINT_DIGITS])
     builder.store(ten_digits2, ten_digits_ptr2)
 
     a_adj_ptr = builder.alloca(bigint_struct.as_pointer())
@@ -3467,10 +3500,10 @@ def define_decimal_add(self):
     builder.store(res_mantissa, res_mantissa_store)
 
     res_ptr = builder.alloca(decimal_struct)
-    res_mantissa_slot = builder.gep(res_ptr, [zero_32, zero_32])
+    res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
     builder.store(res_mantissa_store, res_mantissa_slot)
 
-    res_exp_slot = builder.gep(res_ptr, [zero_32, one_32])
+    res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
     builder.store(final_exp, res_exp_slot)
 
     builder.ret(builder.load(res_ptr))
@@ -3503,15 +3536,15 @@ def define_decimal_sub(self):
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
     # Get mantissa and exponent from a
-    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, zero_32])
+    a_mantissa_ptr_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_MANTISSA])
     a_mantissa_ptr = builder.load(a_mantissa_ptr_ptr)
-    a_exp_ptr = builder.gep(a_ptr, [zero_32, one_32])
+    a_exp_ptr = builder.gep(a_ptr, [zero_32, DECIMAL_EXPONENT])
     a_exp = builder.load(a_exp_ptr)
 
     # Get mantissa and exponent from b
-    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, zero_32])
+    b_mantissa_ptr_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_MANTISSA])
     b_mantissa_ptr = builder.load(b_mantissa_ptr_ptr)
-    b_exp_ptr = builder.gep(b_ptr, [zero_32, one_32])
+    b_exp_ptr = builder.gep(b_ptr, [zero_32, DECIMAL_EXPONENT])
     b_exp = builder.load(b_exp_ptr)
 
     # Compare exponents
@@ -3546,9 +3579,9 @@ def define_decimal_sub(self):
     ten_digits = builder.bitcast(ten_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [ten_digits])
     builder.call(append_func, [ten_digits, ir.Constant(type_map[INT64], 10)])
-    ten_sign_ptr = builder.gep(ten_bigint_ptr, [zero_32, zero_32])
+    ten_sign_ptr = builder.gep(ten_bigint_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), ten_sign_ptr)
-    ten_digits_ptr = builder.gep(ten_bigint_ptr, [zero_32, one_32])
+    ten_digits_ptr = builder.gep(ten_bigint_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(ten_digits, ten_digits_ptr)
 
     # Multiply b by 10^diff using loop
@@ -3601,9 +3634,9 @@ def define_decimal_sub(self):
     ten_digits2 = builder.bitcast(ten_digits_mem2, u64_array_type.as_pointer())
     builder.call(init_func, [ten_digits2])
     builder.call(append_func, [ten_digits2, ir.Constant(type_map[INT64], 10)])
-    ten_sign_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, zero_32])
+    ten_sign_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), ten_sign_ptr2)
-    ten_digits_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, one_32])
+    ten_digits_ptr2 = builder.gep(ten_bigint_ptr2, [zero_32, BIGINT_DIGITS])
     builder.store(ten_digits2, ten_digits_ptr2)
 
     # Multiply a by 10^diff using loop
@@ -3658,11 +3691,11 @@ def define_decimal_sub(self):
     # Allocate result decimal
     res_ptr = builder.alloca(decimal_struct)
 
-    res_mantissa_slot = builder.gep(res_ptr, [zero_32, zero_32])
+    res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
     builder.store(res_mantissa_store, res_mantissa_slot)
 
     # Store result exponent
-    res_exp_slot = builder.gep(res_ptr, [zero_32, one_32])
+    res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
     builder.store(final_exp, res_exp_slot)
 
     builder.ret(builder.load(res_ptr))
@@ -3688,10 +3721,10 @@ def define_number_to_decimal(self):
     append_func = self.module.get_global('i64.array.append')
     u64_array_type = self.module.context.get_identified_type('i64.array')
 
-    # Get tag and data
-    tag_ptr = builder.gep(num_ptr, [zero_32, zero_32])
+    # Get tag and data (Number: { header, type_tag, data })
+    tag_ptr = builder.gep(num_ptr, [zero_32, one_32])
     tag = builder.load(tag_ptr)
-    data_ptr_ptr = builder.gep(num_ptr, [zero_32, one_32])
+    data_ptr_ptr = builder.gep(num_ptr, [zero_32, two_32])  # data is at index 2
     data_ptr = builder.load(data_ptr_ptr)
 
     # Create basic blocks for switch
@@ -3733,15 +3766,15 @@ def define_number_to_decimal(self):
     builder.call(append_func, [u64_arr_int, abs_int])
 
     # Store sign and digits in bigint
-    sign_ptr_int = builder.gep(bigint_ptr_int, [zero_32, zero_32])
+    sign_ptr_int = builder.gep(bigint_ptr_int, [zero_32, BIGINT_SIGN])
     builder.store(is_neg_int, sign_ptr_int)
-    digits_ptr_int = builder.gep(bigint_ptr_int, [zero_32, one_32])
+    digits_ptr_int = builder.gep(bigint_ptr_int, [zero_32, BIGINT_DIGITS])
     builder.store(u64_arr_int, digits_ptr_int)
 
     # Store mantissa and exponent in decimal
-    mant_slot_int = builder.gep(dec_ptr_int, [zero_32, zero_32])
+    mant_slot_int = builder.gep(dec_ptr_int, [zero_32, DECIMAL_MANTISSA])
     builder.store(bigint_ptr_int, mant_slot_int)
-    exp_slot_int = builder.gep(dec_ptr_int, [zero_32, one_32])
+    exp_slot_int = builder.gep(dec_ptr_int, [zero_32, DECIMAL_EXPONENT])
     builder.store(ir.Constant(type_map[INT64], 0), exp_slot_int)
 
     builder.store(dec_ptr_int, result_ptr)
@@ -3772,14 +3805,14 @@ def define_number_to_decimal(self):
     abs_flt = builder.select(is_neg_flt, builder.neg(mant_i64), mant_i64)
     builder.call(append_func, [u64_arr_flt, abs_flt])
 
-    sign_ptr_flt = builder.gep(bigint_ptr_flt, [zero_32, zero_32])
+    sign_ptr_flt = builder.gep(bigint_ptr_flt, [zero_32, BIGINT_SIGN])
     builder.store(is_neg_flt, sign_ptr_flt)
-    digits_ptr_flt = builder.gep(bigint_ptr_flt, [zero_32, one_32])
+    digits_ptr_flt = builder.gep(bigint_ptr_flt, [zero_32, BIGINT_DIGITS])
     builder.store(u64_arr_flt, digits_ptr_flt)
 
-    mant_slot_flt = builder.gep(dec_ptr_flt, [zero_32, zero_32])
+    mant_slot_flt = builder.gep(dec_ptr_flt, [zero_32, DECIMAL_MANTISSA])
     builder.store(bigint_ptr_flt, mant_slot_flt)
-    exp_slot_flt = builder.gep(dec_ptr_flt, [zero_32, one_32])
+    exp_slot_flt = builder.gep(dec_ptr_flt, [zero_32, DECIMAL_EXPONENT])
     builder.store(ir.Constant(type_map[INT64], -6), exp_slot_flt)
 
     builder.store(dec_ptr_flt, result_ptr)
@@ -3792,9 +3825,9 @@ def define_number_to_decimal(self):
     dec_mem_big = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
     dec_ptr_big = builder.bitcast(dec_mem_big, decimal_struct.as_pointer())
 
-    mant_slot_big = builder.gep(dec_ptr_big, [zero_32, zero_32])
+    mant_slot_big = builder.gep(dec_ptr_big, [zero_32, DECIMAL_MANTISSA])
     builder.store(bigint_src, mant_slot_big)
-    exp_slot_big = builder.gep(dec_ptr_big, [zero_32, one_32])
+    exp_slot_big = builder.gep(dec_ptr_big, [zero_32, DECIMAL_EXPONENT])
     builder.store(ir.Constant(type_map[INT64], 0), exp_slot_big)
 
     builder.store(dec_ptr_big, result_ptr)
@@ -3829,10 +3862,10 @@ def define_print_dynamic(self):
         printf_type = ir.FunctionType(type_map[INT32], [type_map[INT8].as_pointer()], var_arg=True)
         printf = ir.Function(self.module, printf_type, 'printf')
 
-    # Get type_id and data
-    type_id_ptr = builder.gep(dyn_ptr, [zero_32, zero_32])
+    # Get type_id and data (Dynamic: { header, type_id, data })
+    type_id_ptr = builder.gep(dyn_ptr, [zero_32, one_32])
     type_id = builder.load(type_id_ptr)
-    data_ptr_ptr = builder.gep(dyn_ptr, [zero_32, one_32])
+    data_ptr_ptr = builder.gep(dyn_ptr, [zero_32, two_32])  # data is at index 2
     data_ptr = builder.load(data_ptr_ptr)
 
     # Create blocks for switch
@@ -3960,10 +3993,10 @@ def define_input(self):
     result_mem = builder.call(malloc, [struct_size])
     result = builder.bitcast(result_mem, str_struct_ptr)
 
-    # Get pointers to struct fields
-    size_ptr = builder.gep(result, [zero, zero_32], inbounds=True)
-    cap_ptr = builder.gep(result, [zero, one_32], inbounds=True)
-    data_ptr_ptr = builder.gep(result, [zero, two_32], inbounds=True)
+    # Get pointers to struct fields (Array: { header, size, capacity, data })
+    size_ptr = builder.gep(result, [zero, ARRAY_SIZE], inbounds=True)
+    cap_ptr = builder.gep(result, [zero, ARRAY_CAPACITY], inbounds=True)
+    data_ptr_ptr = builder.gep(result, [zero, ARRAY_DATA], inbounds=True)
 
     # Initialize: size=0, capacity=256, data=malloc(256*8)
     initial_cap = ir.Constant(type_map[INT], 256)
@@ -4028,9 +4061,9 @@ def define_number_func(self):
 
     str_ptr = func.args[0]
 
-    # Get size and data pointer
-    size_ptr = builder.gep(str_ptr, [zero, zero_32], inbounds=True)
-    data_ptr_ptr = builder.gep(str_ptr, [zero, two_32], inbounds=True)
+    # Get size and data pointer (Array: { header, size, capacity, data })
+    size_ptr = builder.gep(str_ptr, [zero, ARRAY_SIZE], inbounds=True)
+    data_ptr_ptr = builder.gep(str_ptr, [zero, ARRAY_DATA], inbounds=True)
     size = builder.load(size_ptr)
     data_ptr = builder.load(data_ptr_ptr)
 
@@ -4155,41 +4188,408 @@ def define_spawn_runtime(self):
     """Define spawn runtime function for creating threads.
     i64 meteor_spawn(void* func_ptr, void* arg)
     Returns thread handle.
+
+    Uses Windows CreateThread API on Windows, pthread_create on Unix.
     """
+    import sys
     i8_ptr = type_map[INT8].as_pointer()
 
-    # pthread_create declaration
-    pthread_t = type_map[INT64]
-    pthread_create_type = ir.FunctionType(
-        type_map[INT32],
-        [pthread_t.as_pointer(), i8_ptr, i8_ptr, i8_ptr]
-    )
-    try:
-        pthread_create = self.module.get_global('pthread_create')
-    except KeyError:
-        pthread_create = ir.Function(self.module, pthread_create_type, 'pthread_create')
+    if sys.platform == 'win32':
+        # Windows: CreateThread
+        # HANDLE CreateThread(LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD)
+        create_thread_type = ir.FunctionType(
+            i8_ptr,  # HANDLE (void*)
+            [i8_ptr, type_map[INT64], i8_ptr, i8_ptr, type_map[INT32], type_map[INT32].as_pointer()]
+        )
+        try:
+            create_thread = self.module.get_global('CreateThread')
+        except KeyError:
+            create_thread = ir.Function(self.module, create_thread_type, 'CreateThread')
 
-    # meteor_spawn wrapper
-    func_type = ir.FunctionType(type_map[INT64], [i8_ptr, i8_ptr])
-    func = ir.Function(self.module, func_type, 'meteor_spawn')
+        # meteor_spawn wrapper
+        func_type = ir.FunctionType(type_map[INT64], [i8_ptr, i8_ptr])
+        func = ir.Function(self.module, func_type, 'meteor_spawn')
+        func.linkage = 'internal'
+
+        entry = func.append_basic_block('entry')
+        builder = ir.IRBuilder(entry)
+
+        func_ptr = func.args[0]
+        arg_ptr = func.args[1]
+
+        # Call CreateThread(NULL, 0, func_ptr, arg_ptr, 0, NULL)
+        null_ptr = ir.Constant(i8_ptr, None)
+        zero_64 = ir.Constant(type_map[INT64], 0)
+        zero_32 = ir.Constant(type_map[INT32], 0)
+        null_dword_ptr = ir.Constant(type_map[INT32].as_pointer(), None)
+
+        handle = builder.call(create_thread, [null_ptr, zero_64, func_ptr, arg_ptr, zero_32, null_dword_ptr])
+        result = builder.ptrtoint(handle, type_map[INT64])
+        builder.ret(result)
+    else:
+        # Unix: pthread_create
+        pthread_t = type_map[INT64]
+        pthread_create_type = ir.FunctionType(
+            type_map[INT32],
+            [pthread_t.as_pointer(), i8_ptr, i8_ptr, i8_ptr]
+        )
+        try:
+            pthread_create = self.module.get_global('pthread_create')
+        except KeyError:
+            pthread_create = ir.Function(self.module, pthread_create_type, 'pthread_create')
+
+        # meteor_spawn wrapper
+        func_type = ir.FunctionType(type_map[INT64], [i8_ptr, i8_ptr])
+        func = ir.Function(self.module, func_type, 'meteor_spawn')
+        func.linkage = 'internal'
+
+        entry = func.append_basic_block('entry')
+        builder = ir.IRBuilder(entry)
+
+        func_ptr = func.args[0]
+        arg_ptr = func.args[1]
+
+        # Allocate thread handle
+        thread_handle = builder.alloca(type_map[INT64])
+
+        # Call pthread_create
+        null_ptr = ir.Constant(i8_ptr, None)
+        result = builder.call(pthread_create, [thread_handle, null_ptr, func_ptr, arg_ptr])
+
+        # Return thread handle
+        handle = builder.load(thread_handle)
+        builder.ret(handle)
+
+
+def define_channel_create(self):
+    """Create a new channel with circular buffer queue and synchronization.
+    meteor.channel* channel_create(i64 capacity)
+    """
+    channel_struct = self.search_scopes('meteor.channel')
+    channel_ptr = channel_struct.as_pointer()
+    i8_ptr = type_map[INT8].as_pointer()
+    i8_ptr_ptr = i8_ptr.as_pointer()
+
+    func_type = ir.FunctionType(channel_ptr, [type_map[INT64]])
+    func = ir.Function(self.module, func_type, 'channel_create')
     func.linkage = 'internal'
 
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
 
-    func_ptr = func.args[0]
-    arg_ptr = func.args[1]
-
-    # Allocate thread handle
-    thread_handle = builder.alloca(type_map[INT64])
-
-    # Call pthread_create
+    capacity = func.args[0]
+    malloc_func = self.module.get_global('malloc')
     null_ptr = ir.Constant(i8_ptr, None)
-    result = builder.call(pthread_create, [thread_handle, null_ptr, func_ptr, arg_ptr])
 
-    # Return thread handle
-    handle = builder.load(thread_handle)
-    builder.ret(handle)
+    # Declare pthread_mutex_init and pthread_cond_init
+    mutex_init_type = ir.FunctionType(type_map[INT32], [i8_ptr, i8_ptr])
+    cond_init_type = ir.FunctionType(type_map[INT32], [i8_ptr, i8_ptr])
+    try:
+        mutex_init = self.module.get_global('pthread_mutex_init')
+    except KeyError:
+        mutex_init = ir.Function(self.module, mutex_init_type, 'pthread_mutex_init')
+    try:
+        cond_init = self.module.get_global('pthread_cond_init')
+    except KeyError:
+        cond_init = ir.Function(self.module, cond_init_type, 'pthread_cond_init')
+
+    # Allocate channel struct
+    channel_size = ir.Constant(type_map[INT64], 80)
+    raw_mem = builder.call(malloc_func, [channel_size])
+    channel = builder.bitcast(raw_mem, channel_ptr)
+
+    # Allocate and init mutex (index 1) - pthread_mutex_t is ~40 bytes
+    mutex_size = ir.Constant(type_map[INT64], 48)
+    mutex_mem = builder.call(malloc_func, [mutex_size])
+    mutex_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 1)])
+    builder.store(mutex_mem, mutex_ptr)
+    builder.call(mutex_init, [mutex_mem, null_ptr])
+
+    # Allocate and init cond (index 2) - pthread_cond_t is ~48 bytes
+    cond_size = ir.Constant(type_map[INT64], 48)
+    cond_mem = builder.call(malloc_func, [cond_size])
+    cond_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 2)])
+    builder.store(cond_mem, cond_ptr)
+    builder.call(cond_init, [cond_mem, null_ptr])
+
+    # Allocate queue array (capacity * sizeof(void*))
+    ptr_size = ir.Constant(type_map[INT64], 8)
+    queue_size = builder.mul(capacity, ptr_size)
+    queue_mem = builder.call(malloc_func, [queue_size])
+    queue_ptr = builder.bitcast(queue_mem, i8_ptr_ptr)
+
+    # Store queue pointer (index 3)
+    queue_field = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 3)])
+    builder.store(queue_ptr, queue_field)
+
+    # Initialize capacity (index 4)
+    cap_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 4)])
+    builder.store(capacity, cap_ptr)
+
+    # Initialize head, tail, count to 0
+    head_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 5)])
+    builder.store(ir.Constant(type_map[INT64], 0), head_ptr)
+
+    tail_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 6)])
+    builder.store(ir.Constant(type_map[INT64], 0), tail_ptr)
+
+    count_ptr = builder.gep(channel, [zero_32, ir.Constant(type_map[INT32], 7)])
+    builder.store(ir.Constant(type_map[INT64], 0), count_ptr)
+
+    builder.ret(channel)
+
+
+def define_channel_send(self):
+    """Send a value to channel with mutex synchronization.
+    void channel_send(meteor.channel* ch, i8* value)
+
+    Thread-safe: locks mutex, stores value, signals cond, unlocks.
+    """
+    channel_struct = self.search_scopes('meteor.channel')
+    channel_ptr = channel_struct.as_pointer()
+    i8_ptr = type_map[INT8].as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [channel_ptr, i8_ptr])
+    func = ir.Function(self.module, func_type, 'channel_send')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+
+    ch = func.args[0]
+    value = func.args[1]
+
+    # Declare pthread functions
+    lock_type = ir.FunctionType(type_map[INT32], [i8_ptr])
+    signal_type = ir.FunctionType(type_map[INT32], [i8_ptr])
+    try:
+        mutex_lock = self.module.get_global('pthread_mutex_lock')
+    except KeyError:
+        mutex_lock = ir.Function(self.module, lock_type, 'pthread_mutex_lock')
+    try:
+        mutex_unlock = self.module.get_global('pthread_mutex_unlock')
+    except KeyError:
+        mutex_unlock = ir.Function(self.module, lock_type, 'pthread_mutex_unlock')
+    try:
+        cond_signal = self.module.get_global('pthread_cond_signal')
+    except KeyError:
+        cond_signal = ir.Function(self.module, signal_type, 'pthread_cond_signal')
+
+    # Load mutex pointer (index 1)
+    mutex_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 1)])
+    mutex = builder.load(mutex_ptr_ptr)
+
+    # Lock mutex
+    builder.call(mutex_lock, [mutex])
+
+    # Load queue, capacity, tail
+    queue_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 3)])
+    queue = builder.load(queue_ptr_ptr)
+    cap_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 4)])
+    capacity = builder.load(cap_ptr)
+    tail_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 6)])
+    tail = builder.load(tail_ptr)
+
+    # Store value at queue[tail]
+    slot_ptr = builder.gep(queue, [tail])
+    builder.store(value, slot_ptr)
+
+    # tail = (tail + 1) % capacity
+    tail_plus_one = builder.add(tail, ir.Constant(type_map[INT64], 1))
+    new_tail = builder.urem(tail_plus_one, capacity)
+    builder.store(new_tail, tail_ptr)
+
+    # count++
+    count_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 7)])
+    count = builder.load(count_ptr)
+    new_count = builder.add(count, ir.Constant(type_map[INT64], 1))
+    builder.store(new_count, count_ptr)
+
+    # Signal waiting receivers
+    cond_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 2)])
+    cond = builder.load(cond_ptr_ptr)
+    builder.call(cond_signal, [cond])
+
+    # Unlock mutex
+    builder.call(mutex_unlock, [mutex])
+
+    builder.ret_void()
+
+
+def define_channel_recv(self):
+    """Receive a value from channel with blocking wait.
+    i8* channel_recv(meteor.channel* ch)
+
+    Thread-safe: locks mutex, waits if empty, receives value, unlocks.
+    """
+    channel_struct = self.search_scopes('meteor.channel')
+    channel_ptr = channel_struct.as_pointer()
+    i8_ptr = type_map[INT8].as_pointer()
+
+    func_type = ir.FunctionType(i8_ptr, [channel_ptr])
+    func = ir.Function(self.module, func_type, 'channel_recv')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    wait_loop = func.append_basic_block('wait_loop')
+    recv_block = func.append_basic_block('recv')
+
+    builder = ir.IRBuilder(entry)
+    ch = func.args[0]
+
+    # Declare pthread functions
+    lock_type = ir.FunctionType(type_map[INT32], [i8_ptr])
+    wait_type = ir.FunctionType(type_map[INT32], [i8_ptr, i8_ptr])
+    try:
+        mutex_lock = self.module.get_global('pthread_mutex_lock')
+    except KeyError:
+        mutex_lock = ir.Function(self.module, lock_type, 'pthread_mutex_lock')
+    try:
+        mutex_unlock = self.module.get_global('pthread_mutex_unlock')
+    except KeyError:
+        mutex_unlock = ir.Function(self.module, lock_type, 'pthread_mutex_unlock')
+    try:
+        cond_wait = self.module.get_global('pthread_cond_wait')
+    except KeyError:
+        cond_wait = ir.Function(self.module, wait_type, 'pthread_cond_wait')
+
+    # Load mutex and cond pointers
+    mutex_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 1)])
+    mutex = builder.load(mutex_ptr_ptr)
+    cond_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 2)])
+    cond = builder.load(cond_ptr_ptr)
+
+    # Lock mutex
+    builder.call(mutex_lock, [mutex])
+    builder.branch(wait_loop)
+
+    # Wait loop: while count == 0, wait on cond
+    builder.position_at_end(wait_loop)
+    count_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 7)])
+    count = builder.load(count_ptr)
+    is_empty = builder.icmp_unsigned(EQUALS, count, ir.Constant(type_map[INT64], 0))
+
+    # Create a do_wait block for the cond_wait call
+    do_wait = func.append_basic_block('do_wait')
+    builder.cbranch(is_empty, do_wait, recv_block)
+
+    # do_wait: call cond_wait and loop back
+    builder.position_at_end(do_wait)
+    builder.call(cond_wait, [cond, mutex])
+    builder.branch(wait_loop)
+
+    # Recv block
+    builder.position_at_end(recv_block)
+
+    # Load queue, capacity, head
+    queue_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 3)])
+    queue = builder.load(queue_ptr_ptr)
+    cap_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 4)])
+    capacity = builder.load(cap_ptr)
+    head_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 5)])
+    head = builder.load(head_ptr)
+
+    # Load value from queue[head]
+    slot_ptr = builder.gep(queue, [head])
+    value = builder.load(slot_ptr)
+
+    # head = (head + 1) % capacity
+    head_plus_one = builder.add(head, ir.Constant(type_map[INT64], 1))
+    new_head = builder.urem(head_plus_one, capacity)
+    builder.store(new_head, head_ptr)
+
+    # count--
+    count2 = builder.load(count_ptr)
+    new_count = builder.sub(count2, ir.Constant(type_map[INT64], 1))
+    builder.store(new_count, count_ptr)
+
+    # Unlock mutex
+    builder.call(mutex_unlock, [mutex])
+
+    builder.ret(value)
+
+
+def define_channel_try_recv(self):
+    """Non-blocking receive from channel.
+    {i8*, i1} channel_try_recv(meteor.channel* ch)
+
+    Returns {value, success}. If channel empty, returns {null, false}.
+    """
+    channel_struct = self.search_scopes('meteor.channel')
+    channel_ptr = channel_struct.as_pointer()
+    i8_ptr = type_map[INT8].as_pointer()
+
+    # Return type: {i8*, i1}
+    result_type = ir.LiteralStructType([i8_ptr, type_map[BOOL]])
+
+    func_type = ir.FunctionType(result_type, [channel_ptr])
+    func = ir.Function(self.module, func_type, 'channel_try_recv')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    empty_block = func.append_basic_block('empty')
+    recv_block = func.append_basic_block('recv')
+
+    builder = ir.IRBuilder(entry)
+    ch = func.args[0]
+    null_ptr = ir.Constant(i8_ptr, None)
+
+    # Declare pthread functions
+    lock_type = ir.FunctionType(type_map[INT32], [i8_ptr])
+    try:
+        mutex_lock = self.module.get_global('pthread_mutex_lock')
+    except KeyError:
+        mutex_lock = ir.Function(self.module, lock_type, 'pthread_mutex_lock')
+    try:
+        mutex_unlock = self.module.get_global('pthread_mutex_unlock')
+    except KeyError:
+        mutex_unlock = ir.Function(self.module, lock_type, 'pthread_mutex_unlock')
+
+    # Load mutex
+    mutex_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 1)])
+    mutex = builder.load(mutex_ptr_ptr)
+
+    # Lock mutex
+    builder.call(mutex_lock, [mutex])
+
+    # Check if empty
+    count_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 7)])
+    count = builder.load(count_ptr)
+    is_empty = builder.icmp_unsigned(EQUALS, count, ir.Constant(type_map[INT64], 0))
+    builder.cbranch(is_empty, empty_block, recv_block)
+
+    # Empty: unlock and return {null, false}
+    builder.position_at_end(empty_block)
+    builder.call(mutex_unlock, [mutex])
+    empty_result = ir.Constant(result_type, [ir.Constant(i8_ptr, None),
+                                              ir.Constant(type_map[BOOL], 0)])
+    builder.ret(empty_result)
+
+    # Recv: get value
+    builder.position_at_end(recv_block)
+    queue_ptr_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 3)])
+    queue = builder.load(queue_ptr_ptr)
+    cap_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 4)])
+    capacity = builder.load(cap_ptr)
+    head_ptr = builder.gep(ch, [zero_32, ir.Constant(type_map[INT32], 5)])
+    head = builder.load(head_ptr)
+
+    slot_ptr = builder.gep(queue, [head])
+    value = builder.load(slot_ptr)
+
+    # Update head and count
+    head_plus_one = builder.add(head, ir.Constant(type_map[INT64], 1))
+    new_head = builder.urem(head_plus_one, capacity)
+    builder.store(new_head, head_ptr)
+
+    new_count = builder.sub(count, ir.Constant(type_map[INT64], 1))
+    builder.store(new_count, count_ptr)
+
+    # Unlock and return {value, true}
+    builder.call(mutex_unlock, [mutex])
+    result = builder.insert_value(ir.Constant(result_type, ir.Undefined), value, 0)
+    result = builder.insert_value(result, ir.Constant(type_map[BOOL], 1), 1)
+    builder.ret(result)
 
 
 def define_meteor_retain(self):
