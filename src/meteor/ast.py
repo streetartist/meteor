@@ -197,6 +197,29 @@ class Raise(AST):
         self.line_num = line_num
 
 
+class Import(AST):
+    """Import a Meteor module."""
+    def __init__(self, module_name, line_num):
+        self.module_name = module_name
+        self.line_num = line_num
+
+
+class CImport(AST):
+    """Import a C header file.
+
+    Example:
+        @link("m")
+        @include("/usr/local/include")
+        import c "math.h"
+    """
+    def __init__(self, header_file, link_libs, include_paths, line_num, namespace=None):
+        self.header_file = header_file      # e.g. "math.h"
+        self.link_libs = link_libs          # e.g. ["m"]
+        self.include_paths = include_paths  # e.g. ["/usr/local/include"]
+        self.namespace = namespace          # e.g. "math" (derived from header)
+        self.line_num = line_num
+
+
 class Spawn(AST):
     """Spawn a new thread to execute a function.
 

@@ -1,0 +1,7 @@
+# Test import c with multiple headers
+import c "stdlib.h"
+import c "math.h"
+
+# Test math functions
+print(sqrt(16.0))
+print(pow(2.0, 8.0))

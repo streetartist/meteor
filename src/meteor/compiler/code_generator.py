@@ -52,6 +52,7 @@ class CodeGenerator(NodeVisitor):
         self.anon_counter = 0
         self._entry_allocas = {}  # Cache for entry block allocas
         self.managed_vars_stack = [[]]  # Stack of managed variables per scope for RC cleanup
+        self.link_libs = []  # C libraries to link
 
         # llvm.initialize()
         llvm.initialize_native_target()
@@ -118,12 +119,11 @@ class CodeGenerator(NodeVisitor):
         self.func_decl(name, node.return_type, node.parameters, node.parameter_defaults, node.varargs, linkage)
 
     def funcdef(self, name, node, linkage=None, func_exists=False):
+        param_modes = getattr(node, 'param_modes', {})
         if func_exists:
             self.implement_func_body(name)
         else:
-            self.start_function(name, node.return_type, node.parameters, node.parameter_defaults, node.varargs, linkage)
-
-        param_modes = getattr(node, 'param_modes', {})
+            self.start_function(name, node.return_type, node.parameters, node.parameter_defaults, node.varargs, linkage, param_modes)
         for i, arg in enumerate(self.current_function.args):
             arg.name = list(node.parameters.keys())[i]
             mode = param_modes.get(arg.name, 'borrow')
@@ -134,10 +134,20 @@ class CodeGenerator(NodeVisitor):
                 # Escape mode: retain the argument (it may be stored in heap)
                 self.alloc_define_store(arg, arg.name, arg.type)
             elif mode == 'owned':
-                # Owned mode: caller transferred ownership, register for cleanup
-                self.alloc_define_store(arg, arg.name, arg.type)
+                # Owned mode: caller transferred ownership
+                # Don't retain (ownership already transferred), but register for cleanup
+                var_addr = self.builder.alloca(arg.type, name=arg.name)
+                self.define(arg.name, var_addr)
+                self.builder.store(arg, var_addr)
+                # Register for cleanup at function end (will release)
+                if self.is_managed_type(arg.type):
+                    self.register_managed_var(arg.name, var_addr)
+            elif mode == 'ref':
+                # Ref mode: arg is already a pointer to the variable (Object**)
+                # Define directly without allocating - allows modifying caller's variable
+                self.define(arg.name, arg)
             else:
-                # Borrow/ref mode: simple alloc, no RC
+                # Borrow mode: simple alloc, no RC
                 self.alloc_define_store_simple(arg, arg.name, arg.type)
         if self.current_function.function_type.return_type != type_map[VOID]:
             self.alloc_and_define(RET_VAR, self.current_function.function_type.return_type)
@@ -198,7 +208,18 @@ class CodeGenerator(NodeVisitor):
             error("No method as described")
 
     def visit_methodcall(self, node):
+        # Check if this is a C namespace call (e.g., math.cos)
         obj = self.search_scopes(node.obj)
+        if obj is None:
+            # obj might be a C namespace - try to find the function directly
+            func_name = node.name
+            if func_name in self.module.globals:
+                # Call the C function directly
+                args = [self.visit(arg) for arg in node.arguments]
+                return self.call(func_name, args)
+            else:
+                error("Unknown namespace or variable: {}".format(node.obj))
+
         # Handle _TypedPointerType which doesn't have 'name' attribute
         pointee = obj.type.pointee
         if hasattr(pointee, 'name'):
@@ -286,7 +307,25 @@ class CodeGenerator(NodeVisitor):
                 arg = self.visit(node.arguments[0])
                 return self.call('str_to_int', [arg])
 
+        # Handle freeze() builtin - convert object to frozen (immutable)
+        if node.name == 'freeze':
+            if len(node.arguments) == 1:
+                arg = self.visit(node.arguments[0])
+                # If arg is a value (not pointer), we need to get its address
+                if isinstance(arg.type, ir.PointerType):
+                    obj_ptr = arg
+                else:
+                    # Store to temp and get pointer
+                    tmp = self.builder.alloca(arg.type, name="freeze_tmp")
+                    self.builder.store(arg, tmp)
+                    obj_ptr = tmp
+                # Get object header and call meteor_freeze
+                header = self.get_object_header(obj_ptr)
+                self.call('meteor_freeze', [header])
+                return arg  # Return same object (now frozen)
+
         func_type = self.search_scopes(node.name)
+        func_symbol = func_type  # Save original for param_modes lookup
         isFunc = False
         if isinstance(func_type, ir.AllocaInstr):
             name = self.load(func_type)
@@ -302,7 +341,13 @@ class CodeGenerator(NodeVisitor):
                 return self.class_assign(node)
             error("Unexpected Identified Struct Type")
         else:
+            # Try to get function from module (for C stdlib functions)
             name = node.name
+            llvm_func = self.module.get_global(name)
+            if llvm_func and isinstance(llvm_func, ir.Function):
+                func_type = llvm_func.type.pointee
+            else:
+                error("Function not found: {}".format(name))
 
         if len(node.arguments) < len(func_type.args):
             args = []
@@ -336,7 +381,17 @@ class CodeGenerator(NodeVisitor):
             raise SyntaxError('Unexpected arguments')
         else:
             args = []
+            param_names = list(func_type.parameters.keys()) if hasattr(func_type, 'parameters') else []
+            param_modes = getattr(func_type, 'param_modes', {})
             for i, arg in enumerate(node.arguments):
+                # Check if this is a ref parameter - pass address instead of value
+                if i < len(param_names) and param_modes.get(param_names[i]) == 'ref':
+                    # For ref mode, pass the address of the variable
+                    if hasattr(arg, 'value'):
+                        var_ptr = self.search_scopes(arg.value)
+                        if var_ptr:
+                            args.append(var_ptr)
+                            continue
                 args.append(self.comp_cast(self.visit(arg), func_type.args[i], node))
 
         if isFunc:
@@ -345,7 +400,8 @@ class CodeGenerator(NodeVisitor):
         result = self.call(name, args)
 
         # Move semantics: null out owned arguments after call
-        if hasattr(func_type, 'param_modes'):
+        # param_modes is stored in func_type (ir.FunctionType), not func_symbol (ir.Function)
+        if hasattr(func_type, 'param_modes') and func_type.param_modes:
             param_names = list(func_type.parameters.keys()) if hasattr(func_type, 'parameters') else []
             for i, arg_node in enumerate(node.arguments):
                 if i < len(param_names):
@@ -359,6 +415,16 @@ class CodeGenerator(NodeVisitor):
                                 self.builder.store(null_val, var_ptr)
 
         return result
+
+    def visit_import(self, node):
+        """Handle regular import statement."""
+        pass  # TODO: implement module import
+
+    def visit_cimport(self, node):
+        """Handle C header import using libclang."""
+        # Store link libraries for later use in evaluate/compile
+        self.link_libs.extend(node.link_libs)
+        self.parse_c_header(node.header_file, node.link_libs, node.include_paths, node.namespace)
 
     def visit_spawn(self, node):
         """Generate code for spawn statement.
@@ -686,7 +752,10 @@ class CodeGenerator(NodeVisitor):
         
         # 2. Generate Landing Pad (Catch Dispatcher)
         self.position_at_end(try_landing)
-        
+
+        # RFC-001: Unwind safety - release all active managed variables
+        self.release_scope_variables()
+
         # Load exception from local storage
         current_error = self.builder.load(exception_store)
         
@@ -1626,10 +1695,10 @@ class CodeGenerator(NodeVisitor):
                                     self.call('i64.array.append', [u64_array_ptr, self.const(digit)])
                                     abs_val //= BASE
                             
-                            sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                            sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                             self.builder.store(ir.Constant(type_map[BOOL], is_negative), sign_ptr)
-                            
-                            digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+
+                            digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                             self.builder.store(u64_array_ptr, digits_ptr)
                         else:
                             # Check if RHS is already a bigint
@@ -2237,11 +2306,17 @@ class CodeGenerator(NodeVisitor):
         result = self.call('input_line', [])
         return result
 
-    def get_args(self, parameters):
+    def get_args(self, parameters, param_modes=None):
         args = []
         if parameters is None:
             return args
-        for param in parameters.values():
+        if param_modes is None:
+            param_modes = {}
+        param_names = list(parameters.keys())
+        for idx, param in enumerate(parameters.values()):
+            param_name = param_names[idx] if idx < len(param_names) else None
+            is_ref = param_modes.get(param_name) == 'ref'
+
             if param.value == FUNC:
                 if param.func_ret_type.value in type_map:
                     func_ret_type = type_map[param.func_ret_type.value]
@@ -2257,13 +2332,21 @@ class CodeGenerator(NodeVisitor):
                 args.append(typ)
             else:
                 if param.value in type_map:
-                    args.append(type_map[param.value])
+                    typ = type_map[param.value]
+                    # For ref mode, wrap in pointer
+                    if is_ref:
+                        args.append(typ.as_pointer())
+                    else:
+                        args.append(typ)
                 elif list(parameters.keys())[list(parameters.values()).index(param)] == SELF:
                     args.append(self.search_scopes(param.value).as_pointer())
                 elif self.search_scopes(param.value) is not None:
                     # Check if it's a class or enum type - these are passed by pointer
                     typ = self.search_scopes(param.value)
                     if hasattr(typ, 'type') and typ.type in (CLASS, ENUM):
+                        args.append(typ.as_pointer())
+                    elif is_ref:
+                        # For ref mode, wrap in pointer
                         args.append(typ.as_pointer())
                     else:
                         args.append(typ)
@@ -2312,13 +2395,15 @@ class CodeGenerator(NodeVisitor):
 
         return typ
 
-    def func_decl(self, name, return_type, parameters, parameter_defaults=None, varargs=None, linkage=None):
+    def func_decl(self, name, return_type, parameters, parameter_defaults=None, varargs=None, linkage=None, param_modes=None):
         ret_type = self.get_type(return_type)
-        args = self.get_args(parameters)
+        args = self.get_args(parameters, param_modes)
         func_type = ir.FunctionType(ret_type, args, varargs)
         func_type.parameters = parameters
         if parameter_defaults:
             func_type.parameter_defaults = parameter_defaults
+        if param_modes:
+            func_type.param_modes = param_modes
         func = ir.Function(self.module, func_type, name)
         func.linkage = linkage
         self.define(name, func, 1)
@@ -2337,17 +2422,19 @@ class CodeGenerator(NodeVisitor):
         self.exit_blocks.append(self.add_block('exit'))
         self.position_at_end(entry)
 
-    def start_function(self, name, return_type, parameters, parameter_defaults=None, varargs=None, linkage=None):
+    def start_function(self, name, return_type, parameters, parameter_defaults=None, varargs=None, linkage=None, param_modes=None):
         self.function_stack.append(self.current_function)
         self.block_stack.append(self.builder.block)
         self.new_scope()
         self.defer_stack.append([])
         ret_type = self.get_type(return_type)
-        args = self.get_args(parameters)
+        args = self.get_args(parameters, param_modes)
         func_type = ir.FunctionType(ret_type, args, varargs)
         func_type.parameters = parameters
         if parameter_defaults:
             func_type.parameter_defaults = parameter_defaults
+        if param_modes:
+            func_type.param_modes = param_modes
 
         func = ir.Function(self.module, func_type, name)
         func.linkage = linkage
@@ -2721,8 +2808,28 @@ class CodeGenerator(NodeVisitor):
 
     def load(self, name):
         if isinstance(name, str):
-            return self.builder.load(self.search_scopes(name))
-        return self.builder.load(name)
+            ptr = self.search_scopes(name)
+        else:
+            ptr = name
+
+        val = self.builder.load(ptr)
+
+        # RFC-001: Runtime NULL Check for Use-After-Move detection
+        # Only check pointer types that could have been moved
+        if isinstance(val.type, ir.PointerType):
+            null_ptr = ir.Constant(val.type, None)
+            is_null = self.builder.icmp_unsigned('==', val, null_ptr)
+
+            with self.builder.if_then(is_null):
+                # Print error message before abort
+                self.print_string("Error: Use-After-Move detected!", newline=True)
+                # Call abort
+                abort_func = self.module.get_global('abort')
+                if abort_func:
+                    self.builder.call(abort_func, [])
+                self.builder.unreachable()
+
+        return val
 
     def call(self, name, args):
         if isinstance(name, str):
@@ -2731,7 +2838,29 @@ class CodeGenerator(NodeVisitor):
             func = self.module.get_global(name.name)
         if func is None:
             raise TypeError('Calling non existant function')
-        return self.builder.call(func, args)
+
+        # Convert argument types to match function signature
+        converted_args = []
+        func_arg_types = func.function_type.args
+        for i, arg in enumerate(args):
+            if i < len(func_arg_types):
+                expected_type = func_arg_types[i]
+                if arg.type != expected_type:
+                    # Integer type conversion
+                    if isinstance(arg.type, ir.IntType) and isinstance(expected_type, ir.IntType):
+                        if arg.type.width > expected_type.width:
+                            arg = self.builder.trunc(arg, expected_type)
+                        else:
+                            arg = self.builder.sext(arg, expected_type)
+                    # Float/Double conversion
+                    elif isinstance(arg.type, (ir.FloatType, ir.DoubleType)) and isinstance(expected_type, (ir.FloatType, ir.DoubleType)):
+                        if isinstance(arg.type, ir.FloatType) and isinstance(expected_type, ir.DoubleType):
+                            arg = self.builder.fpext(arg, expected_type)
+                        elif isinstance(arg.type, ir.DoubleType) and isinstance(expected_type, ir.FloatType):
+                            arg = self.builder.fptrunc(arg, expected_type)
+            converted_args.append(arg)
+
+        return self.builder.call(func, converted_args)
 
     def gep(self, ptr, indices, inbounds=False, name=''):
         return self.builder.gep(ptr, indices, inbounds, name)
@@ -2778,6 +2907,207 @@ class CodeGenerator(NodeVisitor):
         buf[:-1] = string.encode('utf-8')
         return ir.Constant(ir.ArrayType(type_map[INT8], n), buf)
 
+    def parse_c_header(self, header_file, link_libs=None, include_paths=None, namespace=None):
+        """Parse C header file and register functions.
+
+        Uses libclang if available, otherwise falls back to predefined mappings.
+        """
+        if link_libs is None:
+            link_libs = []
+        if include_paths is None:
+            include_paths = []
+
+        # Store namespace for later use
+        self._c_namespace = namespace
+
+        # Try to use libclang for parsing
+        try:
+            self._parse_c_header_clang(header_file, include_paths, namespace)
+        except (ImportError, Exception) as e:
+            # Fallback to predefined header mappings if libclang unavailable
+            self._parse_c_header_fallback(header_file)
+
+    def _parse_c_header_clang(self, header_file, include_paths=None, namespace=None):
+        """Parse C header using libclang."""
+        import clang.cindex
+        # Try common libclang paths on Windows
+        import os
+        if os.name == 'nt':
+            libclang_paths = [
+                r"D:\Program Files\LLVM\bin\libclang.dll",
+                r"C:\Program Files\LLVM\bin\libclang.dll",
+                r"C:\Program Files (x86)\LLVM\bin\libclang.dll",
+            ]
+            for path in libclang_paths:
+                if os.path.exists(path):
+                    clang.cindex.Config.set_library_file(path)
+                    break
+        from clang.cindex import Index, CursorKind
+
+        if include_paths is None:
+            include_paths = []
+
+        # Build clang args
+        args = ['-x', 'c']
+        for path in include_paths:
+            args.append('-I' + path)
+
+        index = Index.create()
+        # Create virtual source file with #include
+        code = '#include <{}>'.format(header_file)
+        tu = index.parse('temp.c', args=args, unsaved_files=[('temp.c', code)])
+
+        for cursor in tu.cursor.get_children():
+            if cursor.kind == CursorKind.FUNCTION_DECL:
+                self._register_c_function(cursor, namespace)
+
+    def _register_c_function(self, cursor, namespace=None):
+        """Register a C function from clang cursor."""
+        from clang.cindex import TypeKind
+
+        name = cursor.spelling
+        ret_type = self._clang_type_to_llvm(cursor.result_type)
+        arg_types = [self._clang_type_to_llvm(arg.type) for arg in cursor.get_arguments()]
+
+        func_type = ir.FunctionType(ret_type, arg_types)
+        if name not in self.module.globals:
+            ir.Function(self.module, func_type, name)
+
+    def _clang_type_to_llvm(self, clang_type):
+        """Convert clang type to LLVM type."""
+        from clang.cindex import TypeKind
+
+        kind = clang_type.kind
+        if kind == TypeKind.VOID:
+            return type_map[VOID]
+        elif kind == TypeKind.INT:
+            return type_map[INT32]
+        elif kind == TypeKind.LONG:
+            return type_map[INT]
+        elif kind == TypeKind.DOUBLE:
+            return type_map[DOUBLE]
+        elif kind == TypeKind.FLOAT:
+            return type_map[FLOAT]
+        elif kind == TypeKind.POINTER:
+            return type_map[INT8].as_pointer()
+        else:
+            return type_map[INT]  # Default fallback
+
+    def _parse_c_header_fallback(self, header_file):
+        """Fallback: use predefined C header mappings."""
+        # Common C headers and their functions
+        c_headers = {
+            'math.h': self._define_math_h,
+            'stdio.h': self._define_stdio_h,
+            'stdlib.h': self._define_stdlib_h,
+            'string.h': self._define_string_h,
+            'time.h': self._define_time_h,
+        }
+
+        # Extract base name from header path
+        import os
+        base_name = os.path.basename(header_file)
+
+        if base_name in c_headers:
+            c_headers[base_name]()
+
+    def _define_math_h(self):
+        """Define math.h functions."""
+        double_ty = type_map[DOUBLE]
+
+        # Single-argument double functions
+        single_arg_funcs = ['cos', 'sin', 'tan', 'acos', 'asin', 'atan',
+                           'cosh', 'sinh', 'tanh', 'exp', 'log', 'log10',
+                           'log2', 'sqrt', 'cbrt', 'ceil', 'floor', 'round',
+                           'trunc', 'fabs']
+        for func_name in single_arg_funcs:
+            if func_name not in self.module.globals:
+                func_ty = ir.FunctionType(double_ty, [double_ty])
+                ir.Function(self.module, func_ty, func_name)
+
+        # Two-argument double functions
+        if 'pow' not in self.module.globals:
+            func_ty = ir.FunctionType(double_ty, [double_ty, double_ty])
+            ir.Function(self.module, func_ty, 'pow')
+
+        if 'atan2' not in self.module.globals:
+            func_ty = ir.FunctionType(double_ty, [double_ty, double_ty])
+            ir.Function(self.module, func_ty, 'atan2')
+
+        # abs for integers
+        int_ty = type_map[INT32]
+        if 'abs' not in self.module.globals:
+            func_ty = ir.FunctionType(int_ty, [int_ty])
+            ir.Function(self.module, func_ty, 'abs')
+
+    def _define_stdio_h(self):
+        """Define stdio.h functions."""
+        int_ty = type_map[INT32]
+        char_ptr = type_map[INT8].as_pointer()
+
+        # printf(const char* format, ...) -> int
+        if 'printf' not in self.module.globals:
+            func_ty = ir.FunctionType(int_ty, [char_ptr], var_arg=True)
+            ir.Function(self.module, func_ty, 'printf')
+
+        # puts(const char* s) -> int
+        if 'puts' not in self.module.globals:
+            func_ty = ir.FunctionType(int_ty, [char_ptr])
+            ir.Function(self.module, func_ty, 'puts')
+
+    def _define_stdlib_h(self):
+        """Define stdlib.h functions."""
+        int_ty = type_map[INT32]
+        long_ty = type_map[INT]
+        void_ty = type_map[VOID]
+        void_ptr = type_map[INT8].as_pointer()
+
+        # malloc(size_t size) -> void*
+        if 'malloc' not in self.module.globals:
+            func_ty = ir.FunctionType(void_ptr, [long_ty])
+            ir.Function(self.module, func_ty, 'malloc')
+
+        # free(void* ptr)
+        if 'free' not in self.module.globals:
+            func_ty = ir.FunctionType(void_ty, [void_ptr])
+            ir.Function(self.module, func_ty, 'free')
+
+        # atoi(const char* str) -> int
+        if 'atoi' not in self.module.globals:
+            func_ty = ir.FunctionType(int_ty, [type_map[INT8].as_pointer()])
+            ir.Function(self.module, func_ty, 'atoi')
+
+    def _define_string_h(self):
+        """Define string.h functions."""
+        long_ty = type_map[INT]
+        int_ty = type_map[INT32]
+        char_ptr = type_map[INT8].as_pointer()
+
+        # strlen(const char* s) -> size_t
+        if 'strlen' not in self.module.globals:
+            func_ty = ir.FunctionType(long_ty, [char_ptr])
+            ir.Function(self.module, func_ty, 'strlen')
+
+        # strcmp(const char* s1, const char* s2) -> int
+        if 'strcmp' not in self.module.globals:
+            func_ty = ir.FunctionType(int_ty, [char_ptr, char_ptr])
+            ir.Function(self.module, func_ty, 'strcmp')
+
+        # strcpy(char* dest, const char* src) -> char*
+        if 'strcpy' not in self.module.globals:
+            func_ty = ir.FunctionType(char_ptr, [char_ptr, char_ptr])
+            ir.Function(self.module, func_ty, 'strcpy')
+
+    def _define_time_h(self):
+        """Define time.h functions."""
+        long_ty = type_map[INT]
+        void_ptr = type_map[INT8].as_pointer()
+
+        # time(time_t* t) -> time_t
+        if 'time' not in self.module.globals:
+            func_ty = ir.FunctionType(long_ty, [void_ptr])
+            ir.Function(self.module, func_ty, 'time')
+
     def generate_code(self, node):
         return self.visit(node)
 
@@ -2802,6 +3132,22 @@ class CodeGenerator(NodeVisitor):
             for func in self.module.functions:
                 if func.name == "main":
                     print(func)
+
+        # Load custom C libraries for JIT
+        self._loaded_libs = []
+        for lib_path in self.link_libs:
+            try:
+                # Handle both full paths and library names
+                if os.path.exists(lib_path + '.dll'):
+                    lib = ctypes.CDLL(lib_path + '.dll')
+                elif os.path.exists(lib_path):
+                    lib = ctypes.CDLL(lib_path)
+                else:
+                    # Try as system library
+                    lib = ctypes.CDLL(lib_path)
+                self._loaded_libs.append(lib)
+            except OSError as e:
+                print(f"Warning: Could not load library {lib_path}: {e}")
 
         # Provide mi_version symbol for JIT mode (returns dummy value)
         def dummy_mi_version():

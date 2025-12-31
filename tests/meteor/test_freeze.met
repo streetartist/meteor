@@ -1,0 +1,5 @@
+# Test freeze() function
+
+a: bigint = 100
+frz: bigint = freeze(a)
+print(frz)

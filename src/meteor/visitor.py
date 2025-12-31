@@ -144,10 +144,11 @@ class CollectionSymbol(Symbol):
 
 
 class FuncSymbol(Symbol):
-    def __init__(self, name, return_type, parameters, body, parameter_defaults={}):
+    def __init__(self, name, return_type, parameters, body, parameter_defaults={}, param_modes={}):
         super().__init__(name, return_type)
         self.parameters = parameters
         self.parameter_defaults = parameter_defaults
+        self.param_modes = param_modes  # RFC-001: Track parameter modes (borrow/escape/owned/ref)
         self.body = body
         self.accessed = False
         self.val_assigned = True

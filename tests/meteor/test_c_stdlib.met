@@ -1,0 +1,8 @@
+# Test calling C standard library functions directly (no extern needed)
+
+x: double = 3.14159
+print(cos(x))
+print(sin(x))
+print(sqrt(2.0))
+print(pow(2.0, 10.0))
+print(log(2.718281828))

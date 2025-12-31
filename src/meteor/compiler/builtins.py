@@ -551,6 +551,47 @@ def define_print_bigint(self):
     digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, BIGINT_DIGITS])
     digits_array = builder.load(digits_ptr_ptr)
 
+    # RFC-001: NULL check for Use-After-Move detection
+    null_ptr = ir.Constant(digits_array.type, None)
+    is_null = builder.icmp_unsigned('==', digits_array, null_ptr)
+
+    null_block = func.append_basic_block('null_error')
+    valid_block = func.append_basic_block('valid')
+    builder.cbranch(is_null, null_block, valid_block)
+
+    # NULL block: print error and exit
+    builder.position_at_end(null_block)
+    # Declare fprintf/stderr for error output
+    fprintf = self.module.globals.get('fprintf')
+    if not fprintf:
+        fprintf_type = ir.FunctionType(type_map[INT32], [type_map[INT8].as_pointer(), type_map[INT8].as_pointer()], var_arg=True)
+        fprintf = ir.Function(self.module, fprintf_type, 'fprintf')
+    stderr_ptr = self.module.globals.get('__stderrp') or self.module.globals.get('stderr')
+
+    # Use printf as fallback
+    printf_fallback = self.module.globals.get('printf')
+    if not printf_fallback:
+        printf_type = ir.FunctionType(type_map[INT32], [type_map[INT8].as_pointer()], var_arg=True)
+        printf_fallback = ir.Function(self.module, printf_type, 'printf')
+
+    err_msg = "Error: Use-After-Move - accessing moved variable!\n\0"
+    err_str = ir.GlobalVariable(self.module, ir.ArrayType(type_map[INT8], len(err_msg)), name="uam_err_msg")
+    if not err_str.initializer:
+        err_str.initializer = ir.Constant(ir.ArrayType(type_map[INT8], len(err_msg)), bytearray(err_msg.encode('utf-8')))
+        err_str.global_constant = True
+    builder.call(printf_fallback, [builder.bitcast(err_str, type_map[INT8].as_pointer())])
+
+    # Call exit(1)
+    exit_func = self.module.globals.get('exit')
+    if not exit_func:
+        exit_type = ir.FunctionType(type_map[VOID], [type_map[INT32]])
+        exit_func = ir.Function(self.module, exit_type, 'exit')
+    builder.call(exit_func, [ir.Constant(type_map[INT32], 1)])
+    builder.unreachable()
+
+    # Continue with valid block
+    builder.position_at_end(valid_block)
+
     # Declare printf if not exists
     printf = self.module.globals.get('printf')
     if not printf:

@@ -10,7 +10,8 @@
       "Bash(timeout 30 python -m pytest:*)",
       "Bash(set PYTHONPATH=src:*)",
       "Bash(set:*)",
-      "Bash(timeout 3 python:*)"
+      "Bash(timeout 3 python:*)",
+      "Bash(dir:*)"
     ]
   }
 }

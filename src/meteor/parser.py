@@ -630,7 +630,10 @@ class Parser(object):
         # Skip newlines iteratively to avoid recursion depth issues
         while self.current_token.type == NEWLINE:
             self.next_token()
-            
+
+        # Collect decorators (@link, @include)
+        decorators = self.collect_decorators()
+
         node = None
         if self.current_token.value == IF:
             node = self.if_statement()
@@ -683,7 +686,7 @@ class Parser(object):
             elif self.current_token.value == ENUM:
                 node = self.enum_declaration()
         elif self.current_token.value == IMPORT:
-            node = self.import_statement()
+            node = self.import_statement(decorators)
         elif self.current_token.value == FROM:
             node = self.from_import_statement()
         elif self.current_token.value == TRAIT:
@@ -1066,6 +1069,84 @@ class Parser(object):
             self.eat_value(QUESTION)
             node = ErrorPropagation(node, self.line_num)
         return node
+
+    def collect_decorators(self):
+        """Collect @link and @include decorators before import statement."""
+        decorators = {'link': [], 'include': []}
+
+        while self.current_token.value == DECORATOR:
+            self.next_token()  # consume '@'
+
+            if self.current_token.type != NAME:
+                break
+
+            decorator_name = self.current_token.value
+            self.next_token()
+
+            # Parse decorator argument: @link("m") or @include("/path")
+            if self.current_token.value == LPAREN:
+                self.next_token()  # consume '('
+                if self.current_token.type == STRING:
+                    arg_value = self.current_token.value
+                    self.next_token()
+                    if decorator_name == 'link':
+                        decorators['link'].append(arg_value)
+                    elif decorator_name == 'include':
+                        decorators['include'].append(arg_value)
+                if self.current_token.value == RPAREN:
+                    self.next_token()  # consume ')'
+
+            # Skip newlines after decorator
+            while self.current_token.type == NEWLINE:
+                self.next_token()
+
+        return decorators
+
+    def import_statement(self, decorators=None):
+        """Parse import statement.
+
+        Syntax:
+            import module_name
+            @link("m")
+            import c "math.h"
+        """
+        if decorators is None:
+            decorators = {}
+
+        self.eat_value(IMPORT)
+
+        # Check for 'import c "header.h"'
+        if self.current_token.type == NAME and self.current_token.value == 'c':
+            self.next_token()  # consume 'c'
+            if self.current_token.type != STRING:
+                error('file={} line={}: Expected header file string after "import c"'.format(
+                    self.file_name, self.line_num))
+            header_file = self.current_token.value
+            self.next_token()
+
+            # Extract link libs and include paths from decorators
+            link_libs = decorators.get('link', [])
+            include_paths = decorators.get('include', [])
+
+            # Derive namespace from header file (e.g., "math.h" -> "math")
+            import os
+            namespace = os.path.splitext(os.path.basename(header_file))[0]
+
+            return CImport(header_file, link_libs, include_paths, self.line_num, namespace)
+
+        # Regular import: import module_name
+        module_name = self.current_token.value
+        self.eat_type(NAME)
+        return Import(module_name, self.line_num)
+
+    def from_import_statement(self):
+        """Parse from...import statement."""
+        self.eat_value(FROM)
+        module_name = self.current_token.value
+        self.eat_type(NAME)
+        self.eat_value(IMPORT)
+        # For now, just return a simple Import
+        return Import(module_name, self.line_num)
 
     def parse(self) -> Program:
         node = self.program()

@@ -1,0 +1,14 @@
+# Test ref parameter mode
+
+def swap(ref a: bigint, ref b: bigint)
+    temp: bigint = a
+    a = b
+    b = temp
+
+x: bigint = 10
+y: bigint = 20
+print(x)
+print(y)
+swap(x, y)
+print(x)
+print(y)

@@ -1,0 +1,7 @@
+# Test namespace access
+@link("m")
+import c "math.h"
+
+x: double = 1.0
+print(math.cos(x))
+print(math.sin(x))

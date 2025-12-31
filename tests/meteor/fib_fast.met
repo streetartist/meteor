@@ -38,7 +38,7 @@ def fib_fast(n: int) -> bigint
 
     return a
 
-n: int = 10000000
+n: int = 1000000
 result: bigint = fib_fast(n)
 print("Fibonacci result:")
 print(result)

@@ -1,0 +1,10 @@
+# Test Use-After-Move detection
+# This should trigger runtime error
+
+def take_ownership(owned x: bigint) -> bigint
+    return x * 2
+
+a: bigint = 100
+result: bigint = take_ownership(a)
+a = 4
+print(a)  # Use-After-Move error expected

@@ -60,6 +60,8 @@ class Preprocessor(NodeVisitor):
         super().__init__()
         self.file_name = file_name
         self.return_flag = False
+        # RFC-001: Track moved variables for Use-After-Move detection
+        self.moved_vars = set()
 
     def check(self, node) -> BuiltinTypeSymbol:
         res = self.visit(node)
@@ -394,7 +396,7 @@ class Preprocessor(NodeVisitor):
         if func_type and func_type.name == FUNC:
             func_type.func = FuncSymbol(ANON, self.visit(node.return_type.func_ret_type), node.parameters, node.body, node.parameter_defaults)
 
-        self.define(func_name, FuncSymbol(func_name, func_type, node.parameters, node.body, node.parameter_defaults))
+        self.define(func_name, FuncSymbol(func_name, func_type, node.parameters, node.body, node.parameter_defaults, getattr(node, 'param_modes', {})))
         self.new_scope()
         if node.varargs:
             varargs_type = self.search_scopes(LIST)
@@ -429,7 +431,7 @@ class Preprocessor(NodeVisitor):
                     error('file={} line={}: The actual return type does not match the declared return type: {}'.format(self.file_name, node.line_num, func_name))
         elif func_type is not None:
             error('file={} line={}: No return value was specified for function: {}'.format(self.file_name, node.line_num, func_name))
-        func_symbol = FuncSymbol(func_name, func_type, node.parameters, node.body, node.parameter_defaults)
+        func_symbol = FuncSymbol(func_name, func_type, node.parameters, node.body, node.parameter_defaults, getattr(node, 'param_modes', {}))
         self.define(func_name, func_symbol, 1)
         self.drop_top_scope()
 
@@ -517,6 +519,14 @@ class Preprocessor(NodeVisitor):
     def visit_spawn(self, node):
         """Type check spawn statement - validates the function call inside."""
         return self.visit(node.func_call)
+
+    def visit_import(self, node):
+        """Handle regular import statement."""
+        pass  # TODO: implement module import
+
+    def visit_cimport(self, node):
+        """Handle C header import - functions registered at code generation."""
+        pass  # C functions are registered during code generation
 
     def visit_enumdeclaration(self, node):
         sym = EnumSymbol(node.name, node.fields)
