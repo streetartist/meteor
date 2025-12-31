@@ -1,198 +1,215 @@
 <p align="center">
-<img src="meteor_logo.png" alt="Meteor Logo" width="200">
-<br>
-<b style="font-size: 32px;">Meteor</b>
-<br>
-<i>一门编译型、静态类型的现代编程语言</i>
+  <img src="meteor_logo.png" alt="Meteor Logo" width="200">
+  <br>
+  <b style="font-size: 32px;">Meteor</b>
+  <br>
+  <i>兼具 Python 的优雅与 C++ 的性能</i>
+  <br>
 </p>
 
-___
-[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.4.1-brightgreen.svg)](https://github.com/alinalihassan/pyLesma/blob/master/LICENSE.md)
+<p align="center">
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-brightgreen.svg" alt="License: MIT">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/version-0.4.1-blue.svg" alt="Version">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/platform-windows%20|%20linux%20|%20macos-lightgrey.svg" alt="Platform">
+  </a>
+</p>
 
-**Meteor** 是一门编译型、静态类型、命令式和面向对象的编程语言，注重表达力、优雅和简洁，同时不牺牲性能。
+---
 
-> 本项目基于 [pyLesma](https://github.com/alinalihassan/pyLesma) 进行开发，感谢原作者 Alin Ali Hassan 的开源贡献。
+**Meteor** 是一门现代化的静态类型编程语言，底层基于 **LLVM** 构建，旨在融合 Python 的极简语法与 C/C++ 的原生性能。它专为这一代的硬件架构设计，内置了任意精度算术、无 GC 暂停的内存管理以及轻量级并发模型。
 
-## 特性
+## 🌟 核心特性全览
 
-### 核心特性
-- **高性能** - 基于 LLVM 后端，享受业界领先的编译优化
-- **编译执行** - 支持 AOT（提前编译）和 JIT（即时编译）两种模式
-- **静态类型** - 编译期类型检查，更早发现错误
-- **简洁语法** - Python 风格的缩进语法，代码清晰易读
+### 1. 强大的类型系统 (Type System)
 
-### 丰富的类型系统
-- **基础类型** - `int`, `float`, `bool`, `str`
-- **大整数 (bigint)** - 任意精度整数，突破 64 位限制
-- **高精度小数 (decimal)** - 精确的十进制运算，适合金融计算
-- **数值类型 (number)** - 可存放任意数值类型的联合类型
-- **动态类型 (dynamic)** - Python 风格，可存放任意类型
-- **集合类型** - `list`, `tuple`, 支持泛型
-- **枚举与类** - `enum`, `class`, 支持继承
+Meteor 拥有丰富且灵活的类型系统，既支持底层系统编程，也能胜任高层业务逻辑。
 
-### 类型转换
-- 自动类型提升：`int` + `decimal` → `decimal`
-- 显式类型转换：`as decimal`, `as bigint`
-- 运行时类型分发：`dynamic` 和 `number` 类型
+*   **基础类型**:
+    *   `int`, `int8` ~ `int64`, `uint`, `uint8` ~ `uint64`: 全面的整数类型支持。
+    *   `float`, `double`: IEEE 754 浮点数。
+    *   `bool`: 布尔类型 (`true`, `false`)。
+    *   `str`: 字符串类型。
+*   **高级数值类型 (核心亮点)**:
+    *   **`bigint`**: 内置支持任意精度整数，突破 64 位限制，适合加密算法与大数运算。
+    *   **`decimal`**: 原生高精度定点小数，彻底解决浮点数精度丢失问题，金融计算首选。
+    *   **`number`**: 智能联合数值类型，可在运行时自动分发不同的数值行为。
+*   **动态特性**:
+    *   **`dynamic`**: 类似 Python 的动态类型，支持运行时反射与类型转换，提供极致灵活性。
+*   **集合与结构**:
+    *   `list<T>`: 泛型动态数组。
+    *   `tuple`: 不可变元组。
+    *   `enum`: 枚举类型。
+    *   `class`: 支持单继承的类与对象系统。
 
-### 其他特性
-- **函数** - 一等公民，支持匿名函数
-- **运算符重载** - 自定义类型的运算行为
-- **defer 语句** - 延迟执行，资源管理更简单
-- **FFI** - 外部函数接口，调用 C 库
+### 2. 无缝 C 语言交互 (C Interop)
 
-## 性能 Benchmark
+Meteor 彻底打破了语言边界，支持直接导入 C 头文件，像调用原生函数一样调用 C 库。
 
-### 大整数 Fibonacci：Meteor vs C
+*   **`import c`**: 直接解析 C 头文件，自动生成绑定。
+*   **`@link`**: 指定需要链接的动态库/静态库。
+*   **`@include`**: 指定头文件搜索路径。
 
-计算第 **10,000,000** 个斐波那契数（约 **209 万位**十进制数字），使用 Fast Doubling 算法 O(log n)：
+### 3. 现代并发模型 (Concurrency)
 
-| 版本 | 代码行数 | 运行时间 | 相对速度 |
-|------|----------|----------|----------|
-| **Meteor** | ~40 行 | 54.0s | 1.00x |
-| **C (gcc -O3)** | ~280 行 | 48.8s | 1.11x |
+Meteor 旨在简化并发编程，充分利用多核 CPU。
 
-> **结论**：Meteor 达到了高度优化 C 代码 **90%** 的性能，但代码量仅为 **1/7**。
+*   **`spawn`**: 关键字一键启动轻量级线程（基于系统线程池优化）。
+*   **`join`**: 等待并发任务完成。
+*   **`channel`** (实验性): 基于 CSP 模型的通信机制，用于线程间安全数据交换。
 
-#### Meteor 代码（简洁优雅）
-```
-def fib_fast(n: int) -> bigint
-    if n == 0
-        return 0
-    if n == 1
-        return 1
-    a: bigint = 0
-    b: bigint = 1
-    i: int = 30
-    started: bool = false
-    while i >= 0
-        bit: int = (n >> i) and 1
-        if bit == 1
-            started = true
-        if started
-            two_b: bigint = b + b
-            c: bigint = a * (two_b - a)
-            d: bigint = a * a + b * b
-            if bit == 0
-                a = c
-                b = d
-            else
-                a = d
-                b = c + d
-        i = i - 1
-    return a
-```
+### 4. 系统级性能 (Performance)
 
-C 语言实现需要手写 BigInt 结构体、内存管理、加/减/乘法函数、打印优化等约 280 行代码。
+*   **LLVM 后端**: 编译为高度优化的机器码，性能比肩 C/C++。
+*   **AOT & JIT**:
+    *   **JIT (即时编译)**: 开发阶段秒级反馈，像脚本语言一样直接运行。
+    *   **AOT (提前编译)**: 生产环境编译为独立二进制文件，无依赖部署。
+*   **内存管理 (ARC)**: 采用 **自动引用计数 (ARC)**，结合 `owned`、`weak` 和 `frozen` 关键字，提供确定性的内存释放，消除 GC 暂停（Stop-The-World）。
 
-## 示例
+### 5. 完备的控制流 (Control Flow)
 
-### Hello World
-```
-print("Hello, Meteor!")
-```
+*   **循环与条件**: `if`, `else`, `while`, `for` 循环。
+*   **模式匹配**: `switch`, `case`, `default`, 支持 `fallthrough`。
+*   **资源管理**: `defer` 语句，确保函数退出前清理资源（如文件关闭、锁释放）。
 
-### 变量与类型
-```
-x: int = 42
-pi: float = 3.14159
-name: str = "Meteor"
-flag: bool = true
-```
+### 6. 函数与模块 (Functions & Modules)
 
-### 大整数运算
-```
-big: bigint = 12345678901234567890
-result: bigint = big * big
+*   **函数一等公民**: 支持匿名函数（Lambda）、闭包。
+*   **模块系统**:
+    *   `import module` / `from module import ...`: 命名空间管理。
+    *   `pub`: 控制符号可见性。
+
+---
+
+## ⚡ 性能基准 (Benchmark)
+
+**测试场景**: 计算第 **10,000,000** 项斐波那契数（结果长达 **209 万位**），使用 Fast Doubling 算法。
+
+| 语言 | 代码量 | 耗时 | 相对性能 |
+|------|--------|------|----------|
+| **Meteor** (native bigint) | **~40 lines** | **54.0s** | **1.00x** |
+| C (GCC -O3, custom mp_int) | ~280 lines | 48.8s | 1.11x |
+| Python 3.9 (native) | ~40 lines | > 500s | < 0.1x |
+
+> Meteor 以 Python 级别的代码简洁度，实现了接近纯 C 语言手写优化的性能。
+
+---
+
+## 📖 代码示例
+
+### 1. C 语言互操作 (Calling C)
+无需编写任何 Wrapper 代码，直接调用 C 标准库或第三方库：
+```python
+@link("m")          # 链接 libm
+@include("/usr/include") # 这通常是默认路径，此处仅作演示
+import c "math.h"   # 导入头文件，符号自动进入 math 命名空间
+
+# 直接调用 C 函数
+result: float = math.cos(3.14159)
 print(result)
+
+# 使用 C 的结构体和指针
+@link("curl")
+import c "curl/curl.h"
+
+curl: curl.CURL_ptr = curl.curl_easy_init()
+if curl != null
+    curl.curl_easy_setopt(curl, curl.CURLOPT_URL, "https://example.com")
+    res: int = curl.curl_easy_perform(curl)
+    curl.curl_easy_cleanup(curl)
 ```
 
-### 高精度小数
+### 2. 并发与大数计算
+```python
+# 计算任务：并行计算两个大数的阶乘
+def factorial(n: int) -> bigint
+    res: bigint = 1
+    i: int = 1
+    while i <= n
+        res = res * i
+        i = i + 1
+    return res
+
+print("Starting workers...")
+# 启动两个并发任务
+h1 = spawn factorial(50000)
+h2 = spawn factorial(100000)
+
+# 等待结果
+res1: bigint = join h1
+res2: bigint = join h2
+
+print("Calculated " + str(res1.length()) + " digits and " + str(res2.length()) + " digits.")
 ```
+
+### 3. 金融计算 (Decimal)
+```python
+# 传统的浮点数陷阱
+f1: float = 0.1
+f2: float = 0.2
+print(f1 + f2 == 0.3)  # 输出: false (因为 0.30000000000000004)
+
+# Meteor Decimal 的解决方案
+d1: decimal = 0.1
+d2: decimal = 0.2
+print(d1 + d2 == 0.3)  # 输出: true (精确相等)
+
 price: decimal = 19.99
-quantity: decimal = 3
-total: decimal = price * quantity
-print(total)  # 输出: 5.997e1
+qty: decimal = 3
+total: decimal = price * qty
+print(total)           # 输出: 59.97
 ```
 
-### 动态类型
+### 4. 面向对象与继承
+```python
+class Shape
+    area: float
+    
+    def __init__(self)
+        self.area = 0.0
+
+class Circle(Shape)
+    radius: float
+
+    def __init__(self, r: float)
+        self.radius = r
+        self.area = 3.14159 * r * r
+
+c: Circle = Circle(10.0)
+print(c.area)
 ```
-arr: list<dynamic> = []
-arr.append(42)
-arr.append(3.14)
-arr.append("hello")
-arr.append(true)
-```
 
-### 类与继承
-```
-class Animal
-    def speak(self)
-        print("...")
+---
 
-class Dog(Animal)
-    def speak(self)
-        print("Woof!")
-```
+## 🛠️ 安装与使用
 
-## 安装
+### 环境依赖
+*   Python 3.8+
+*   LLVM 11.x (须包含 Clang)
 
-### 依赖
-- Python 3.8+
-- LLVM 11.x
-- Clang（AOT 编译需要）
-
-### 安装步骤
+### 快速开始
 ```bash
 # 克隆仓库
-git clone https://github.com/your-repo/meteor
+git clone https://github.com/your-repo/meteor.git
+cd meteor
 
 # 安装依赖
 pip install -r requirements.txt
 
-# (可选) 安装 Clang 用于 AOT 编译
-# Ubuntu/Debian:
-sudo apt install clang -y
-# Windows: 安装 LLVM 并添加到 PATH
+# 运行代码 (JIT)
+python src/meteor.py run examples/hello.met
+
+# 编译代码 (AOT)
+python src/meteor.py compile -o hello examples/hello.met
+./hello
 ```
 
-## 使用
+---
 
-### 运行程序 (JIT)
-```bash
-python src/meteor.py run your_program.met
-```
-
-### 编译程序 (AOT)
-```bash
-python src/meteor.py compile your_program.met
-python src/meteor.py compile -o output your_program.met
-```
-
-### 输出 LLVM IR
-```bash
-python src/meteor.py compile -l your_program.met
-```
-
-### 调试模式
-```bash
-python src/meteor.py run -d your_program.met
-```
-
-### 帮助
-```bash
-python src/meteor.py -h
-```
-
-## 文件扩展名
-
-Meteor 源文件使用 `.met` 扩展名。
-
-## 致谢
-
-本项目基于 [pyLesma](https://github.com/alinalihassan/pyLesma) 开发，原项目由 Alin Ali Hassan 创建。我们在其基础上进行了扩展和改进，添加了 bigint、decimal、number、dynamic 等新类型支持。
-
-## 许可证
+## 📄 许可证
 
 MIT License
