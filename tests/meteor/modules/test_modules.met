@@ -1,0 +1,27 @@
+# test_modules.met - Test module import system
+
+# Import entire module
+import math.vector
+
+# Import with alias
+import math.utils as mu
+
+# From import specific symbols
+from math.vector import Vector2D, dot
+
+def main()
+    # Using imported class
+    v1 = Vector2D(3.0, 4.0)
+    v2 = Vector2D(1.0, 2.0)
+
+    # Using imported function
+    d = dot(v1, v2)
+    print(d)
+
+    # Using module with alias
+    x = mu.abs(-5.0)
+    print(x)
+
+    # Using class method
+    len = v1.length()
+    print(len)

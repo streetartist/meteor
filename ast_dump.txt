@@ -1,4 +1,0 @@
-({} OrderedDict({'val': (int)}) [] Node)
-((n = ([(int 10)] Node {}))
-((val n)) mymain {} OrderedDict() ())
-([] mymain {})

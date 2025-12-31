@@ -1,0 +1,10 @@
+[package]
+name = "test_project"
+version = "1.0.0"
+description = "Test project for module system"
+authors = ["Meteor Team"]
+
+[dependencies]
+# Example dependencies
+# http_server = { git = "https://github.com/meteor/http_server" }
+# json = "1.0"

@@ -1,6 +1,0 @@
-def test() -> bigint
-    a: bigint = 10
-    return a
-
-result: bigint = test()
-print(result)

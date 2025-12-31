@@ -1,8 +1,0 @@
-# Test custom C library
-@include("D:/Project/meteor/tests/meteor")
-@link("D:/Project/meteor/tests/meteor/mylib")
-import c "mylib.h"
-
-print(mylib.add(3, 5))
-print(mylib.multiply(4, 7))
-print(mylib.average(10.0, 20.0))

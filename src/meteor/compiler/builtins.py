@@ -90,8 +90,12 @@ def define_builtins(self):
 
     # RFC-001 Memory Management Runtime
     # Note: define_object_header already called above for array structure
+    define_mutex_type(self)     # Mutex for synchronization
     define_channel_type(self)  # Channel for concurrency
     define_spawn_runtime(self)  # Thread spawning
+    define_join_runtime(self)   # Thread join
+    define_atomic_ops(self)     # Atomic operations
+    define_mutex_ops(self)      # Mutex operations
     define_channel_create(self)  # Channel creation
     define_channel_send(self)   # Channel send
     define_channel_recv(self)   # Channel recv (blocking)
@@ -4198,6 +4202,18 @@ def define_object_header(self):
     return header_struct
 
 
+def define_mutex_type(self):
+    """Define Mutex structure for thread synchronization."""
+    import sys
+    i8_ptr = type_map[INT8].as_pointer()
+
+    mutex_struct = self.module.context.get_identified_type('meteor.mutex')
+    # On Windows: CRITICAL_SECTION (40 bytes), on Unix: pthread_mutex_t
+    mutex_struct.set_body(i8_ptr)  # Pointer to OS mutex
+    self.define('meteor.mutex', mutex_struct)
+    return mutex_struct
+
+
 def define_channel_type(self):
     """Define Channel structure for CSP-style concurrency.
 
@@ -4304,6 +4320,185 @@ def define_spawn_runtime(self):
         # Return thread handle
         handle = builder.load(thread_handle)
         builder.ret(handle)
+
+
+def define_join_runtime(self):
+    """Define join runtime function for waiting on threads.
+    void meteor_join(i64 thread_handle)
+    """
+    import sys
+    i8_ptr = type_map[INT8].as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [type_map[INT64]])
+    func = ir.Function(self.module, func_type, 'meteor_join')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    thread_handle = func.args[0]
+
+    if sys.platform == 'win32':
+        # Windows: WaitForSingleObject(handle, INFINITE)
+        wait_type = ir.FunctionType(type_map[INT32], [i8_ptr, type_map[INT32]])
+        if 'WaitForSingleObject' not in self.module.globals:
+            ir.Function(self.module, wait_type, 'WaitForSingleObject')
+        wait_func = self.module.get_global('WaitForSingleObject')
+
+        handle_ptr = builder.inttoptr(thread_handle, i8_ptr)
+        infinite = ir.Constant(type_map[INT32], 0xFFFFFFFF)
+        builder.call(wait_func, [handle_ptr, infinite])
+
+        # CloseHandle
+        close_type = ir.FunctionType(type_map[INT32], [i8_ptr])
+        if 'CloseHandle' not in self.module.globals:
+            ir.Function(self.module, close_type, 'CloseHandle')
+        close_func = self.module.get_global('CloseHandle')
+        builder.call(close_func, [handle_ptr])
+    else:
+        # Unix: pthread_join
+        join_type = ir.FunctionType(type_map[INT32], [type_map[INT64], i8_ptr.as_pointer()])
+        if 'pthread_join' not in self.module.globals:
+            ir.Function(self.module, join_type, 'pthread_join')
+        join_func = self.module.get_global('pthread_join')
+
+        null_ptr = ir.Constant(i8_ptr.as_pointer(), None)
+        builder.call(join_func, [thread_handle, null_ptr])
+
+    builder.ret_void()
+
+
+def define_atomic_ops(self):
+    """Define atomic operations for thread-safe memory access."""
+    i64 = type_map[INT64]
+    i64_ptr = i64.as_pointer()
+
+    # atomic_load(ptr) -> i64
+    load_type = ir.FunctionType(i64, [i64_ptr])
+    load_func = ir.Function(self.module, load_type, 'atomic_load')
+    load_func.linkage = 'internal'
+    entry = load_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    val = builder.load(load_func.args[0])
+    val.set_metadata('atomic', self.module.add_metadata([]))
+    builder.fence('seq_cst')
+    builder.ret(val)
+
+    # atomic_store(ptr, val)
+    store_type = ir.FunctionType(type_map[VOID], [i64_ptr, i64])
+    store_func = ir.Function(self.module, store_type, 'atomic_store')
+    store_func.linkage = 'internal'
+    entry = store_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    builder.fence('seq_cst')
+    builder.store(store_func.args[1], store_func.args[0])
+    builder.ret_void()
+
+    # atomic_add(ptr, val) -> i64 (returns old value)
+    add_type = ir.FunctionType(i64, [i64_ptr, i64])
+    add_func = ir.Function(self.module, add_type, 'atomic_add')
+    add_func.linkage = 'internal'
+    entry = add_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    old_val = builder.atomic_rmw('add', add_func.args[0], add_func.args[1], 'seq_cst')
+    builder.ret(old_val)
+
+    # atomic_sub(ptr, val) -> i64 (returns old value)
+    sub_type = ir.FunctionType(i64, [i64_ptr, i64])
+    sub_func = ir.Function(self.module, sub_type, 'atomic_sub')
+    sub_func.linkage = 'internal'
+    entry = sub_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    old_val = builder.atomic_rmw('sub', sub_func.args[0], sub_func.args[1], 'seq_cst')
+    builder.ret(old_val)
+
+    # atomic_cas(ptr, expected, desired) -> i64 (returns old value)
+    cas_type = ir.FunctionType(i64, [i64_ptr, i64, i64])
+    cas_func = ir.Function(self.module, cas_type, 'atomic_cas')
+    cas_func.linkage = 'internal'
+    entry = cas_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    result = builder.cmpxchg(cas_func.args[0], cas_func.args[1], cas_func.args[2], 'seq_cst', 'seq_cst')
+    old_val = builder.extract_value(result, 0)
+    builder.ret(old_val)
+
+
+def define_mutex_ops(self):
+    """Define mutex operations for thread synchronization."""
+    import sys
+    i8_ptr = type_map[INT8].as_pointer()
+    mutex_struct = self.search_scopes('meteor.mutex')
+    mutex_ptr = mutex_struct.as_pointer()
+
+    if sys.platform == 'win32':
+        _define_mutex_ops_windows(self, mutex_ptr, i8_ptr)
+    else:
+        _define_mutex_ops_unix(self, mutex_ptr, i8_ptr)
+
+
+def _define_mutex_ops_windows(self, mutex_ptr, i8_ptr):
+    """Windows mutex using CRITICAL_SECTION."""
+    # InitializeCriticalSection, EnterCriticalSection, LeaveCriticalSection, DeleteCriticalSection
+
+    # mutex_create() -> mutex*
+    create_type = ir.FunctionType(mutex_ptr, [])
+    create_func = ir.Function(self.module, create_type, 'mutex_create')
+    create_func.linkage = 'internal'
+    entry = create_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+
+    # Allocate CRITICAL_SECTION (40 bytes on x64)
+    malloc_func = self.module.get_global('malloc')
+    cs_mem = builder.call(malloc_func, [ir.Constant(type_map[INT64], 48)])
+
+    # Initialize
+    init_type = ir.FunctionType(type_map[VOID], [i8_ptr])
+    if 'InitializeCriticalSection' not in self.module.globals:
+        ir.Function(self.module, init_type, 'InitializeCriticalSection')
+    init_func = self.module.get_global('InitializeCriticalSection')
+    builder.call(init_func, [cs_mem])
+
+    # Store in mutex struct
+    mutex_mem = builder.call(malloc_func, [ir.Constant(type_map[INT64], 8)])
+    mutex = builder.bitcast(mutex_mem, mutex_ptr)
+    ptr = builder.gep(mutex, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    builder.store(cs_mem, ptr)
+    builder.ret(mutex)
+
+    # mutex_lock(mutex*)
+    lock_type = ir.FunctionType(type_map[VOID], [mutex_ptr])
+    lock_func = ir.Function(self.module, lock_type, 'mutex_lock')
+    lock_func.linkage = 'internal'
+    entry = lock_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    ptr = builder.gep(lock_func.args[0], [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    cs = builder.load(ptr)
+    enter_type = ir.FunctionType(type_map[VOID], [i8_ptr])
+    if 'EnterCriticalSection' not in self.module.globals:
+        ir.Function(self.module, enter_type, 'EnterCriticalSection')
+    enter_func = self.module.get_global('EnterCriticalSection')
+    builder.call(enter_func, [cs])
+    builder.ret_void()
+
+    # mutex_unlock(mutex*)
+    unlock_type = ir.FunctionType(type_map[VOID], [mutex_ptr])
+    unlock_func = ir.Function(self.module, unlock_type, 'mutex_unlock')
+    unlock_func.linkage = 'internal'
+    entry = unlock_func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    ptr = builder.gep(unlock_func.args[0], [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+    cs = builder.load(ptr)
+    leave_type = ir.FunctionType(type_map[VOID], [i8_ptr])
+    if 'LeaveCriticalSection' not in self.module.globals:
+        ir.Function(self.module, leave_type, 'LeaveCriticalSection')
+    leave_func = self.module.get_global('LeaveCriticalSection')
+    builder.call(leave_func, [cs])
+    builder.ret_void()
+
+
+def _define_mutex_ops_unix(self, mutex_ptr, i8_ptr):
+    """Unix mutex using pthread_mutex."""
+    # Similar implementation for pthread
+    pass
 
 
 def define_channel_create(self):

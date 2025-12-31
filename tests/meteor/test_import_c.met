@@ -1,6 +1,0 @@
-# Test import c syntax
-import c "math.h"
-
-x: double = 3.14159
-print(cos(x))
-print(sqrt(2.0))

@@ -198,9 +198,42 @@ class Raise(AST):
 
 
 class Import(AST):
-    """Import a Meteor module."""
-    def __init__(self, module_name, line_num):
-        self.module_name = module_name
+    """Import a Meteor module.
+
+    Examples:
+        import math                    # Import entire module
+        import math.vector             # Import submodule (maps to math/vector.met)
+        import math as m               # Import with alias
+    """
+    def __init__(self, module_name, line_num, alias=None):
+        self.module_name = module_name  # e.g., "math.vector"
+        self.alias = alias              # e.g., "m" for "import math as m"
+        self.line_num = line_num
+
+
+class FromImport(AST):
+    """Import specific symbols from a module.
+
+    Examples:
+        from math import sin, cos      # Import specific functions
+        from math import sin as sine   # Import with alias
+        from math import *             # Import all public symbols
+    """
+    def __init__(self, module_name, imports, line_num):
+        self.module_name = module_name  # e.g., "math"
+        self.imports = imports          # list of ImportItem or '*'
+        self.line_num = line_num
+
+
+class ImportItem(AST):
+    """Single import item with optional alias.
+
+    Example:
+        sin as sine  ->  ImportItem("sin", "sine")
+    """
+    def __init__(self, name, alias=None, line_num=0):
+        self.name = name
+        self.alias = alias
         self.line_num = line_num
 
 
@@ -228,6 +261,17 @@ class Spawn(AST):
     """
     def __init__(self, func_call, line_num):
         self.func_call = func_call
+        self.line_num = line_num
+
+
+class Join(AST):
+    """Wait for a thread to complete.
+
+    Example:
+        join(handle)
+    """
+    def __init__(self, handle_expr, line_num):
+        self.handle_expr = handle_expr
         self.line_num = line_num
 
 
@@ -492,4 +536,27 @@ class Print(AST):
 class Input(AST):
     def __init__(self, value, line_num):
         self.value = value
+        self.line_num = line_num
+
+
+class PublicDecl(AST):
+    """Public visibility wrapper for declarations.
+
+    Example:
+        pub def calculate(): ...
+        pub class Calculator: ...
+    """
+    def __init__(self, declaration, line_num):
+        self.declaration = declaration
+        self.line_num = line_num
+
+
+class ModuleDecl(AST):
+    """Module declaration (optional, for explicit module naming).
+
+    Example:
+        module math.vector
+    """
+    def __init__(self, name, line_num):
+        self.name = name
         self.line_num = line_num

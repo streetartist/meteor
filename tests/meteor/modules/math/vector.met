@@ -1,0 +1,19 @@
+# math/vector.met - Vector module example (simplified)
+
+# Private helper function (not exported)
+def _normalize_value(v: float) -> float
+    if v < 0.0
+        return 0.0 - v
+    return v
+
+# Public function - exported
+pub def add_floats(a: float, b: float) -> float
+    return a + b
+
+# Public function - exported
+pub def multiply(a: float, b: float) -> float
+    return a * b
+
+# Public function - exported
+pub def zero() -> float
+    return 0.0

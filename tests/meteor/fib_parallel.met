@@ -1,0 +1,69 @@
+# 4-Thread Parallel Fibonacci with Join
+# Clean implementation using spawn/join
+
+class Result
+    value: bigint = 0
+
+def fib_fast(n: int) -> bigint
+    if n == 0
+        return 0
+    if n == 1
+        return 1
+    a: bigint = 0
+    b: bigint = 1
+    i: int = 30
+    started: bool = false
+    while i >= 0
+        bit: int = (n >> i) and 1
+        if bit == 1
+            started = true
+        if started
+            c: bigint = a * (2 * b - a)
+            d: bigint = a * a + b * b
+            if bit == 0
+                a = c
+                b = d
+            else
+                a = d
+                b = c + d
+        i = i - 1
+    return a
+
+def worker(n: int, r: Result)
+    r.value = fib_fast(n)
+
+# Create result objects
+r0: Result = Result()
+r1: Result = Result()
+r2: Result = Result()
+r3: Result = Result()
+
+print("=== 4-Thread Parallel Fibonacci ===")
+
+# Spawn 4 threads and capture handles
+h0 = spawn worker(10000000, r0)
+h1 = spawn worker(10000000, r1)
+h2 = spawn worker(10000000, r2)
+h3 = spawn worker(10000000, r3)
+h4 = spawn worker(10000000, r3)
+h5 = spawn worker(10000000, r3)
+h6 = spawn worker(10000000, r3)
+
+# Wait for all threads using join
+join(h0)
+join(h1)
+join(h2)
+join(h3)
+join(h4)
+join(h5)
+join(h6)
+
+# Print results
+print("Fib0 =")
+print(r0.value)
+print("Fib1 =")
+print(r1.value)
+print("Fib2 =")
+print(r2.value)
+print("Fib3 =")
+print(r3.value)

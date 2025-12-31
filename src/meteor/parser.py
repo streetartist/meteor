@@ -343,6 +343,18 @@ class Parser(object):
         func_call = self.expr()
         return Spawn(func_call, self.line_num)
 
+    def join_statement(self):
+        """Parse a join statement.
+
+        Syntax:
+            join(handle)
+        """
+        self.eat_value(JOIN)
+        self.eat_value(LPAREN)
+        handle_expr = self.expr()
+        self.eat_value(RPAREN)
+        return Join(handle_expr, self.line_num)
+
     def variable_declaration(self):
         var_node = Var(self.current_token.value, self.line_num)
         self.eat_type(NAME)
@@ -366,19 +378,21 @@ class Parser(object):
     def function_declaration(self):
         op_func = False
         extern_func = False
-        self.eat_value(DEF)
-        if self.current_token.value == LPAREN:
-            name = ANON
-        elif self.current_token.value == OPERATOR:
-            self.eat_value(OPERATOR)
-            op_func = True
-            name = self.next_token()
-        elif self.current_token.value == EXTERN:
+        # Handle both 'def' and 'extern' as function starters
+        if self.current_token.value == EXTERN:
             self.eat_value(EXTERN)
             extern_func = True
             name = self.next_token()
         else:
-            name = self.next_token()
+            self.eat_value(DEF)
+            if self.current_token.value == LPAREN:
+                name = ANON
+            elif self.current_token.value == OPERATOR:
+                self.eat_value(OPERATOR)
+                op_func = True
+                name = self.next_token()
+            else:
+                name = self.next_token()
         self.eat_value(LPAREN)
         params = OrderedDict()
         param_defaults = {}
@@ -678,6 +692,8 @@ class Parser(object):
                 node = self.name_statement()
         elif self.current_token.value == DEF:
             node = self.function_declaration()
+        elif self.current_token.value == EXTERN:
+            node = self.function_declaration()
         elif self.current_token.value == TYPE:
             node = self.type_declaration()
         elif self.current_token.type == LTYPE:
@@ -689,6 +705,10 @@ class Parser(object):
             node = self.import_statement(decorators)
         elif self.current_token.value == FROM:
             node = self.from_import_statement()
+        elif self.current_token.value == MODULE:
+            node = self.module_declaration()
+        elif self.current_token.value == PUB:
+            node = self.pub_declaration()
         elif self.current_token.value == TRAIT:
             node = self.trait_declaration()
         elif self.current_token.value == IMPL:
@@ -701,6 +721,8 @@ class Parser(object):
             node = self.try_statement()
         elif self.current_token.value == SPAWN:
             node = self.spawn_statement()
+        elif self.current_token.value == JOIN:
+            node = self.join_statement()
         elif self.current_token.value == EOF:
             return None
         else:
@@ -800,10 +822,55 @@ class Parser(object):
         raise NotImplementedError
 
     def dot_access(self, token):
+        """Parse dot access with support for chained access and method calls.
+
+        Supports:
+            a.b         -> DotAccess
+            a.b.c       -> DotAccess(DotAccess, c)
+            a.b.c()     -> MethodCall(DotAccess, c, args)
+        """
         self.eat_value(DOT)
         field = self.current_token.value
         self.next_token()
-        return DotAccess(token.value, field, self.line_num)
+
+        node = DotAccess(token.value, field, self.line_num)
+
+        # Handle chained dot access: a.b.c or a.b.c()
+        while self.current_token.value == DOT:
+            self.next_token()  # consume '.'
+            next_field = self.current_token.value
+            self.next_token()
+
+            # Check if this is a method call
+            if self.current_token.value == LPAREN:
+                return self.method_call_on_expr(node, next_field)
+
+            node = DotAccess(node, next_field, self.line_num)
+
+        # Check if final access is a method call
+        if self.current_token.value == LPAREN:
+            # This shouldn't happen normally, but handle it
+            return self.method_call_on_expr(node.obj, node.field)
+
+        return node
+
+    def method_call_on_expr(self, obj_expr, method_name):
+        """Parse method call on an expression (for chained calls)."""
+        args = []
+        named_args = {}
+        self.eat_value(LPAREN)
+        while self.current_token.value != RPAREN:
+            if self.current_token.type == NAME and self.preview().value == ASSIGN:
+                arg_name = self.current_token.value
+                self.next_token()
+                self.eat_value(ASSIGN)
+                named_args[arg_name] = self.expr()
+            else:
+                args.append(self.expr())
+            if self.current_token.value == COMMA:
+                self.next_token()
+        self.eat_value(RPAREN)
+        return MethodCall(obj_expr, method_name, args, self.line_num, named_args)
 
     def name_statement(self):
         token = self.next_token()
@@ -1043,6 +1110,8 @@ class Parser(object):
         elif token.type == CONSTANT:
             self.next_token()
             return self.constant(token)
+        elif token.value == SPAWN:
+            return self.spawn_statement()
         else:
             raise SyntaxError
 
@@ -1107,6 +1176,8 @@ class Parser(object):
 
         Syntax:
             import module_name
+            import module.submodule
+            import module as alias
             @link("m")
             import c "math.h"
         """
@@ -1134,19 +1205,125 @@ class Parser(object):
 
             return CImport(header_file, link_libs, include_paths, self.line_num, namespace)
 
-        # Regular import: import module_name
-        module_name = self.current_token.value
+        # Regular import: import module_name or import module.submodule
+        module_parts = [self.current_token.value]
         self.eat_type(NAME)
-        return Import(module_name, self.line_num)
+
+        # Handle dotted module path: import math.vector
+        while self.current_token.value == DOT:
+            self.next_token()  # consume '.'
+            module_parts.append(self.current_token.value)
+            self.eat_type(NAME)
+
+        module_name = '.'.join(module_parts)
+
+        # Check for alias: import math as m
+        alias = None
+        if self.current_token.value == AS:
+            self.next_token()  # consume 'as'
+            alias = self.current_token.value
+            self.eat_type(NAME)
+
+        return Import(module_name, self.line_num, alias)
 
     def from_import_statement(self):
-        """Parse from...import statement."""
+        """Parse from...import statement.
+
+        Syntax:
+            from module import name1, name2
+            from module import name as alias
+            from module import *
+            from module.submodule import func
+        """
         self.eat_value(FROM)
-        module_name = self.current_token.value
+
+        # Parse module path: from math.vector import ...
+        module_parts = [self.current_token.value]
         self.eat_type(NAME)
+
+        while self.current_token.value == DOT:
+            self.next_token()  # consume '.'
+            module_parts.append(self.current_token.value)
+            self.eat_type(NAME)
+
+        module_name = '.'.join(module_parts)
         self.eat_value(IMPORT)
-        # For now, just return a simple Import
-        return Import(module_name, self.line_num)
+
+        # Check for wildcard import: from module import *
+        if self.current_token.value == MUL:
+            self.next_token()  # consume '*'
+            return FromImport(module_name, '*', self.line_num)
+
+        # Parse import items: name1, name2 as alias, ...
+        imports = []
+        while True:
+            item_name = self.current_token.value
+            self.eat_type(NAME)
+
+            # Check for alias: name as alias
+            alias = None
+            if self.current_token.value == AS:
+                self.next_token()  # consume 'as'
+                alias = self.current_token.value
+                self.eat_type(NAME)
+
+            imports.append(ImportItem(item_name, alias, self.line_num))
+
+            # Check for more items
+            if self.current_token.value == COMMA:
+                self.next_token()  # consume ','
+            else:
+                break
+
+        return FromImport(module_name, imports, self.line_num)
+
+    def pub_declaration(self):
+        """Parse public declaration.
+
+        Syntax:
+            pub def function_name(): ...
+            pub class ClassName: ...
+        """
+        line_num = self.line_num
+        self.eat_value(PUB)
+
+        # Parse the declaration that follows pub
+        if self.current_token.value == DEF:
+            decl = self.function_declaration()
+        elif self.current_token.type == LTYPE and self.current_token.value == CLASS:
+            decl = self.class_declaration()
+        elif self.current_token.value == TRAIT:
+            decl = self.trait_declaration()
+        elif self.current_token.value == ERROR:
+            decl = self.error_declaration()
+        elif self.current_token.type == LTYPE and self.current_token.value == ENUM:
+            decl = self.enum_declaration()
+        else:
+            error('file={} line={}: Expected def, class, trait, error, or enum after pub'.format(
+                self.file_name, self.line_num))
+
+        return PublicDecl(decl, line_num)
+
+    def module_declaration(self):
+        """Parse module declaration.
+
+        Syntax:
+            module math.vector
+        """
+        line_num = self.line_num
+        self.eat_value(MODULE)
+
+        # Parse module path
+        module_parts = [self.current_token.value]
+        self.eat_type(NAME)
+
+        while self.current_token.value == DOT:
+            self.next_token()  # consume '.'
+            module_parts.append(self.current_token.value)
+            self.eat_type(NAME)
+
+        module_name = '.'.join(module_parts)
+        return ModuleDecl(module_name, line_num)
 
     def parse(self) -> Program:
         node = self.program()

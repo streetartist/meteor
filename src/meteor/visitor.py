@@ -134,6 +134,23 @@ class UnionSymbol(Symbol):
         self.accessed = False
         self.val_assigned = False
 
+
+class ModuleSymbol(Symbol):
+    """Symbol for an imported module.
+
+    Tracks module metadata and exported symbols.
+    """
+    def __init__(self, name, file_path=None, exports=None):
+        super().__init__(name)
+        self.file_path = file_path      # Physical path to module file
+        self.exports = exports or {}    # Dict of exported symbols
+        self.is_loaded = False          # Whether module has been loaded
+        self.accessed = False
+        self.val_assigned = False
+
+    def __str__(self) -> str:
+        return '<module {}>'.format(self.name)
+
 class CollectionSymbol(Symbol):
     def __init__(self, name, var_type, item_types):
         super().__init__(name, var_type)

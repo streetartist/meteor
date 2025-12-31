@@ -5,7 +5,8 @@ from meteor.grammar import *
 from meteor.utils import error, warning
 from meteor.visitor import (BuiltinTypeSymbol, ClassSymbol, CollectionSymbol,
                            EnumSymbol, FuncSymbol, NodeVisitor,
-                           TypeSymbol, VarSymbol, TraitSymbol, ImplSymbol, ErrorSymbol, UnionSymbol)
+                           TypeSymbol, VarSymbol, TraitSymbol, ImplSymbol,
+                           ErrorSymbol, UnionSymbol, ModuleSymbol)
 
 
 def flatten(container: Union[List[Any], Tuple[Any, ...]]) -> Iterator[list]:
@@ -458,6 +459,12 @@ class Preprocessor(NodeVisitor):
     def visit_funccall(self, node):
         func_name = node.name
         func = self.search_scopes(func_name)
+
+        # Handle imported functions (VarSymbol placeholders)
+        if isinstance(func, VarSymbol):
+            func.accessed = True
+            return func.type
+
         parameters = None
         parameter_defaults = None
         if isinstance(func, (ClassSymbol, EnumSymbol)):
@@ -517,8 +524,62 @@ class Preprocessor(NodeVisitor):
         #     return method.return_type
 
     def visit_spawn(self, node):
-        """Type check spawn statement - validates the function call inside."""
-        return self.visit(node.func_call)
+        """Type check spawn statement - validates the function call and concurrency safety.
+
+        RFC-001 Concurrency Safety Checks:
+        1. Spawned function parameters should be 'owned' or 'frozen' to prevent data races
+        2. Warn if passing mutable borrowed references to spawned threads
+        """
+        func_call = node.func_call
+        func_name = func_call.name
+        func = self.search_scopes(func_name)
+
+        if func is None:
+            error('file={} line={}: spawn: function {} not found'.format(
+                self.file_name, node.line_num, func_name))
+            return None
+
+        # Get parameter modes from function symbol
+        param_modes = getattr(func, 'param_modes', {})
+        param_names = list(func.parameters.keys()) if func.parameters else []
+
+        # Check each argument passed to spawn
+        for i, arg in enumerate(func_call.arguments):
+            if i >= len(param_names):
+                break
+
+            param_name = param_names[i]
+            param_mode = param_modes.get(param_name, 'borrow')
+
+            # Get argument info
+            arg_sym = None
+            arg_is_frozen = False
+
+            if hasattr(arg, 'value'):
+                arg_sym = self.search_scopes(arg.value)
+                if arg_sym and hasattr(arg_sym, 'type') and hasattr(arg_sym.type, 'is_frozen'):
+                    arg_is_frozen = arg_sym.type.is_frozen
+
+            # Safety check: spawn with borrow mode is dangerous
+            if param_mode == 'borrow' and not arg_is_frozen:
+                # Check if it's a mutable type (list, dict, class instance)
+                is_mutable = False
+                if arg_sym and hasattr(arg_sym, 'type'):
+                    type_name = getattr(arg_sym.type, 'name', '')
+                    if type_name in ('list', 'dict', 'set') or isinstance(arg_sym.type, ClassSymbol):
+                        is_mutable = True
+
+                if is_mutable:
+                    warning('file={} line={}: spawn: passing mutable data \'{}\' with borrow mode may cause data race. '
+                            'Consider using \'owned\' parameter or \'frozen\' data'.format(
+                                self.file_name, node.line_num, param_name))
+
+        # Visit the function call for standard type checking
+        return self.visit(func_call)
+
+    def visit_join(self, node):
+        """Type check join statement - validates the handle expression."""
+        return self.visit(node.handle_expr)
 
     def visit_import(self, node):
         """Handle regular import statement."""
@@ -729,4 +790,49 @@ class Preprocessor(NodeVisitor):
     def visit_errorpropagation(self, node):
         """Type check error propagation (?) operator."""
         return self.visit(node.expr)
+
+    def visit_import(self, node):
+        """Type check an import statement.
+
+        Creates a ModuleSymbol for the imported module.
+        """
+        # Use alias if provided, otherwise use module name
+        name = node.alias if node.alias else node.module_name.split('.')[-1]
+        sym = ModuleSymbol(name, file_path=None)
+        self.define(name, sym)
+
+    def visit_fromimport(self, node):
+        """Type check a from...import statement.
+
+        Imports specific symbols from a module.
+        """
+        # For wildcard imports, we'll handle this at code generation
+        if node.imports == '*':
+            return
+
+        # For specific imports, create placeholder symbols
+        for item in node.imports:
+            name = item.alias if item.alias else item.name
+            # Create a placeholder - actual type will be resolved at code gen
+            sym = VarSymbol(name, self.search_scopes(ANY))
+            self.define(name, sym)
+
+    def visit_publicdecl(self, node):
+        """Type check a public declaration.
+
+        Marks the inner declaration as public.
+        """
+        # Visit the inner declaration
+        return self.visit(node.declaration)
+
+    def visit_moduledecl(self, node):
+        """Type check a module declaration.
+
+        Module declarations are informational only.
+        """
+        pass
+
+    def visit_importitem(self, node):
+        """Type check an import item."""
+        pass
 

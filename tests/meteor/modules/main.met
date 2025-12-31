@@ -1,0 +1,20 @@
+# main.met - Main entry point that uses modules
+
+from math.vector import add_floats, multiply
+from math.utils import abs, max
+
+# Use imported functions directly
+a = 3.0
+b = 4.0
+
+result = add_floats(a, b)
+print(result)
+
+product = multiply(a, b)
+print(product)
+
+abs_val = abs(-10.0)
+print(abs_val)
+
+max_val = max(a, b)
+print(max_val)

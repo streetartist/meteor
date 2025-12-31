@@ -1,0 +1,23 @@
+# math/utils.met - Math utilities module
+
+pub def abs(x: float) -> float
+    if x < 0.0
+        return 0.0 - x
+    return x
+
+pub def max(a: float, b: float) -> float
+    if a > b
+        return a
+    return b
+
+pub def min(a: float, b: float) -> float
+    if a < b
+        return a
+    return b
+
+pub def clamp(x: float, lo: float, hi: float) -> float
+    if x < lo
+        return lo
+    if x > hi
+        return hi
+    return x

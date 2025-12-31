@@ -1,6 +1,0 @@
-# Test @link decorator
-@link("m")
-import c "math.h"
-
-x: double = 2.0
-print(sqrt(x))

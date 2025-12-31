@@ -53,6 +53,7 @@ class CodeGenerator(NodeVisitor):
         self._entry_allocas = {}  # Cache for entry block allocas
         self.managed_vars_stack = [[]]  # Stack of managed variables per scope for RC cleanup
         self.link_libs = []  # C libraries to link
+        self.spawn_counter = 0  # Counter for unique spawn wrapper names
 
         # llvm.initialize()
         llvm.initialize_native_target()
@@ -208,17 +209,35 @@ class CodeGenerator(NodeVisitor):
             error("No method as described")
 
     def visit_methodcall(self, node):
-        # Check if this is a C namespace call (e.g., math.cos)
-        obj = self.search_scopes(node.obj)
-        if obj is None:
-            # obj might be a C namespace - try to find the function directly
+        from meteor.ast import DotAccess
+
+        # Check if this is a module namespace call (e.g., math.vector.add_floats)
+        if isinstance(node.obj, DotAccess):
             func_name = node.name
             if func_name in self.module.globals:
-                # Call the C function directly
+                args = [self.visit(arg) for arg in node.arguments]
+                return self.call(func_name, args)
+            else:
+                error("Unknown function in module: {}".format(func_name))
+
+        # Check if this is a C namespace call (e.g., math.cos) or module alias call
+        obj = self.search_scopes(node.obj)
+        if obj is None:
+            func_name = node.name
+            if func_name in self.module.globals:
                 args = [self.visit(arg) for arg in node.arguments]
                 return self.call(func_name, args)
             else:
                 error("Unknown namespace or variable: {}".format(node.obj))
+
+        # Handle module alias (e.g., mu.abs where mu is imported module)
+        if isinstance(obj, dict) and '__module__' in obj:
+            func_name = node.name
+            if func_name in self.module.globals:
+                args = [self.visit(arg) for arg in node.arguments]
+                return self.call(func_name, args)
+            else:
+                error("Unknown function '{}' in module".format(func_name))
 
         # Handle _TypedPointerType which doesn't have 'name' attribute
         pointee = obj.type.pointee
@@ -400,13 +419,13 @@ class CodeGenerator(NodeVisitor):
         result = self.call(name, args)
 
         # Move semantics: null out owned arguments after call
-        # param_modes is stored in func_type (ir.FunctionType), not func_symbol (ir.Function)
-        if hasattr(func_type, 'param_modes') and func_type.param_modes:
-            param_names = list(func_type.parameters.keys()) if hasattr(func_type, 'parameters') else []
+        # param_modes is stored in func_symbol (FuncSymbol), not func_type (ir.FunctionType)
+        if hasattr(func_symbol, 'param_modes') and func_symbol.param_modes:
+            param_names = list(func_symbol.parameters.keys()) if hasattr(func_symbol, 'parameters') else []
             for i, arg_node in enumerate(node.arguments):
                 if i < len(param_names):
                     param_name = param_names[i]
-                    if func_type.param_modes.get(param_name) == 'owned':
+                    if func_symbol.param_modes.get(param_name) == 'owned':
                         # Null out the local variable
                         if hasattr(arg_node, 'value'):
                             var_ptr = self.search_scopes(arg_node.value)
@@ -417,8 +436,115 @@ class CodeGenerator(NodeVisitor):
         return result
 
     def visit_import(self, node):
-        """Handle regular import statement."""
-        pass  # TODO: implement module import
+        """Handle regular import statement.
+
+        Loads and compiles the imported module, making its exports available.
+        """
+        from meteor.module_resolver import ModuleResolver, ModuleLoader
+        from meteor.ast import PublicDecl, FuncDecl, ExternFuncDecl
+
+        # Initialize resolver if not already done
+        if not hasattr(self, '_module_resolver'):
+            import os
+            project_root = os.path.dirname(self.file_name) if self.file_name else '.'
+            self._module_resolver = ModuleResolver(project_root)
+            self._module_loader = ModuleLoader(self._module_resolver)
+            self._loaded_modules = {}
+            self._compiled_funcs = set()
+
+        module_name = node.module_name
+        alias = node.alias if node.alias else module_name.split('.')[-1]
+
+        # Skip if already loaded
+        if module_name in self._loaded_modules:
+            return
+
+        try:
+            info, module_ast = self._module_loader.load(module_name, self.file_name)
+            self._loaded_modules[module_name] = info
+
+            if module_ast is not None:
+                # Compile all public functions from module
+                for child in module_ast.block.children:
+                    if isinstance(child, PublicDecl):
+                        decl = child.declaration
+                        if isinstance(decl, FuncDecl):
+                            func_key = f"{module_name}.{decl.name}"
+                            if func_key not in self._compiled_funcs:
+                                self._compiled_funcs.add(func_key)
+                                self.visit(decl)
+
+            self.define(alias, {'__module__': info, '__exports__': info.exports})
+        except ImportError as e:
+            error(f"file={self.file_name} line={node.line_num}: {e}")
+
+    def visit_fromimport(self, node):
+        """Handle from...import statement.
+
+        Imports specific symbols from a module into current namespace.
+        """
+        from meteor.module_resolver import ModuleResolver, ModuleLoader
+        from meteor.ast import PublicDecl, FuncDecl, ExternFuncDecl
+
+        # Initialize resolver if not already done
+        if not hasattr(self, '_module_resolver'):
+            import os
+            project_root = os.path.dirname(self.file_name) if self.file_name else '.'
+            self._module_resolver = ModuleResolver(project_root)
+            self._module_loader = ModuleLoader(self._module_resolver)
+            self._loaded_modules = {}
+            self._compiled_funcs = set()
+
+        module_name = node.module_name
+
+        try:
+            info, module_ast = self._module_loader.load(module_name, self.file_name)
+            self._loaded_modules[module_name] = info
+
+            if module_ast is None:
+                return  # Already loaded
+
+            # Get list of symbols to import
+            if node.imports == '*':
+                symbols_to_import = list(info.exports.keys())
+            else:
+                symbols_to_import = [item.name for item in node.imports]
+
+            # First pass: compile all extern declarations
+            for child in module_ast.block.children:
+                if isinstance(child, ExternFuncDecl):
+                    self.visit(child)
+
+            # Second pass: compile pub functions
+            for child in module_ast.block.children:
+                if isinstance(child, PublicDecl):
+                    decl = child.declaration
+                    if isinstance(decl, FuncDecl) and decl.name in symbols_to_import:
+                        func_key = f"{module_name}.{decl.name}"
+                        if func_key not in self._compiled_funcs:
+                            self._compiled_funcs.add(func_key)
+                            self.visit(decl)
+
+        except ImportError as e:
+            error(f"file={self.file_name} line={node.line_num}: {e}")
+
+    def visit_publicdecl(self, node):
+        """Handle public declaration.
+
+        Compiles the inner declaration and marks it as public.
+        """
+        return self.visit(node.declaration)
+
+    def visit_moduledecl(self, node):
+        """Handle module declaration.
+
+        Module declarations are metadata only, no code generation needed.
+        """
+        pass
+
+    def visit_importitem(self, node):
+        """Handle import item - no code generation needed."""
+        pass
 
     def visit_cimport(self, node):
         """Handle C header import using libclang."""
@@ -471,8 +597,9 @@ class CodeGenerator(NodeVisitor):
             ], inbounds=True)
             self.builder.store(arg, ptr)
 
-        # Create unique wrapper function name
-        wrapper_name = f"__spawn_wrapper_{func_name}_{id(node)}"
+        # Create unique wrapper function name using counter
+        self.spawn_counter += 1
+        wrapper_name = f"__spawn_wrapper_{func_name}_{self.spawn_counter}"
 
         # Create wrapper function
         # Windows: DWORD WINAPI ThreadProc(LPVOID) - returns i32
@@ -519,7 +646,18 @@ class CodeGenerator(NodeVisitor):
         arg_ptr = self.builder.bitcast(arg_struct_ptr, i8_ptr)
 
         spawn_func = self.module.get_global('meteor_spawn')
-        return self.builder.call(spawn_func, [wrapper_ptr, arg_ptr])
+        thread_handle = self.builder.call(spawn_func, [wrapper_ptr, arg_ptr])
+
+        # Memory fence to ensure thread creation is visible
+        self.builder.fence('seq_cst')
+
+        return thread_handle
+
+    def visit_join(self, node):
+        """Wait for a thread to complete."""
+        handle = self.visit(node.handle_expr)
+        join_func = self.module.get_global('meteor_join')
+        self.builder.call(join_func, [handle])
 
     def comp_cast(self, arg, typ, node):
         if types_compatible(str(arg.type), typ):
@@ -972,7 +1110,10 @@ class CodeGenerator(NodeVisitor):
             self.cbranch(cond_val, if_true_block, if_false_block)
             self.position_at_end(if_true_block)
             ret = self.visit(node.blocks[x])
-            if not ret and not self.is_break:
+            # Check if the block is not terminated (no return/break/branch already added)
+            # Using is_terminated is more reliable than checking 'ret' because void function
+            # calls return a truthy LLVM instruction object, not None/False
+            if not self.builder.block.is_terminated and not self.is_break:
                 self.branch(end_block)
             self.position_at_end(if_false_block)
 
@@ -1922,6 +2063,21 @@ class CodeGenerator(NodeVisitor):
                 pos = class_type.fields.index(index)
                 fields.add(index)
                 elem = self.builder.gep(_class, [self.const(0, width=INT32), self.const(pos, width=INT32)], inbounds=True)
+                # Convert value to target field type if needed
+                target_type = class_type.elements[pos]
+                if val.type != target_type:
+                    # Handle bigint conversion
+                    if getattr(target_type, 'name', '') == 'bigint' and isinstance(val.type, ir.IntType):
+                        from meteor.compiler.operations import int_to_bigint
+                        val = int_to_bigint(self, val)
+                        val = self.builder.load(val)
+                    elif isinstance(target_type, ir.IntType) and isinstance(val.type, ir.IntType):
+                        if target_type.width > val.type.width:
+                            val = self.builder.sext(val, target_type)
+                        else:
+                            val = self.builder.trunc(val, target_type)
+                    elif hasattr(target_type, 'pointee'):
+                        val = self.builder.bitcast(val, target_type)
                 self.builder.store(val, elem)
 
             for index, field in enumerate(node.named_arguments.values()):
@@ -2846,8 +3002,16 @@ class CodeGenerator(NodeVisitor):
             if i < len(func_arg_types):
                 expected_type = func_arg_types[i]
                 if arg.type != expected_type:
+                    # Meteor string (i64.array*) to C char* conversion
+                    if (isinstance(arg.type, ir.PointerType) and
+                        isinstance(expected_type, ir.PointerType) and
+                        isinstance(expected_type.pointee, ir.IntType) and
+                        expected_type.pointee.width == 8 and
+                        hasattr(arg.type.pointee, 'name') and
+                        'array' in str(arg.type.pointee)):
+                        arg = self._convert_meteor_string_to_cstr(arg)
                     # Integer type conversion
-                    if isinstance(arg.type, ir.IntType) and isinstance(expected_type, ir.IntType):
+                    elif isinstance(arg.type, ir.IntType) and isinstance(expected_type, ir.IntType):
                         if arg.type.width > expected_type.width:
                             arg = self.builder.trunc(arg, expected_type)
                         else:
@@ -2861,6 +3025,54 @@ class CodeGenerator(NodeVisitor):
             converted_args.append(arg)
 
         return self.builder.call(func, converted_args)
+
+    def _convert_meteor_string_to_cstr(self, meteor_str):
+        """Convert Meteor string (i64.array*) to C string (i8*)."""
+        i32 = ir.IntType(32)
+        # i64.array structure: {header, size, capacity, data*}
+        # Get size (index 1)
+        size_ptr = self.builder.gep(meteor_str, [ir.Constant(i32, 0), ir.Constant(i32, 1)])
+        size = self.builder.load(size_ptr)
+
+        # Get data pointer (index 3)
+        data_ptr_ptr = self.builder.gep(meteor_str, [ir.Constant(i32, 0), ir.Constant(i32, 3)])
+        data_ptr = self.builder.load(data_ptr_ptr)
+
+        # Allocate C string buffer (size + 1 for null terminator)
+        size_plus_one = self.builder.add(size, self.const(1))
+        cstr = self.builder.call(self.module.get_global('malloc'), [size_plus_one])
+
+        # Copy characters (truncate i64 to i8)
+        i_ptr = self.builder.alloca(type_map[INT])
+        self.builder.store(self.const(0), i_ptr)
+
+        loop_block = self.current_function.append_basic_block('str_conv_loop')
+        end_block = self.current_function.append_basic_block('str_conv_end')
+
+        self.builder.branch(loop_block)
+        self.builder.position_at_end(loop_block)
+
+        i = self.builder.load(i_ptr)
+        cond = self.builder.icmp_signed('<', i, size)
+
+        with self.builder.if_then(cond):
+            char_ptr = self.builder.gep(data_ptr, [i])
+            char_i64 = self.builder.load(char_ptr)
+            char_i8 = self.builder.trunc(char_i64, ir.IntType(8))
+            dst_ptr = self.builder.gep(cstr, [i])
+            self.builder.store(char_i8, dst_ptr)
+            next_i = self.builder.add(i, self.const(1))
+            self.builder.store(next_i, i_ptr)
+            self.builder.branch(loop_block)
+
+        self.builder.branch(end_block)
+        self.builder.position_at_end(end_block)
+
+        # Add null terminator
+        null_ptr = self.builder.gep(cstr, [size])
+        self.builder.store(ir.Constant(ir.IntType(8), 0), null_ptr)
+
+        return cstr
 
     def gep(self, ptr, indices, inbounds=False, name=''):
         return self.builder.gep(ptr, indices, inbounds, name)
@@ -2877,6 +3089,9 @@ class CodeGenerator(NodeVisitor):
 
         exit_ty = ir.FunctionType(type_map[VOID], [type_map[INT32]])
         ir.Function(self.module, exit_ty, 'exit')
+
+        abort_ty = ir.FunctionType(type_map[VOID], [])
+        ir.Function(self.module, abort_ty, 'abort')
 
         putchar_ty = ir.FunctionType(type_map[INT], [type_map[INT]])
         ir.Function(self.module, putchar_ty, 'putchar')
@@ -3158,7 +3373,8 @@ class CodeGenerator(NodeVisitor):
         self._mi_version_callback = mi_version_callback
         llvm.add_symbol('mi_version', ctypes.cast(mi_version_callback, ctypes.c_void_p).value)
 
-        llvmmod = llvm.parse_assembly(str(self.module))
+        module_str = str(self.module)
+        llvmmod = llvm.parse_assembly(module_str)
         target_machine = llvm.Target.from_default_triple().create_target_machine()
         if optimize:
             # Modern llvmlite API (0.40+)

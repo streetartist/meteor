@@ -1,0 +1,21 @@
+# test_import.met - Test import syntax
+
+import math.vector
+import math.utils as mu
+
+a = 3.0
+b = 4.0
+
+# Using module.function syntax
+result = math.vector.add_floats(a, b)
+print(result)
+
+product = math.vector.multiply(a, b)
+print(product)
+
+# Using alias
+abs_val = mu.abs(-10.0)
+print(abs_val)
+
+max_val = mu.max(a, b)
+print(max_val)
