@@ -10,7 +10,7 @@ import llvmlite.binding as llvm
 from llvmlite import ir
 
 import meteor.compiler.llvmlite_custom
-from meteor.ast import CollectionAccess, DotAccess, Input, Str, Var, VarDecl
+from meteor.ast import CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation
 from meteor.compiler.base import RET_VAR, type_map
 from meteor.compiler.builtins import (array_types, create_dynamic_array_methods,
                                      define_builtins)
@@ -40,9 +40,11 @@ class CodeGenerator(NodeVisitor):
         self.defer_stack = [[]]
         self.loop_test_blocks = []
         self.loop_end_blocks = []
+        self.catch_stack = []  # Stack of {'landing_pad': block}
         self.is_break = False
         self.anon_counter = 0
         self._entry_allocas = {}  # Cache for entry block allocas
+        self.managed_vars_stack = [[]]  # Stack of managed variables per scope for RC cleanup
 
         # llvm.initialize()
         llvm.initialize_native_target()
@@ -114,14 +116,22 @@ class CodeGenerator(NodeVisitor):
         else:
             self.start_function(name, node.return_type, node.parameters, node.parameter_defaults, node.varargs, linkage)
 
+        param_modes = getattr(node, 'param_modes', {})
         for i, arg in enumerate(self.current_function.args):
             arg.name = list(node.parameters.keys())[i]
+            mode = param_modes.get(arg.name, 'borrow')
 
-            # TODO: a bit hacky, cannot handle pointers atm but we need them for class reference
             if arg.name == SELF and isinstance(arg.type, ir.PointerType):
                 self.define(arg.name, arg)
-            else:
+            elif mode == 'escape':
+                # Escape mode: retain the argument (it may be stored in heap)
                 self.alloc_define_store(arg, arg.name, arg.type)
+            elif mode == 'owned':
+                # Owned mode: caller transferred ownership, register for cleanup
+                self.alloc_define_store(arg, arg.name, arg.type)
+            else:
+                # Borrow/ref mode: simple alloc, no RC
+                self.alloc_define_store_simple(arg, arg.name, arg.type)
         if self.current_function.function_type.return_type != type_map[VOID]:
             self.alloc_and_define(RET_VAR, self.current_function.function_type.return_type)
         ret = self.visit(node.body)
@@ -130,15 +140,43 @@ class CodeGenerator(NodeVisitor):
     def visit_return(self, node):
         val = self.visit(node.value)
         if val.type != ir.VoidType():
-            val = self.comp_cast(val, self.search_scopes(RET_VAR).type.pointee, node)
+            ret_var = self.search_scopes(RET_VAR)
+            dest_type = ret_var.type.pointee
 
-            # If casting returned a pointer (e.g. int_to_bigint) but we need the value (struct), load it.
-            # dest_type is the type of the variable stored in RET_VAR (e.g. %bigint)
-            dest_type = self.search_scopes(RET_VAR).type.pointee
-            if isinstance(val.type, ir.PointerType) and val.type.pointee == dest_type:
-                val = self.builder.load(val)
+            # Check for Union Type (Tagged Union) {i8, T, E}
+            # We assume a literal struct with 3 elements and first is i8 is a tagged union for now
+            if isinstance(dest_type, ir.LiteralStructType) and len(dest_type.elements) == 3 and dest_type.elements[0] == type_map[INT8]:
+                if val.type == dest_type:
+                     # Direct assignment (propagating union)
+                     self.store(val, RET_VAR)
+                elif val.type == dest_type.elements[1] or (hasattr(val.type, 'pointee') and val.type.pointee == dest_type.elements[1]):
+                     # Success value - Pack {0, val, undef}
+                     tag_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                     self.builder.store(self.const(0, width=INT8), tag_ptr)
+                     val_ptr = self.builder.gep(ret_var, [self.const(0), self.const(1, width=INT32)])
+                     if isinstance(val.type, ir.PointerType) and not isinstance(dest_type.elements[1], ir.PointerType):
+                         val = self.builder.load(val)
+                     self.builder.store(val, val_ptr)
+                elif val.type == dest_type.elements[2] or (hasattr(val.type, 'pointee') and val.type.pointee == dest_type.elements[2]):
+                     # Error value - Pack {1, undef, err}
+                     tag_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                     self.builder.store(self.const(1, width=INT8), tag_ptr)
+                     err_ptr = self.builder.gep(ret_var, [self.const(0), self.const(2, width=INT32)])
+                     self.builder.store(val, err_ptr)
+                else:
+                     # Attempt fallback cast
+                     val = self.comp_cast(val, dest_type, node)
+                     self.store(val, RET_VAR)
+            else:
+                val = self.comp_cast(val, dest_type, node)
+                # If casting returned a pointer (e.g. int_to_bigint) but we need the value (struct), load it.
+                if isinstance(val.type, ir.PointerType) and val.type.pointee == dest_type:
+                    val = self.builder.load(val)
+                self.store(val, RET_VAR)
 
-            self.store(val, RET_VAR)
+        # Release scope variables before returning (exclude return value)
+        self.release_scope_variables(exclude=val if val.type != ir.VoidType() else None)
+
         self.branch(self.exit_blocks[-1])
         return True
 
@@ -154,10 +192,30 @@ class CodeGenerator(NodeVisitor):
 
     def visit_methodcall(self, node):
         obj = self.search_scopes(node.obj)
-        method = self.search_scopes(obj.type.pointee.name + '.' + node.name)
-        if method is None and obj.type.pointee.base is not None:
-            parent = self.search_scopes(obj.type.pointee.base.value)
-            return self.super_method(node, obj, parent)
+        # Handle _TypedPointerType which doesn't have 'name' attribute
+        pointee = obj.type.pointee
+        if hasattr(pointee, 'name'):
+            type_name = pointee.name
+        else:
+            # Extract type name from string representation
+            type_str = str(pointee)
+            if type_str.startswith('%"'):
+                type_name = type_str.split('"')[1]
+            elif type_str.startswith('%'):
+                type_name = type_str[1:]
+            else:
+                type_name = type_str
+        method = self.search_scopes(type_name + '.' + node.name)
+        # Check for base class method
+        if method is None:
+            obj_type = self.search_scopes(type_name.split('.')[-1])
+            if obj_type is not None and hasattr(obj_type, 'base') and obj_type.base is not None:
+                parent = self.search_scopes(obj_type.base.value)
+                return self.super_method(node, obj, parent)
+
+        # Load obj if it's a pointer-to-pointer (alloca'd class variable)
+        if hasattr(obj.type, 'pointee') and hasattr(obj.type.pointee, 'pointee'):
+            obj = self.builder.load(obj)
 
         return self.methodcall(node, method, obj)
 
@@ -279,6 +337,9 @@ class CodeGenerator(NodeVisitor):
             temp = self.visit(child)
             if temp:
                 ret = temp
+            # Stop generating code if current block is terminated (unreachable code)
+            if hasattr(self, 'builder') and self.builder.block and self.builder.block.is_terminated:
+                break
         return ret
 
     def visit_enumdeclaration(self, node):
@@ -332,6 +393,8 @@ class CodeGenerator(NodeVisitor):
         super_fields, super_elements = self.get_super_fields(classdecl)
         classdecl.fields = super_fields + [field for field in node.fields.keys()]
         classdecl.set_body(*(super_elements + [field for field in fields]))
+        # Store weak fields info for RC handling
+        classdecl.weak_fields = getattr(node, 'weak_fields', set())
         self.define(node.name, classdecl)
         for method in node.methods:
             self.funcdecl(method.name, method)
@@ -342,13 +405,305 @@ class CodeGenerator(NodeVisitor):
 
         self.define(node.name, classdecl)
 
+    def visit_traitdeclaration(self, node):
+        """Generate code for a trait declaration.
+        
+        Traits are metadata only - abstract methods generate nothing,
+        default method implementations are compiled as regular functions.
+        """
+        # Compile default method implementations only
+        for method_name, method in node.methods.items():
+            if method.body is not None:
+                # Default implementation - compile as a function
+                self.funcdef(method.name, method)
+        # No need to store trait info in LLVM - it's type-checking metadata
+
+    def visit_implblock(self, node):
+        """Generate code for an impl block.
+        
+        When a trait is implemented for a class, we compile all the methods
+        as class methods. This enables static dispatch (monomorphization).
+        """
+        # Skip if no methods to compile
+        if not node.methods:
+            return
+            
+        # Get the class type
+        class_type = self.search_scopes(node.class_name)
+        
+        # Compile all impl methods as class methods
+        for method_name, method in node.methods.items():
+            self.funcdecl(method.name, method)
+        
+        for method_name, method in node.methods.items():
+            self.funcdef(method.name, method, func_exists=True)
+        
+        # Add methods to class if it exists
+        if hasattr(class_type, 'methods'):
+            impl_methods = [self.search_scopes(m.name) for m in node.methods.values()]
+            class_type.methods = class_type.methods + impl_methods
+
+    def visit_errordeclaration(self, node):
+        """Generate code for an error enum declaration.
+        
+        Error enums are similar to regular enums but used for error handling.
+        We store them as tagged integers.
+        """
+        # Create an enum-like structure for the error type
+        error_type = self.module.context.get_identified_type(node.name)
+        error_type.name = node.name
+        error_type.type = ENUM
+        error_type.fields = node.variants
+        # Error value is just a single i8 tag
+        error_type.set_body(type_map[INT8])
+        self.define(node.name, error_type)
+
+    def visit_raise(self, node):
+        """Generate code for a raise statement."""
+        error_val = self.visit(node.error_value)
+        
+        # Check for active catch block
+        if self.catch_stack:
+             store_ptr = self.catch_stack[-1]['storage']
+             # Check type match/load if needed (error_val might be pointer, store needs value if alloca is {i8})
+             # error_val should be matching type.
+             # visit(node.error_value) returns value or pointer to i8?
+             # visit_dotaccess returns pointer to { i8 ... }.
+             
+             # If error_val is pointer to struct, load it?
+             # My logic in visit_dotaccess returns pointer to struct.
+             # exception_store is alloca {i8}.
+             
+             # If error_val is pointer to {i8}, load it?
+             if isinstance(error_val.type, ir.PointerType) and \
+                isinstance(error_val.type.pointee, ir.IdentifiedStructType) and \
+                len(error_val.type.pointee.elements) == 1 and \
+                error_val.type.pointee.elements[0] == type_map[INT8]:
+                    val_struct = self.builder.load(error_val)
+                    tag = self.builder.extract_value(val_struct, 0)
+                    
+                    tag_store = self.builder.gep(store_ptr, [self.const(0), self.const(0, width=INT32)])
+                    self.builder.store(tag, tag_store)
+                    
+             elif isinstance(error_val.type, ir.IdentifiedStructType):
+                    # Extract tag
+                    # tag = self.builder.extract_value(error_val, 0)
+                    val = None
+                    if isinstance(error_val, ir.Constant) and isinstance(error_val.constant, (list, tuple)):
+                         val = error_val.constant[0]
+                    else:
+                         val = self.builder.extract_value(error_val, 0)
+                    tag_store = self.builder.gep(store_ptr, [self.const(0), self.const(0, width=INT32)])
+                    self.builder.store(val, tag_store)
+             else:
+                    # Fallback
+                    self.builder.store(error_val, store_ptr)
+
+             self.branch(self.catch_stack[-1]['landing_pad'])
+             return True
+             
+        # Store in return variable as error {1, undef, error}
+        if hasattr(self, 'current_function'): # Access RET_VAR via scope
+            ret_var = self.search_scopes(RET_VAR)
+            if ret_var:
+                 tag_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                 self.builder.store(self.const(1, width=INT8), tag_ptr)
+                 
+                 err_ptr = self.builder.gep(ret_var, [self.const(0), self.const(2, width=INT32)])
+                 
+                 # Check if error_val is pointer to what we need
+                 if isinstance(error_val.type, ir.PointerType) and error_val.type.pointee == err_ptr.type.pointee:
+                     error_val = self.builder.load(error_val)
+                     
+                 self.builder.store(error_val, err_ptr)
+                 self.branch(self.exit_blocks[-1])
+            else:
+                 # Void function uncaught raise
+                 self.branch(self.exit_blocks[-1])
+        
+        return True
+
+    def visit_trystatement(self, node):
+        """Generate code for a try/catch statement."""
+        # Blocks
+        try_body = self.add_block('try.body')
+        try_landing = self.add_block('try.landing')
+        try_end = self.add_block('try.end')
+        
+        # Exception storage for this try block (Union Error Type {i8})
+        # We assume all errors are currently simple Enums (i8 tag inside struct)
+        # So we allocate {i8}
+        error_struct_type = ir.LiteralStructType([type_map[INT8]])
+        exception_store = self.builder.alloca(error_struct_type, name='exception_store')
+        
+        # Push landing pad and storage to stack
+        self.catch_stack.append({
+            'landing_pad': try_landing,
+            'storage': exception_store
+        })
+        
+        # 1. Generate Try Body
+        self.branch(try_body)
+        self.position_at_end(try_body)
+        self.visit(node.try_block)
+        
+        # If try finishes successfully, jump to end
+        if not self.is_break and not self.builder.block.is_terminated:
+             self.branch(try_end)
+             
+        # Pop stack
+        self.catch_stack.pop()
+        
+        # 2. Generate Landing Pad (Catch Dispatcher)
+        self.position_at_end(try_landing)
+        
+        # Load exception from local storage
+        current_error = self.builder.load(exception_store)
+        
+        # Dispatch to catch clauses
+        next_check_block = None
+        
+        for i, clause in enumerate(node.catch_clauses):
+             # Block for this catch body
+             catch_body_block = self.add_block(f'catch.body.{i}')
+             # Block for next check (if mismatch)
+             next_check_block = self.add_block(f'catch.next.{i}')
+             
+             # Check match
+             target_error = self.visit(clause.error_pattern)
+             
+             # Extract tag from target_error (Enum Value)
+             if isinstance(target_error, ir.Constant) and isinstance(target_error.constant, (list, tuple)):
+                 # Constant folding optimization
+                 target_error = target_error.constant[0]
+             else:
+                 # If target_error is a pointer, load it first
+                 if isinstance(target_error.type, ir.PointerType):
+                     target_error = self.builder.load(target_error)
+                 # Fallback: extract instruction
+                 target_error = self.builder.extract_value(target_error, 0)
+             
+             # Extract i8 from current_error (which is {i8})
+             current_error_val = self.builder.extract_value(current_error, 0)
+             
+             # Compare current_error_val == target_error
+             is_match = self.builder.icmp_unsigned(EQUALS, current_error_val, target_error)
+             self.cbranch(is_match, catch_body_block, next_check_block)
+             
+             # Generate Catch Body
+             self.position_at_end(catch_body_block)
+             self.visit(clause.body)
+             if not self.is_break and not self.builder.block.is_terminated:
+                 self.branch(try_end)
+             self.is_break = False # Reset break flag for local scope
+             
+             # Move to next check
+             self.position_at_end(next_check_block)
+
+        # If no catch matched (re-throw)
+        if self.catch_stack:
+             # Propagate to outer try
+             # Store current error to outer storage
+             outer_store = self.catch_stack[-1]['storage']
+             self.builder.store(current_error, outer_store)
+             self.branch(self.catch_stack[-1]['landing_pad'])
+        else:
+             # Propagate to function exit
+             # Requires RET_VAR to exist if we are propagating out of function
+             ret_var = self.search_scopes(RET_VAR)
+             if ret_var: # If non-void function
+                 tag_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                 self.builder.store(self.const(1, width=INT8), tag_ptr)
+                 
+                 err_ptr = self.builder.gep(ret_var, [self.const(0), self.const(2, width=INT32)])
+                 self.builder.store(current_error, err_ptr)
+                 self.branch(self.exit_blocks[-1])
+             else:
+                 # Void function with uncaught exception? 
+                 # This is a runtime crash in most languages. 
+                 # For now, just return/exit (swallowing error if void) or printf("Uncaught Exception")?
+                 # Ignoring strictly for now or just returning.
+                 self.branch(self.exit_blocks[-1])
+             
+        # 3. Try End
+        self.position_at_end(try_end)
+        
+    def visit_errorpropagation(self, node):
+        """Generate code for error propagation (?) operator.
+        
+        If expr returns error tag, return error from CURRENT function (propagate).
+        Else, unwrap and use success value.
+        """
+        val = self.visit(node.expr)
+        
+        # Handle if val is value or pointer
+        if isinstance(val.type, ir.LiteralStructType):
+            val_ptr = self.builder.alloca(val.type)
+            self.builder.store(val, val_ptr)
+        else:
+            val_ptr = val
+            
+        # Check tag (index 0)
+        tag_ptr = self.builder.gep(val_ptr, [self.const(0), self.const(0, width=INT32)])
+        tag = self.builder.load(tag_ptr)
+        
+        # Create blocks
+        error_block = self.add_block('prop.error')
+        success_block = self.add_block('prop.success')
+        
+        cond = self.builder.icmp_unsigned(EQUALS, tag, self.const(1, width=INT8))
+        self.cbranch(cond, error_block, success_block)
+        
+        # Error Block: Propagate error
+        self.position_at_end(error_block)
+        
+        # Load error from val
+        err_val_ptr = self.builder.gep(val_ptr, [self.const(0), self.const(2, width=INT32)])
+        err_val = self.builder.load(err_val_ptr)
+        
+        # Check for active catch block
+        if self.catch_stack:
+             store_ptr = self.catch_stack[-1]['storage']
+             
+             # Extract tag from err_val (which is %MyError matching {i8})
+             tag = self.builder.extract_value(err_val, 0)
+             tag_store = self.builder.gep(store_ptr, [self.const(0), self.const(0, width=INT32)])
+             self.builder.store(tag, tag_store)
+             
+             self.branch(self.catch_stack[-1]['landing_pad'])
+        else:
+            ret_var = self.search_scopes(RET_VAR)
+            # Store to current function return: {1, undef, err}
+            ret_tag_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+            self.builder.store(self.const(1, width=INT8), ret_tag_ptr)
+            ret_err_ptr = self.builder.gep(ret_var, [self.const(0), self.const(2, width=INT32)])
+            self.builder.store(err_val, ret_err_ptr)
+            self.branch(self.exit_blocks[-1])
+        
+        # Success Block: Unwrap value
+        self.position_at_end(success_block)
+        
+        # Load result
+        res_val_ptr = self.builder.gep(val_ptr, [self.const(0), self.const(1, width=INT32)])
+        return self.builder.load(res_val_ptr)
+
     def visit_incrementassign(self, node):
         collection_access = None
         key = None
         if isinstance(node.left, CollectionAccess):
             collection_access = True
             var_name = self.search_scopes(node.left.collection.value)
-            array_type = str(var_name.type.pointee.elements[-1].pointee)
+            pointee = var_name.type.pointee
+            # Data pointer is at index 2: { size, capacity, data*, refcount }
+            data_ptr_elem = pointee.elements[2]
+            if hasattr(data_ptr_elem, 'pointee'):
+                array_type = str(data_ptr_elem.pointee)
+            else:
+                struct_name = getattr(pointee, 'name', str(pointee))
+                if '.array' in struct_name:
+                    array_type = struct_name.replace('.array', '')
+                else:
+                    array_type = str(data_ptr_elem)
             key = self.const(node.left.key.value)
             var = self.call('{}.array.get'.format(array_type), [var_name, key])
             pointee = var.type
@@ -569,11 +924,7 @@ class CodeGenerator(NodeVisitor):
         return self.load(array_ptr)
 
     def visit_assign(self, node):
-        if isinstance(node.right, DotAccess) and self.search_scopes(node.right.obj).type == ENUM or \
-           hasattr(node.right, 'name') and isinstance(self.search_scopes(node.right.name), ir.IdentifiedStructType):
-            var_name = node.left.value if isinstance(node.left.value, str) else node.left.value.value
-            self.define(var_name, self.visit(node.right))
-        elif hasattr(node.right, 'value') and isinstance(self.search_scopes(node.right.value), ir.Function):
+        if hasattr(node.right, 'value') and isinstance(self.search_scopes(node.right.value), ir.Function):
             self.define(node.left.value, self.search_scopes(node.right.value))
         else:
             if isinstance(node.right, Input):
@@ -967,7 +1318,7 @@ class CodeGenerator(NodeVisitor):
                     var_type = type_map[list(node.left.type.func_params.items())[0][1].value]
                     self.alloc_define_store(var, var_name, var.type)
                 else:
-                    var_type = type_map[node.left.type.value]
+                    var_type = self.get_type(node.left.type)
                     if not var.type.is_pointer:
                         casted_value = cast_ops(self, var, var_type, node)
                         self.alloc_define_store(casted_value, var_name, var_type)
@@ -976,19 +1327,73 @@ class CodeGenerator(NodeVisitor):
 
             elif isinstance(node.left, DotAccess):
                 obj = self.search_scopes(node.left.obj)
-                obj_type = self.search_scopes(obj.type.pointee.name.split('.')[-1])
+                # Handle _TypedPointerType which doesn't have 'name' attribute
+                pointee = obj.type.pointee
+
+                # Check if obj is pointer-to-pointer (alloca'd class variable)
+                # If so, load it first to get the actual struct pointer
+                if hasattr(pointee, 'pointee'):
+                    # obj is Thing**, load to get Thing*
+                    loaded_obj = self.builder.load(obj)
+                    actual_pointee = pointee.pointee
+                else:
+                    loaded_obj = obj
+                    actual_pointee = pointee
+
+                # Get type name from the actual struct type
+                if hasattr(actual_pointee, 'name'):
+                    type_name = actual_pointee.name.split('.')[-1]
+                else:
+                    type_str = str(actual_pointee)
+                    if type_str.startswith('%"'):
+                        type_name = type_str.split('"')[1].split('.')[-1]
+                    elif type_str.startswith('%'):
+                        type_name = type_str[1:].split('.')[-1]
+                    else:
+                        type_name = type_str.split('.')[-1]
+
+                obj_type = self.search_scopes(type_name)
                 idx = -1
                 for i, v in enumerate(obj_type.fields):
                     if v == node.left.field:
                         idx = i
                         break
 
-                elem = self.builder.gep(obj, [self.const(0, width=INT32), self.const(idx, width=INT32)], inbounds=True)
-                self.builder.store(self.visit(node.right), elem)
+                elem = self.builder.gep(loaded_obj, [self.const(0, width=INT32), self.const(idx, width=INT32)], inbounds=True)
+                val = self.visit(node.right)
+                # If val is a pointer to a struct and elem expects the struct value, load it
+                if isinstance(val.type, ir.PointerType) and not isinstance(elem.type.pointee, ir.PointerType):
+                    if hasattr(val.type.pointee, 'name') and hasattr(elem.type.pointee, 'name'):
+                        val = self.builder.load(val)
+
+                # Check if this is a weak field and handle RC accordingly
+                is_weak_field = hasattr(obj_type, 'weak_fields') and node.left.field in obj_type.weak_fields
+                if is_weak_field and self.is_managed_type(elem.type.pointee):
+                    # Weak field: use weak_retain instead of retain
+                    self.rc_weak_retain(val)
+                    self.builder.store(val, elem)
+                elif self.is_managed_type(elem.type.pointee):
+                    # Strong field: use normal RC
+                    self.rc_retain(val)
+                    self.builder.store(val, elem)
+                else:
+                    self.builder.store(val, elem)
             elif isinstance(node.left, CollectionAccess):
                 right = self.visit(node.right)
-                array_type = str(self.search_scopes(node.left.collection.value).type.pointee.elements[-1].pointee)
-                self.call('{}.array.set'.format(array_type), [self.search_scopes(node.left.collection.value), self.const(node.left.key.value), right])
+                collection_var = self.search_scopes(node.left.collection.value)
+                pointee = collection_var.type.pointee
+                # Data pointer is at index 2: { size, capacity, data*, refcount }
+                data_ptr_elem = pointee.elements[2]
+                if hasattr(data_ptr_elem, 'pointee'):
+                    array_type = str(data_ptr_elem.pointee)
+                else:
+                    # Fallback: extract from struct name (e.g., "double.array" -> "double")
+                    struct_name = getattr(pointee, 'name', str(pointee))
+                    if '.array' in struct_name:
+                        array_type = struct_name.replace('.array', '')
+                    else:
+                        array_type = str(data_ptr_elem)
+                self.call('{}.array.set'.format(array_type), [collection_var, self.const(node.left.key.value), right])
             else:
                 var_name = node.left.value
                 var_value = self.top_scope.get(var_name)
@@ -1241,8 +1646,41 @@ class CodeGenerator(NodeVisitor):
         return self.builder.extract_value(self.load(node.obj), obj_type.fields.index(node.field))
 
     def class_assign(self, node):
+        """Create a class instance with heap allocation and object header."""
+        from meteor.compiler.base import OBJECT_HEADER, TYPE_TAG_CLASS
+
         class_type = self.search_scopes(node.name)
-        _class = self.builder.alloca(class_type)
+
+        # Calculate size: object header (16 bytes) + class fields
+        header_size = 16  # 4 + 4 + 1 + 1 + 2 + padding
+        class_size = self.get_type_size(class_type)
+        total_size = header_size + class_size
+
+        # Allocate memory using malloc
+        malloc_func = self.module.get_global('malloc')
+        raw_mem = self.builder.call(malloc_func, [self.const(total_size)])
+
+        # Initialize object header
+        header_struct = self.search_scopes(OBJECT_HEADER)
+        if header_struct:
+            header_ptr = self.builder.bitcast(raw_mem, header_struct.as_pointer())
+            # strong_rc = 1
+            rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(0, width=INT32)])
+            self.builder.store(self.const(1, width=UINT32), rc_ptr)
+            # weak_rc = 0
+            weak_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(1, width=INT32)])
+            self.builder.store(self.const(0, width=UINT32), weak_ptr)
+            # flags = 0
+            flags_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(2, width=INT32)])
+            self.builder.store(self.const(0, width=UINT8), flags_ptr)
+            # type_tag = TYPE_TAG_CLASS
+            tag_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(3, width=INT32)])
+            self.builder.store(self.const(TYPE_TAG_CLASS, width=UINT8), tag_ptr)
+
+        # Get pointer to class data (after header)
+        data_ptr = self.builder.gep(raw_mem, [self.const(header_size)])
+        _class = self.builder.bitcast(data_ptr, class_type.as_pointer())
+
         found = False
 
         for func in class_type.methods:
@@ -1282,8 +1720,35 @@ class CodeGenerator(NodeVisitor):
             self.builder.store(self.const(idx, width=INT8), val)
             return enum
 
-        obj_type = self.search_scopes(obj.type.pointee.name.split('.')[-1])
-        return self.builder.extract_value(self.load(node.obj), obj_type.fields.index(node.field))
+        # Get the actual struct type (may need to dereference pointer)
+        pointee = obj.type.pointee
+        # If pointee is also a pointer, get its pointee
+        if hasattr(pointee, 'pointee'):
+            actual_type = pointee.pointee
+        else:
+            actual_type = pointee
+
+        # Get type from scope
+        if hasattr(actual_type, 'name') and actual_type.name:
+            type_name = actual_type.name
+            obj_type = self.search_scopes(type_name)
+        elif hasattr(actual_type, 'fields'):
+            obj_type = actual_type
+        else:
+            type_str = str(actual_type)
+            if type_str.startswith('%"') and type_str.endswith('"'):
+                type_name = type_str[2:-1]
+            elif type_str.startswith('%'):
+                type_name = type_str[1:]
+            else:
+                type_name = type_str
+            obj_type = self.search_scopes(type_name)
+
+        # Load the object - may need double load for pointer-to-pointer
+        loaded = self.load(node.obj)
+        if hasattr(loaded.type, 'pointee'):
+            loaded = self.builder.load(loaded)
+        return self.builder.extract_value(loaded, obj_type.fields.index(node.field))
 
     def visit_opassign(self, node):
         right = self.visit(node.right)
@@ -1292,7 +1757,17 @@ class CodeGenerator(NodeVisitor):
         if isinstance(node.left, CollectionAccess):
             collection_access = True
             var_name = self.search_scopes(node.left.collection.value)
-            array_type = str(self.search_scopes(node.left.collection.value).type.pointee.elements[-1].pointee)
+            pointee = var_name.type.pointee
+            # Data pointer is at index 2: { size, capacity, data*, refcount }
+            data_ptr_elem = pointee.elements[2]
+            if hasattr(data_ptr_elem, 'pointee'):
+                array_type = str(data_ptr_elem.pointee)
+            else:
+                struct_name = getattr(pointee, 'name', str(pointee))
+                if '.array' in struct_name:
+                    array_type = struct_name.replace('.array', '')
+                else:
+                    array_type = str(data_ptr_elem)
             key = self.const(node.left.key.value)
             var = self.call('{}.array.get'.format(array_type), [var_name, key])
             pointee = var.type
@@ -1592,6 +2067,8 @@ class CodeGenerator(NodeVisitor):
 
     def get_args(self, parameters):
         args = []
+        if parameters is None:
+            return args
         for param in parameters.values():
             if param.value == FUNC:
                 if param.func_ret_type.value in type_map:
@@ -1612,7 +2089,12 @@ class CodeGenerator(NodeVisitor):
                 elif list(parameters.keys())[list(parameters.values()).index(param)] == SELF:
                     args.append(self.search_scopes(param.value).as_pointer())
                 elif self.search_scopes(param.value) is not None:
-                    args.append(self.search_scopes(param.value))
+                    # Check if it's a class or enum type - these are passed by pointer
+                    typ = self.search_scopes(param.value)
+                    if hasattr(typ, 'type') and typ.type in (CLASS, ENUM):
+                        args.append(typ.as_pointer())
+                    else:
+                        args.append(typ)
                 else:
                     error("Parameter type not recognized: {}".format(param.value))
 
@@ -1620,11 +2102,23 @@ class CodeGenerator(NodeVisitor):
 
     def get_type(self, param):
         typ = None
+        if isinstance(param, UnionType):
+            # Tagged union { i8 tag, T success, E error }
+            # tag: 0 = success, 1 = error
+            success_type = self.get_type(param.success_type)
+            error_type = self.get_type(param.error_type)
+            union_struct = ir.LiteralStructType([type_map[INT8], success_type, error_type])
+            return union_struct
+            
         if param.value == FUNC:
-            if param.func_ret_type.value in type_map:
+            if param.func_ret_type is None:
+                func_ret_type = type_map[VOID]
+            elif param.func_ret_type.value in type_map:
                 func_ret_type = type_map[param.func_ret_type.value]
             elif self.search_scopes(param.func_ret_type.value) is not None:
                 func_ret_type = self.search_scopes(param.func_ret_type.value).as_pointer()
+            else:
+                func_ret_type = type_map[VOID]
             func_parameters = self.get_args(param.func_params)
             func_ty = ir.FunctionType(func_ret_type, func_parameters, None).as_pointer()
             typ = func_ty
@@ -1632,6 +2126,10 @@ class CodeGenerator(NodeVisitor):
             array_type = self.get_type(param.func_params['0'])
             self.create_array(array_type)
             typ = self.search_scopes('{}.array'.format(array_type))
+        elif param.value == STR:
+            # Strings are represented as i64.array pointers
+            self.create_array(type_map[INT])
+            typ = self.search_scopes('i64.array')
         else:
             if param.value in type_map:
                 typ = type_map[param.value]
@@ -1739,6 +2237,171 @@ class CodeGenerator(NodeVisitor):
         else:
             raise NotImplementedError
 
+    # ========================================================================
+    # Memory Management Helpers (RFC-001)
+    # ========================================================================
+
+    def get_type_size(self, llvm_type):
+        """Get the size of an LLVM type in bytes."""
+        # Estimate size based on type
+        if isinstance(llvm_type, ir.IntType):
+            return llvm_type.width // 8
+        elif isinstance(llvm_type, ir.FloatType):
+            return 4
+        elif isinstance(llvm_type, ir.DoubleType):
+            return 8
+        elif isinstance(llvm_type, ir.PointerType):
+            return 8  # 64-bit pointers
+        elif isinstance(llvm_type, ir.ArrayType):
+            return llvm_type.count * self.get_type_size(llvm_type.element)
+        elif isinstance(llvm_type, (ir.LiteralStructType, ir.IdentifiedStructType)):
+            total = 0
+            if hasattr(llvm_type, 'elements'):
+                for elem in llvm_type.elements:
+                    total += self.get_type_size(elem)
+            return max(total, 8)  # Minimum 8 bytes
+        else:
+            return 8  # Default to 8 bytes
+
+    def is_managed_type(self, llvm_type):
+        """Check if a type requires reference counting.
+        Types with object headers are managed: bigint, decimal, arrays, and classes.
+        """
+        if not isinstance(llvm_type, ir.PointerType):
+            return False
+        pointee = llvm_type.pointee
+        if hasattr(pointee, 'name'):
+            # Types that have object headers
+            managed_names = ('bigint', 'decimal')
+            if pointee.name in managed_names:
+                return True
+            if pointee.name.endswith('.array'):
+                return True
+        # Check if it's a class type (IdentifiedStructType with methods)
+        if isinstance(pointee, ir.IdentifiedStructType):
+            if hasattr(pointee, 'methods'):
+                return True
+        return False
+
+    def get_object_header(self, obj_ptr):
+        """Get the object header pointer from a managed object.
+        For class instances, the header is 16 bytes before the class data.
+        For other types (bigint, decimal, arrays), header is at offset 0.
+        """
+        from meteor.compiler.base import OBJECT_HEADER
+        header_struct = self.search_scopes(OBJECT_HEADER)
+        if not header_struct:
+            return obj_ptr
+
+        # Check if this is a class type (pointer to IdentifiedStructType with methods)
+        obj_type = obj_ptr.type
+        if hasattr(obj_type, 'pointee'):
+            pointee = obj_type.pointee
+            if isinstance(pointee, ir.IdentifiedStructType) and hasattr(pointee, 'methods'):
+                # Class instance: header is 16 bytes before the class data
+                # Cast to i8*, subtract 16, then cast to header*
+                i8_ptr = self.builder.bitcast(obj_ptr, ir.IntType(8).as_pointer())
+                header_ptr = self.builder.gep(i8_ptr, [self.const(-16)])
+                return self.builder.bitcast(header_ptr, header_struct.as_pointer())
+
+        # For other managed types (bigint, decimal, arrays), header is at offset 0
+        return self.builder.bitcast(obj_ptr, header_struct.as_pointer())
+
+    def rc_retain(self, obj_ptr):
+        """Call meteor_retain on an object."""
+        retain_func = self.module.get_global('meteor_retain')
+        if retain_func and obj_ptr:
+            header = self.get_object_header(obj_ptr)
+            self.builder.call(retain_func, [header])
+
+    def rc_release(self, obj_ptr):
+        """Call meteor_release on an object."""
+        release_func = self.module.get_global('meteor_release')
+        if release_func and obj_ptr:
+            header = self.get_object_header(obj_ptr)
+            self.builder.call(release_func, [header])
+
+    def rc_weak_retain(self, obj_ptr):
+        """Call meteor_weak_retain on an object."""
+        func = self.module.get_global('meteor_weak_retain')
+        if func and obj_ptr:
+            header = self.get_object_header(obj_ptr)
+            self.builder.call(func, [header])
+
+    def rc_weak_release(self, obj_ptr):
+        """Call meteor_weak_release on an object."""
+        func = self.module.get_global('meteor_weak_release')
+        if func and obj_ptr:
+            header = self.get_object_header(obj_ptr)
+            self.builder.call(func, [header])
+
+    def rc_assign(self, target_ptr, new_value):
+        """RC-safe assignment: release old, retain new, store."""
+        if not self.is_managed_type(target_ptr.type.pointee):
+            self.builder.store(new_value, target_ptr)
+            return
+
+        # Get retain/release functions
+        retain_func = self.module.get_global('meteor_retain')
+        release_func = self.module.get_global('meteor_release')
+
+        if not retain_func or not release_func:
+            # Fallback to simple store if RC functions not available
+            self.builder.store(new_value, target_ptr)
+            return
+
+        # Load old value
+        old_value = self.builder.load(target_ptr)
+
+        # Retain new value (unconditionally for simplicity)
+        self.rc_retain(new_value)
+
+        # Release old value (unconditionally for simplicity)
+        self.rc_release(old_value)
+
+        # Store new value
+        self.builder.store(new_value, target_ptr)
+
+    def register_managed_var(self, name, var_ptr):
+        """Register a managed variable for scope cleanup."""
+        if var_ptr and hasattr(var_ptr, 'type'):
+            if hasattr(var_ptr.type, 'pointee'):
+                if self.is_managed_type(var_ptr.type.pointee):
+                    self.managed_vars_stack[-1].append((name, var_ptr))
+
+    def release_scope_variables(self, exclude=None):
+        """Release all managed variables in current scope."""
+        # Skip if no builder or no current block
+        if not hasattr(self, 'builder') or self.builder is None:
+            return
+        if not hasattr(self.builder, 'block') or self.builder.block is None:
+            return
+        # Skip if block is already terminated
+        if self.builder.block.is_terminated:
+            return
+        release_func = self.module.get_global('meteor_release')
+        if not release_func:
+            return
+        if not self.managed_vars_stack or not self.managed_vars_stack[-1]:
+            return
+        for name, var_ptr in self.managed_vars_stack[-1]:
+            val = self.builder.load(var_ptr)
+            if exclude is not None and val == exclude:
+                continue
+            # Call release directly - the runtime function handles NULL
+            self.rc_release(val)
+
+    def new_scope(self):
+        """Override to also push managed vars stack."""
+        super().new_scope()
+        self.managed_vars_stack.append([])
+
+    def drop_top_scope(self):
+        """Override to release managed vars before dropping scope."""
+        self.release_scope_variables()
+        self.managed_vars_stack.pop()
+        super().drop_top_scope()
+
     def allocate(self, typ, name=''):
         var_addr = self.builder.alloca(typ, name=name)
         return var_addr
@@ -1787,19 +2450,53 @@ class CodeGenerator(NodeVisitor):
         self.define(name, var_addr)
         return var_addr
 
-    def alloc_define_store(self, val, name, typ):
-        saved_block = self.builder.block
+    def alloc_define_store_simple(self, val, name, typ):
+        """Allocate, define and store without RC management.
+        Used for function parameters where caller owns the reference.
+        """
         var_addr = self.builder.alloca(typ, name=name)
         self.define(name, var_addr)
+        self.builder.store(val, var_addr)
+        return var_addr
+
+    def alloc_define_store(self, val, name, typ):
+        # Create alloca in entry block for proper LLVM optimization
+        entry_block = self.current_function.entry_basic_block
+        saved_block = self.builder.block
+
+        # Position at start of entry block to insert alloca
+        if entry_block.instructions:
+            self.builder.position_before(entry_block.instructions[0])
+        else:
+            self.builder.position_at_end(entry_block)
+
+        var_addr = self.builder.alloca(typ, name=name)
+        self.define(name, var_addr)
+
+        # Return to original position
         self.builder.position_at_end(saved_block)
+
+        # For managed types, retain the new value before storing
+        if self.is_managed_type(typ):
+            self.rc_retain(val)
+            self.register_managed_var(name, var_addr)
+
         self.builder.store(val, var_addr)
         return var_addr
 
     def store(self, value, name):
         if isinstance(name, str):
-            self.builder.store(value, self.search_scopes(name))
+            target_ptr = self.search_scopes(name)
         else:
-            self.builder.store(value, name)
+            target_ptr = name
+
+        # Check if this is a managed type that needs RC
+        if hasattr(target_ptr, 'type') and hasattr(target_ptr.type, 'pointee'):
+            if self.is_managed_type(target_ptr.type.pointee):
+                self.rc_assign(target_ptr, value)
+                return
+
+        self.builder.store(value, target_ptr)
 
     def load(self, name):
         if isinstance(name, str):

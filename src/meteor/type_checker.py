@@ -1,11 +1,11 @@
 from typing import Iterator, Union, List, Tuple, Any
 
-from meteor.ast import Collection, CollectionAccess, DotAccess, Range, Var, VarDecl, AST
+from meteor.ast import Collection, CollectionAccess, DotAccess, Range, Var, VarDecl, AST, UnionType
 from meteor.grammar import *
 from meteor.utils import error, warning
 from meteor.visitor import (BuiltinTypeSymbol, ClassSymbol, CollectionSymbol,
                            EnumSymbol, FuncSymbol, NodeVisitor,
-                           TypeSymbol, VarSymbol)
+                           TypeSymbol, VarSymbol, TraitSymbol, ImplSymbol, ErrorSymbol, UnionSymbol)
 
 
 def flatten(container: Union[List[Any], Tuple[Any, ...]]) -> Iterator[list]:
@@ -22,6 +22,7 @@ def flatten(container: Union[List[Any], Tuple[Any, ...]]) -> Iterator[list]:
 def types_compatible(left_type: AST, right_type: AST) -> bool:
     l_type = str(left_type)
     r_type = str(right_type)
+    
     int_type = ('i8', 'i16', 'i32', 'i64', 'int8', 'int16', 'int32', 'int64', 'int')
     float_type = ('float', 'double')
     num_type = int_type + float_type
@@ -32,6 +33,25 @@ def types_compatible(left_type: AST, right_type: AST) -> bool:
        (l_type in bigint_compatible and r_type in bigint_compatible):
         return True
 
+    # Check for Union Type compatibility
+    if '!' in r_type:
+        parts = r_type.split('!')
+        success_part = parts[0].strip()
+        error_part = parts[1].strip()
+        
+        # Check if left is compatible with success part
+        # Direct string check to avoid recursion issues or type aliasing confusion
+        if str(left_type).strip() == success_part:
+            return True
+            
+        if types_compatible(left_type, success_part):
+            return True
+            
+        # Check if left is compatible with error part (Error Enum)
+        if l_type == error_part or l_type in int_type: 
+             if l_type == error_part:
+                 return True
+                 
     return False
 
 
@@ -362,7 +382,11 @@ class Preprocessor(NodeVisitor):
 
     def visit_funcdecl(self, node):
         func_name = node.name
-        func_type = self.search_scopes(node.return_type.value)
+        # Handle UnionType in return type
+        if isinstance(node.return_type, UnionType):
+            func_type = self.visit(node.return_type)
+        else:
+            func_type = self.search_scopes(node.return_type.value)
 
         if self.search_scopes(func_name) is not None:
             error('file={} line={}: Cannot redefine a declared function: {}'.format(self.file_name, node.line_num, func_name))
@@ -398,6 +422,9 @@ class Preprocessor(NodeVisitor):
             self.return_flag = False
             for ret_type in return_types:
                 infered_type = self.infer_type(ret_type)
+                # Helper for union types: relaxed check for prototype
+                if isinstance(node.return_type, UnionType):
+                    continue
                 if infered_type is not func_type and not types_compatible(infered_type, func_type):
                     error('file={} line={}: The actual return type does not match the declared return type: {}'.format(self.file_name, node.line_num, func_name))
         elif func_type is not None:
@@ -513,6 +540,56 @@ class Preprocessor(NodeVisitor):
 
         self.define(sym.name, sym)
 
+    def visit_traitdeclaration(self, node):
+        """Type check a trait declaration."""
+        trait_methods = {}
+        for method_name, method in node.methods.items():
+            if method.body is not None:
+                # Default implementation
+                func_sym = FuncSymbol(method.name, method.return_type, method.parameters, method.body)
+            else:
+                # Abstract method (no body)
+                func_sym = FuncSymbol(method.name, method.return_type, method.parameters, None)
+            trait_methods[method_name] = func_sym
+            self.define(method.name, func_sym)
+        
+        sym = TraitSymbol(node.name, trait_methods)
+        self.define(sym.name, sym)
+
+    def visit_implblock(self, node):
+        """Type check an impl block - verifies class implements all required trait methods."""
+        trait = self.search_scopes(node.trait_name)
+        if trait is None:
+            from meteor.utils import error
+            error('file={} line={}: Trait {} not found'.format(self.file_name, node.line_num, node.trait_name))
+        
+        class_sym = self.search_scopes(node.class_name)
+        if class_sym is None:
+            from meteor.utils import error
+            error('file={} line={}: Class {} not found'.format(self.file_name, node.line_num, node.class_name))
+        
+        # Register methods from impl block
+        impl_methods = {}
+        for method_name, method in node.methods.items():
+            func_sym = FuncSymbol(method.name, method.return_type, method.parameters, method.body)
+            impl_methods[method_name] = func_sym
+            self.define(method.name, func_sym)
+        
+        # Check that all abstract methods are implemented
+        for trait_method_name, trait_method in trait.methods.items():
+            if trait_method.body is None:  # Abstract method
+                if trait_method_name not in impl_methods:
+                    from meteor.utils import error
+                    error('file={} line={}: Class {} must implement method {} from trait {}'.format(
+                        self.file_name, node.line_num, node.class_name, trait_method_name, node.trait_name))
+        
+        # Add trait to class's trait list
+        class_sym.traits.append(node.trait_name)
+        
+        # Register as impl symbol
+        sym = ImplSymbol(node.trait_name, node.class_name, impl_methods)
+        self.define(sym.name, sym)
+
     def visit_return(self, node):
         res = self.visit(node.value)
         self.return_flag = True
@@ -552,6 +629,12 @@ class Preprocessor(NodeVisitor):
         obj.accessed = True
         if isinstance(obj, EnumSymbol):
             return obj
+        elif isinstance(obj, ErrorSymbol):
+            # Error variant access like IOError.NotFound
+            if node.field not in obj.variants:
+                error('file={} line={}: Invalid error variant {} of error {}'.format(
+                    self.file_name, node.line_num, node.field, node.obj))
+            return obj
         elif node.field not in obj.type.fields:
             error('file={} line={}: Invalid property {} of variable {}'.format(
                 self.file_name, node.line_num, node.field, node.obj))
@@ -588,3 +671,48 @@ class Preprocessor(NodeVisitor):
 
     def visit_input(self, node):
         self.visit(node.value)
+
+    def visit_errordeclaration(self, node):
+        """Type check an error enum declaration."""
+        sym = ErrorSymbol(node.name, node.variants)
+        self.define(sym.name, sym)
+        
+    def visit_uniontype(self, node):
+        """Type check a union type (T ! E)."""
+        success_sym = self.visit(node.success_type) if hasattr(node.success_type, 'value') else None
+        if not success_sym and hasattr(node.success_type, 'value'):
+             success_sym = self.search_scopes(node.success_type.value)
+             
+        error_sym = self.search_scopes(node.error_type.value) if hasattr(node.error_type, 'value') else None
+        
+        if success_sym and error_sym:
+             return UnionSymbol(success_sym, error_sym)
+        else:
+             return None
+
+    def visit_raise(self, node):
+        """Type check a raise statement - verify the error type exists."""
+        self.visit(node.error_value)
+
+    def visit_trystatement(self, node):
+        """Type check a try/catch statement."""
+        self.new_scope()
+        self.visit(node.try_block)
+        self.drop_top_scope()
+        
+        for catch_clause in node.catch_clauses:
+             self.new_scope()
+             # Define the error variable if it's a named capture (e.g. catch e: Error)
+             # Current grammar just has `catch ErrorType`.
+             # If we want to capture, we need syntax for it. 
+             # RFC 003: `catch e: IOError` or just `catch IOError`.
+             # Parser implements `catch ErrorType`.
+             # Implicit 'it' or no capture?
+             # For now just checking body.
+             self.visit(catch_clause.body)
+             self.drop_top_scope()
+
+    def visit_errorpropagation(self, node):
+        """Type check error propagation (?) operator."""
+        return self.visit(node.expr)
+

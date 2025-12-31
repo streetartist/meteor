@@ -1,0 +1,2576 @@
+; ModuleID = ""
+target triple = "unknown-unknown-unknown"
+target datalayout = ""
+
+%"i64.array" = type {i64, i64, i64*, i64}
+%"bigint" = type {i1, %"i64.array"*}
+%"decimal" = type {%"bigint"*, i64}
+%"dynamic" = type {i32, i8*}
+%"number" = type {i8, i8*}
+%"MyError" = type {i8}
+declare i8* @"malloc"(i64 %".1")
+
+declare i8* @"realloc"(i8* %".1", i64 %".2")
+
+declare void @"free"(i8* %".1")
+
+declare void @"exit"(i32 %".1")
+
+declare i64 @"putchar"(i64 %".1")
+
+declare i32 @"printf"(i8* %".1", ...)
+
+declare i64 @"scanf"(i8* %".1", ...)
+
+declare i8 @"getchar"()
+
+declare i64 @"puts"(i64* %".1")
+
+declare i32 @"fflush"(i8* %".1")
+
+define void @"i64.array.init"(%"i64.array"* %"self")
+{
+entry:
+  %".3" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".3"
+  %".5" = load %"i64.array"*, %"i64.array"** %".3"
+  %".6" = getelementptr inbounds %"i64.array", %"i64.array"* %".5", i32 0, i32 0
+  store i64 0, i64* %".6"
+  %".8" = load %"i64.array"*, %"i64.array"** %".3"
+  %".9" = getelementptr inbounds %"i64.array", %"i64.array"* %".8", i32 0, i32 1
+  store i64 16, i64* %".9"
+  %".11" = load %"i64.array"*, %"i64.array"** %".3"
+  %".12" = getelementptr inbounds %"i64.array", %"i64.array"* %".11", i32 0, i32 2
+  %".13" = load i64, i64* %".9"
+  %".14" = add i64 %".13", 1
+  %".15" = mul i64 %".14", 8
+  %".16" = call i8* @"malloc"(i64 %".15")
+  %".17" = bitcast i8* %".16" to i64*
+  store i64* %".17", i64** %".12"
+  %".19" = load %"i64.array"*, %"i64.array"** %".3"
+  %".20" = getelementptr inbounds %"i64.array", %"i64.array"* %".19", i32 0, i32 3
+  store i64 1, i64* %".20"
+  br label %"exit"
+exit:
+  ret void
+}
+
+define void @"i64.array.double_capacity_if_full"(%"i64.array"* %"self")
+{
+entry:
+  %".3" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".3"
+  %".5" = load %"i64.array"*, %"i64.array"** %".3"
+  %".6" = getelementptr inbounds %"i64.array", %"i64.array"* %".5", i32 0, i32 0
+  %".7" = load i64, i64* %".6"
+  %".8" = load %"i64.array"*, %"i64.array"** %".3"
+  %".9" = getelementptr inbounds %"i64.array", %"i64.array"* %".8", i32 0, i32 1
+  %".10" = load i64, i64* %".9"
+  %".11" = load %"i64.array"*, %"i64.array"** %".3"
+  %".12" = getelementptr inbounds %"i64.array", %"i64.array"* %".11", i32 0, i32 2
+  %".13" = icmp sge i64 %".7", %".10"
+  br i1 %".13", label %"double_capacity", label %"exit"
+exit:
+  ret void
+double_capacity:
+  %".15" = mul i64 %".10", 2
+  store i64 %".15", i64* %".9"
+  %".17" = load i64, i64* %".9"
+  %".18" = add i64 %".17", 1
+  %".19" = mul i64 %".18", 8
+  %".20" = load i64*, i64** %".12"
+  %".21" = bitcast i64* %".20" to i8*
+  %".22" = call i8* @"realloc"(i8* %".21", i64 %".19")
+  %".23" = bitcast i8* %".22" to i64*
+  store i64* %".23", i64** %".12"
+  br label %"exit"
+}
+
+define void @"i64.array.append"(%"i64.array"* %"self", i64 %".2")
+{
+entry:
+  %".4" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".4"
+  %".6" = alloca i64
+  store i64 %".2", i64* %".6"
+  %".8" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.double_capacity_if_full"(%"i64.array"* %".8")
+  %".10" = load %"i64.array"*, %"i64.array"** %".4"
+  %".11" = getelementptr inbounds %"i64.array", %"i64.array"* %".10", i32 0, i32 0
+  %".12" = load i64, i64* %".11"
+  %".13" = add i64 %".12", 1
+  store i64 %".13", i64* %".11"
+  %".15" = load %"i64.array"*, %"i64.array"** %".4"
+  %".16" = getelementptr inbounds %"i64.array", %"i64.array"* %".15", i32 0, i32 2
+  %".17" = load i64*, i64** %".16"
+  %".18" = getelementptr inbounds i64, i64* %".17", i64 %".13"
+  %".19" = load i64, i64* %".6"
+  store i64 %".19", i64* %".18"
+  br label %"exit"
+exit:
+  ret void
+}
+
+define i64 @"i64.array.get"(%"i64.array"* %"self", i64 %".2")
+{
+entry:
+  %".4" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".4"
+  %".6" = alloca i64
+  store i64 %".2", i64* %".6"
+  %".8" = load i64, i64* %".6"
+  %".9" = load %"i64.array"*, %"i64.array"** %".4"
+  %".10" = getelementptr inbounds %"i64.array", %"i64.array"* %".9", i32 0, i32 0
+  %".11" = load i64, i64* %".10"
+  %".12" = icmp sge i64 %".8", %".11"
+  br i1 %".12", label %"index_out_of_bounds", label %"is_index_less_than_zero"
+exit:
+  %".30" = load i64, i64* %".28"
+  ret i64 %".30"
+index_out_of_bounds:
+  call void @"exit"(i32 1)
+  unreachable
+is_index_less_than_zero:
+  %".16" = icmp slt i64 %".8", 0
+  br i1 %".16", label %"negative_index", label %"get"
+negative_index:
+  %".18" = add i64 %".11", %".8"
+  store i64 %".18", i64* %".6"
+  br label %"get"
+get:
+  %".21" = load %"i64.array"*, %"i64.array"** %".4"
+  %".22" = getelementptr inbounds %"i64.array", %"i64.array"* %".21", i32 0, i32 2
+  %".23" = load i64, i64* %".6"
+  %".24" = add i64 1, %".23"
+  store i64 %".24", i64* %".6"
+  %".26" = load i64, i64* %".6"
+  %".27" = load i64*, i64** %".22"
+  %".28" = getelementptr inbounds i64, i64* %".27", i64 %".26"
+  br label %"exit"
+}
+
+define void @"i64.array.set"(%"i64.array"* %"self", i64 %".2", i64 %".3")
+{
+entry:
+  %".5" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".5"
+  %".7" = alloca i64
+  store i64 %".2", i64* %".7"
+  %".9" = alloca i64
+  store i64 %".3", i64* %".9"
+  %".11" = load i64, i64* %".7"
+  %".12" = load %"i64.array"*, %"i64.array"** %".5"
+  %".13" = getelementptr inbounds %"i64.array", %"i64.array"* %".12", i32 0, i32 0
+  %".14" = load i64, i64* %".13"
+  %".15" = icmp sge i64 %".11", %".14"
+  br i1 %".15", label %"index_out_of_bounds", label %"is_index_less_than_zero"
+exit:
+  ret void
+index_out_of_bounds:
+  %".17" = alloca [26 x i8]
+  store [26 x i8] c"Array index out of bounds\00", [26 x i8]* %".17"
+  %".19" = getelementptr [26 x i8], [26 x i8]* %".17", i64 0, i64 0
+  %".20" = bitcast i8* %".19" to i64*
+  %".21" = call i64 @"puts"(i64* %".20")
+  call void @"exit"(i32 1)
+  unreachable
+is_index_less_than_zero:
+  %".24" = icmp slt i64 %".11", 0
+  br i1 %".24", label %"negative_index", label %"set"
+negative_index:
+  %".26" = add i64 %".14", %".11"
+  store i64 %".26", i64* %".7"
+  br label %"set"
+set:
+  %".29" = load %"i64.array"*, %"i64.array"** %".5"
+  %".30" = getelementptr inbounds %"i64.array", %"i64.array"* %".29", i32 0, i32 2
+  %".31" = load i64, i64* %".7"
+  %".32" = add i64 1, %".31"
+  store i64 %".32", i64* %".7"
+  %".34" = load i64, i64* %".7"
+  %".35" = load i64*, i64** %".30"
+  %".36" = getelementptr inbounds i64, i64* %".35", i64 %".34"
+  %".37" = load i64, i64* %".9"
+  store i64 %".37", i64* %".36"
+  br label %"exit"
+}
+
+define i64 @"i64.array.length"(%"i64.array"* %"self")
+{
+entry:
+  %".3" = alloca %"i64.array"*
+  store %"i64.array"* %"self", %"i64.array"** %".3"
+  %".5" = load %"i64.array"*, %"i64.array"** %".3"
+  %".6" = getelementptr inbounds %"i64.array", %"i64.array"* %".5", i32 0, i32 0
+  %".7" = load i64, i64* %".6"
+  ret i64 %".7"
+}
+
+define void @"@create_range"(%"i64.array"* %".1", i64 %".2", i64 %".3")
+{
+entry:
+  %".5" = alloca %"i64.array"*
+  store %"i64.array"* %".1", %"i64.array"** %".5"
+  %".7" = alloca i64
+  store i64 %".2", i64* %".7"
+  %".9" = alloca i64
+  store i64 %".3", i64* %".9"
+  %".11" = alloca i64
+  %".12" = load i64, i64* %".7"
+  store i64 %".12", i64* %".11"
+  br label %"test"
+test:
+  %".15" = load i64, i64* %".11"
+  %".16" = load i64, i64* %".9"
+  %".17" = icmp slt i64 %".15", %".16"
+  br i1 %".17", label %"body", label %"exit"
+body:
+  %".19" = load %"i64.array"*, %"i64.array"** %".5"
+  %".20" = load i64, i64* %".11"
+  call void @"i64.array.append"(%"i64.array"* %".19", i64 %".20")
+  %".22" = load i64, i64* %".11"
+  %".23" = add i64 1, %".22"
+  store i64 %".23", i64* %".11"
+  br label %"test"
+exit:
+  ret void
+}
+
+define void @"@int_to_str"(%"i64.array"* %".1", i64 %".2")
+{
+entry:
+  %".4" = alloca %"i64.array"*
+  store %"i64.array"* %".1", %"i64.array"** %".4"
+  %".6" = alloca i64
+  store i64 %".2", i64* %".6"
+  %".8" = alloca i64
+  %".9" = load i64, i64* %".6"
+  %".10" = sdiv i64 %".9", 10
+  %".11" = icmp sgt i64 %".10", 0
+  %".12" = load i64, i64* %".6"
+  %".13" = srem i64 %".12", 10
+  store i64 %".13", i64* %".8"
+  br i1 %".11", label %"entry.if", label %"entry.endif"
+exit:
+  ret void
+entry.if:
+  %".16" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"@int_to_str"(%"i64.array"* %".16", i64 %".10")
+  br label %"entry.endif"
+entry.endif:
+  %".19" = load i64, i64* %".8"
+  %".20" = add i64 48, %".19"
+  %".21" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".21", i64 %".20")
+  br label %"exit"
+}
+
+define void @"@bool_to_str"(%"i64.array"* %".1", i1 %".2")
+{
+entry:
+  %".4" = alloca %"i64.array"*
+  store %"i64.array"* %".1", %"i64.array"** %".4"
+  %".6" = icmp eq i1 %".2", 0
+  br i1 %".6", label %"entry.if", label %"entry.else"
+exit:
+  ret void
+entry.if:
+  %".8" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".8", i64 102)
+  %".10" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".10", i64 97)
+  %".12" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".12", i64 108)
+  %".14" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".14", i64 115)
+  %".16" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".16", i64 101)
+  br label %"entry.endif"
+entry.else:
+  %".19" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".19", i64 116)
+  %".21" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".21", i64 114)
+  %".23" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".23", i64 117)
+  %".25" = load %"i64.array"*, %"i64.array"** %".4"
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 101)
+  br label %"entry.endif"
+entry.endif:
+  br label %"exit"
+}
+
+define void @"print"(%"i64.array"* %".1")
+{
+entry:
+  %".3" = alloca %"i64.array"*
+  store %"i64.array"* %".1", %"i64.array"** %".3"
+  %".5" = load %"i64.array"*, %"i64.array"** %".3"
+  %".6" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  br label %"zero_length_check"
+zero_length_check:
+  %".8" = icmp sle i64 0, %".6"
+  br i1 %".8", label %"non_zero_length", label %"exit"
+non_zero_length:
+  %".10" = alloca i64
+  store i64 0, i64* %".10"
+  br label %"check_if_done"
+check_if_done:
+  %".13" = load i64, i64* %".10"
+  %".14" = icmp slt i64 %".13", %".6"
+  br i1 %".14", label %"print_it", label %"exit"
+print_it:
+  %".16" = load %"i64.array"*, %"i64.array"** %".3"
+  %".17" = load i64, i64* %".10"
+  %".18" = call i64 @"i64.array.get"(%"i64.array"* %".16", i64 %".17")
+  %".19" = call i64 @"putchar"(i64 %".18")
+  %".20" = load i64, i64* %".10"
+  %".21" = add i64 1, %".20"
+  store i64 %".21", i64* %".10"
+  br label %"check_if_done"
+exit:
+  %".24" = call i64 @"putchar"(i64 10)
+  ret void
+}
+
+define void @"print_bigint"(%"bigint"* %".1")
+{
+entry:
+  %".3" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".4" = load i1, i1* %".3"
+  %".5" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".6" = load %"i64.array"*, %"i64.array"** %".5"
+  %".7" = icmp ne i1 %".4", 0
+  br i1 %".7", label %"print_neg", label %"print_pos"
+print_neg:
+  %".9" = bitcast [2 x i8]* @"minus_str" to i8*
+  %".10" = call i32 (i8*, ...) @"printf"(i8* %".9")
+  br label %"print_value"
+print_pos:
+  br label %"print_value"
+print_value:
+  %".13" = getelementptr %"i64.array", %"i64.array"* %".6", i32 0, i32 0
+  %".14" = load i64, i64* %".13"
+  %".15" = getelementptr %"i64.array", %"i64.array"* %".6", i32 0, i32 2
+  %".16" = load i64*, i64** %".15"
+  %".17" = icmp eq i64 %".14", 1
+  br i1 %".17", label %"single_digit", label %"multi_digit"
+single_digit:
+  %".19" = getelementptr i64, i64* %".16", i64 1
+  %".20" = load i64, i64* %".19"
+  %".21" = bitcast [6 x i8]* @"fmt_bigint" to i8*
+  %".22" = call i32 (i8*, ...) @"printf"(i8* %".21", i64 %".20")
+  br label %"end"
+multi_digit:
+  %".24" = load i64, i64* @"BIGINT_DIV_CONST_1E9"
+  %".25" = call i8* @"malloc"(i64 32)
+  %".26" = bitcast i8* %".25" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".26")
+  %".28" = call i8* @"malloc"(i64 32)
+  %".29" = bitcast i8* %".28" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".29")
+  %".31" = alloca i64
+  store i64 1, i64* %".31"
+  br label %"copy_cond"
+end:
+  ret void
+copy_cond:
+  %".34" = load i64, i64* %".31"
+  %".35" = icmp sle i64 %".34", %".14"
+  br i1 %".35", label %"copy_body", label %"copy_end"
+copy_body:
+  %".37" = getelementptr i64, i64* %".16", i64 %".34"
+  %".38" = load i64, i64* %".37"
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 %".38")
+  %".40" = add i64 %".34", 1
+  store i64 %".40", i64* %".31"
+  br label %"copy_cond"
+copy_end:
+  %".43" = alloca i64
+  %".44" = alloca i64
+  %".45" = alloca i64
+  br label %"div_loop"
+div_loop:
+  %".47" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 0
+  %".48" = load i64, i64* %".47"
+  store i64 %".48", i64* %".45"
+  %".50" = icmp eq i64 %".48", 0
+  br i1 %".50", label %"div_end", label %"div_check_zero"
+div_check_zero:
+  %".52" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 2
+  %".53" = load i64*, i64** %".52"
+  %".54" = getelementptr i64, i64* %".53", i64 %".48"
+  %".55" = load i64, i64* %".54"
+  %".56" = icmp eq i64 %".55", 0
+  %".57" = icmp eq i64 %".48", 1
+  %".58" = and i1 %".56", %".57"
+  br i1 %".58", label %"div_end", label %"div_body"
+div_body:
+  store i64 0, i64* %".43"
+  %".61" = load i64, i64* %".45"
+  store i64 %".61", i64* %".44"
+  br label %"div_inner_cond"
+div_end:
+  %".110" = getelementptr %"i64.array", %"i64.array"* %".26", i32 0, i32 0
+  %".111" = load i64, i64* %".110"
+  %".112" = icmp sgt i64 %".111", 0
+  br i1 %".112", label %"print_digits", label %"print_zero"
+div_inner_cond:
+  %".64" = load i64, i64* %".44"
+  %".65" = icmp sge i64 %".64", 1
+  br i1 %".65", label %"div_inner_body", label %"div_inner_end"
+div_inner_body:
+  %".67" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 2
+  %".68" = load i64*, i64** %".67"
+  %".69" = getelementptr i64, i64* %".68", i64 %".64"
+  %".70" = load i64, i64* %".69"
+  %".71" = load i64, i64* %".43"
+  %".72" = mul i64 %".71", %".24"
+  %".73" = mul i64 %".71", 709551616
+  %".74" = add i64 %".73", %".70"
+  %".75" = icmp ult i64 %".74", %".70"
+  %".76" = udiv i64 %".74", 1000000000
+  %".77" = urem i64 %".74", 1000000000
+  %".78" = select  i1 %".75", i64 %".24", i64 0
+  %".79" = select  i1 %".75", i64 709551616, i64 0
+  %".80" = add i64 %".77", %".79"
+  %".81" = urem i64 %".80", 1000000000
+  %".82" = udiv i64 %".80", 1000000000
+  %".83" = add i64 %".72", %".76"
+  %".84" = add i64 %".83", %".78"
+  %".85" = add i64 %".84", %".82"
+  store i64 %".85", i64* %".69"
+  store i64 %".81", i64* %".43"
+  %".88" = sub i64 %".64", 1
+  store i64 %".88", i64* %".44"
+  br label %"div_inner_cond"
+div_inner_end:
+  %".91" = load i64, i64* %".43"
+  call void @"i64.array.append"(%"i64.array"* %".26", i64 %".91")
+  br label %"trim_cond"
+trim_cond:
+  %".94" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 0
+  %".95" = load i64, i64* %".94"
+  %".96" = icmp sgt i64 %".95", 0
+  br i1 %".96", label %"trim_body", label %"trim_end"
+trim_body:
+  %".98" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 2
+  %".99" = load i64*, i64** %".98"
+  %".100" = getelementptr i64, i64* %".99", i64 %".95"
+  %".101" = load i64, i64* %".100"
+  %".102" = icmp eq i64 %".101", 0
+  %".103" = icmp sgt i64 %".95", 1
+  %".104" = and i1 %".102", %".103"
+  br i1 %".104", label %"trim_do", label %"trim_end"
+trim_end:
+  br label %"div_loop"
+trim_do:
+  %".106" = sub i64 %".95", 1
+  store i64 %".106", i64* %".94"
+  br label %"trim_cond"
+print_zero:
+  %".114" = bitcast [3 x i8]* @"fmt_zero" to i8*
+  %".115" = call i32 (i8*, ...) @"printf"(i8* %".114")
+  br label %"end"
+print_digits:
+  %".117" = alloca i64
+  store i64 %".111", i64* %".117"
+  br label %"print_dec_cond"
+print_dec_cond:
+  %".120" = load i64, i64* %".117"
+  %".121" = icmp sge i64 %".120", 1
+  br i1 %".121", label %"print_dec_body", label %"print_dec_finish"
+print_dec_body:
+  %".123" = getelementptr %"i64.array", %"i64.array"* %".26", i32 0, i32 2
+  %".124" = load i64*, i64** %".123"
+  %".125" = getelementptr i64, i64* %".124", i64 %".120"
+  %".126" = load i64, i64* %".125"
+  %".127" = icmp eq i64 %".120", %".111"
+  br i1 %".127", label %"print_first_blk", label %"print_pad_blk"
+print_dec_finish:
+  %".138" = getelementptr %"i64.array", %"i64.array"* %".29", i32 0, i32 2
+  %".139" = load i64*, i64** %".138"
+  %".140" = bitcast i64* %".139" to i8*
+  call void @"free"(i8* %".140")
+  %".142" = bitcast %"i64.array"* %".29" to i8*
+  call void @"free"(i8* %".142")
+  %".144" = getelementptr %"i64.array", %"i64.array"* %".26", i32 0, i32 2
+  %".145" = load i64*, i64** %".144"
+  %".146" = bitcast i64* %".145" to i8*
+  call void @"free"(i8* %".146")
+  %".148" = bitcast %"i64.array"* %".26" to i8*
+  call void @"free"(i8* %".148")
+  %".150" = bitcast [2 x i8]* @"nl_str" to i8*
+  %".151" = call i32 (i8*, ...) @"printf"(i8* %".150")
+  br label %"end"
+print_first_blk:
+  %".129" = bitcast [5 x i8]* @"fmt_dec_first" to i8*
+  %".130" = call i32 (i8*, ...) @"printf"(i8* %".129", i64 %".126")
+  br label %"print_cont_blk"
+print_pad_blk:
+  %".132" = bitcast [7 x i8]* @"fmt_dec_pad" to i8*
+  %".133" = call i32 (i8*, ...) @"printf"(i8* %".132", i64 %".126")
+  br label %"print_cont_blk"
+print_cont_blk:
+  %".135" = sub i64 %".120", 1
+  store i64 %".135", i64* %".117"
+  br label %"print_dec_cond"
+}
+
+@"minus_str" = constant [2 x i8] c"-\00"
+@"fmt_bigint" = constant [6 x i8] c"%llu\0a\00"
+@"BIGINT_DIV_CONST_1E9" = constant i64 18446744073
+@"fmt_zero" = constant [3 x i8] c"0\0a\00"
+@"fmt_dec_first" = constant [5 x i8] c"%llu\00"
+@"fmt_dec_pad" = constant [7 x i8] c"%09llu\00"
+@"nl_str" = constant [2 x i8] c"\0a\00"
+define void @"print_decimal"(%"decimal"* %".1")
+{
+entry:
+  %"copy_idx" = alloca i64
+  %"div_idx" = alloca i64
+  %"carry" = alloca i64
+  %"print_idx" = alloca i64
+  %"work_len_slot" = alloca i64
+  %"adjusted_exp_slot" = alloca i64
+  %".3" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 0
+  %".4" = load %"bigint"*, %"bigint"** %".3"
+  %".5" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 1
+  %".6" = load i64, i64* %".5"
+  %".7" = getelementptr %"bigint", %"bigint"* %".4", i32 0, i32 0
+  %".8" = load i1, i1* %".7"
+  %".9" = getelementptr %"bigint", %"bigint"* %".4", i32 0, i32 1
+  %".10" = load %"i64.array"*, %"i64.array"** %".9"
+  %".11" = getelementptr %"i64.array", %"i64.array"* %".10", i32 0, i32 0
+  %".12" = load i64, i64* %".11"
+  %".13" = icmp eq i64 %".12", 0
+  br i1 %".13", label %"zero_block", label %"nonzero_block"
+zero_block:
+  %".15" = bitcast [3 x i8]* @"dec_zero_fmt" to i8*
+  %".16" = call i32 (i8*, ...) @"printf"(i8* %".15")
+  br label %"end_block"
+nonzero_block:
+  %".18" = call i8* @"malloc"(i64 32)
+  %".19" = bitcast i8* %".18" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".19")
+  %".21" = call i8* @"malloc"(i64 32)
+  %".22" = bitcast i8* %".21" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".22")
+  store i64 0, i64* %"copy_idx"
+  br label %"copy_cond"
+copy_cond:
+  %".26" = load i64, i64* %"copy_idx"
+  %".27" = icmp slt i64 %".26", %".12"
+  br i1 %".27", label %"copy_body", label %"copy_end"
+copy_body:
+  %".29" = getelementptr %"i64.array", %"i64.array"* %".10", i32 0, i32 2
+  %".30" = load i64*, i64** %".29"
+  %".31" = add i64 %".26", 1
+  %".32" = getelementptr i64, i64* %".30", i64 %".31"
+  %".33" = load i64, i64* %".32"
+  call void @"i64.array.append"(%"i64.array"* %".19", i64 %".33")
+  %".35" = add i64 %".26", 1
+  store i64 %".35", i64* %"copy_idx"
+  br label %"copy_cond"
+copy_end:
+  %".38" = getelementptr %"i64.array", %"i64.array"* %".19", i32 0, i32 0
+  %".39" = load i64, i64* %".38"
+  store i64 %".39", i64* %"work_len_slot"
+  br label %"div_loop"
+div_loop:
+  %".42" = load i64, i64* %"work_len_slot"
+  %".43" = icmp eq i64 %".42", 0
+  br i1 %".43", label %"div_end", label %"div_check_zero"
+div_check_zero:
+  %".45" = getelementptr %"i64.array", %"i64.array"* %".19", i32 0, i32 2
+  %".46" = load i64*, i64** %".45"
+  %".47" = getelementptr i64, i64* %".46", i64 %".42"
+  %".48" = load i64, i64* %".47"
+  %".49" = icmp eq i64 %".48", 0
+  %".50" = icmp eq i64 %".42", 1
+  %".51" = and i1 %".49", %".50"
+  br i1 %".51", label %"div_end", label %"div_body"
+div_body:
+  store i64 0, i64* %"carry"
+  %".54" = load i64, i64* %"work_len_slot"
+  store i64 %".54", i64* %"div_idx"
+  br label %"div_inner_cond"
+div_end:
+  %".105" = getelementptr %"i64.array", %"i64.array"* %".22", i32 0, i32 0
+  %".106" = load i64, i64* %".105"
+  %".107" = icmp sgt i64 %".106", 0
+  br i1 %".107", label %"print_digits", label %"print_zero"
+print_zero:
+  %".109" = bitcast [3 x i8]* @"dec_zero_fmt" to i8*
+  %".110" = call i32 (i8*, ...) @"printf"(i8* %".109")
+  br label %"end_block"
+print_digits:
+  %".112" = sub i64 %".106", 1
+  %".113" = add i64 %".6", %".112"
+  store i64 %".113", i64* %"adjusted_exp_slot"
+  br i1 %".8", label %"neg_block", label %"after_sign"
+neg_block:
+  %".116" = bitcast [2 x i8]* @"dec_minus_fmt" to i8*
+  %".117" = call i32 (i8*, ...) @"printf"(i8* %".116")
+  br label %"after_sign"
+after_sign:
+  store i64 %".106", i64* %"print_idx"
+  br label %"print_first"
+print_first:
+  %".121" = load i64, i64* %"print_idx"
+  %".122" = getelementptr %"i64.array", %"i64.array"* %".22", i32 0, i32 2
+  %".123" = load i64*, i64** %".122"
+  %".124" = getelementptr i64, i64* %".123", i64 %".121"
+  %".125" = load i64, i64* %".124"
+  %".126" = bitcast [5 x i8]* @"dec_digit_fmt" to i8*
+  %".127" = call i32 (i8*, ...) @"printf"(i8* %".126", i64 %".125")
+  %".128" = sub i64 %".121", 1
+  store i64 %".128", i64* %"print_idx"
+  br label %"check_more"
+check_more:
+  %".131" = load i64, i64* %"print_idx"
+  %".132" = icmp sge i64 %".131", 1
+  br i1 %".132", label %"print_dot", label %"check_exp"
+print_dot:
+  %".134" = bitcast [2 x i8]* @"dec_dot_fmt" to i8*
+  %".135" = call i32 (i8*, ...) @"printf"(i8* %".134")
+  br label %"frac_cond"
+frac_cond:
+  %".137" = load i64, i64* %"print_idx"
+  %".138" = icmp sge i64 %".137", 1
+  br i1 %".138", label %"frac_body", label %"frac_end"
+frac_body:
+  %".140" = getelementptr %"i64.array", %"i64.array"* %".22", i32 0, i32 2
+  %".141" = load i64*, i64** %".140"
+  %".142" = getelementptr i64, i64* %".141", i64 %".137"
+  %".143" = load i64, i64* %".142"
+  %".144" = bitcast [5 x i8]* @"dec_digit_fmt" to i8*
+  %".145" = call i32 (i8*, ...) @"printf"(i8* %".144", i64 %".143")
+  %".146" = sub i64 %".137", 1
+  store i64 %".146", i64* %"print_idx"
+  br label %"frac_cond"
+frac_end:
+  br label %"check_exp"
+check_exp:
+  %".150" = load i64, i64* %"adjusted_exp_slot"
+  %".151" = icmp eq i64 %".150", 0
+  br i1 %".151", label %"skip_exp", label %"print_exp"
+print_exp:
+  %".153" = bitcast [6 x i8]* @"dec_exp_fmt" to i8*
+  %".154" = call i32 (i8*, ...) @"printf"(i8* %".153", i64 %".150")
+  br label %"skip_exp"
+skip_exp:
+  %".156" = bitcast [2 x i8]* @"dec_nl_fmt" to i8*
+  %".157" = call i32 (i8*, ...) @"printf"(i8* %".156")
+  br label %"end_block"
+end_block:
+  ret void
+div_inner_cond:
+  %".57" = load i64, i64* %"div_idx"
+  %".58" = icmp sge i64 %".57", 1
+  br i1 %".58", label %"div_inner_body", label %"div_inner_end"
+div_inner_body:
+  %".60" = getelementptr %"i64.array", %"i64.array"* %".19", i32 0, i32 2
+  %".61" = load i64*, i64** %".60"
+  %".62" = getelementptr i64, i64* %".61", i64 %".57"
+  %".63" = load i64, i64* %".62"
+  %".64" = load i64, i64* %"carry"
+  %".65" = mul i64 %".64", 1844674407370955161
+  %".66" = mul i64 %".64", 6
+  %".67" = add i64 %".66", %".63"
+  %".68" = icmp ult i64 %".67", %".63"
+  %".69" = udiv i64 %".67", 10
+  %".70" = urem i64 %".67", 10
+  %".71" = select  i1 %".68", i64 1844674407370955161, i64 0
+  %".72" = select  i1 %".68", i64 6, i64 0
+  %".73" = add i64 %".70", %".72"
+  %".74" = urem i64 %".73", 10
+  %".75" = udiv i64 %".73", 10
+  %".76" = add i64 %".65", %".69"
+  %".77" = add i64 %".76", %".71"
+  %".78" = add i64 %".77", %".75"
+  store i64 %".78", i64* %".62"
+  store i64 %".74", i64* %"carry"
+  %".81" = sub i64 %".57", 1
+  store i64 %".81", i64* %"div_idx"
+  br label %"div_inner_cond"
+div_inner_end:
+  %".84" = load i64, i64* %"carry"
+  call void @"i64.array.append"(%"i64.array"* %".22", i64 %".84")
+  br label %"trim_cond"
+trim_cond:
+  %".87" = getelementptr %"i64.array", %"i64.array"* %".19", i32 0, i32 0
+  %".88" = load i64, i64* %".87"
+  %".89" = icmp sgt i64 %".88", 0
+  br i1 %".89", label %"trim_body", label %"trim_end"
+trim_body:
+  %".91" = getelementptr %"i64.array", %"i64.array"* %".19", i32 0, i32 2
+  %".92" = load i64*, i64** %".91"
+  %".93" = getelementptr i64, i64* %".92", i64 %".88"
+  %".94" = load i64, i64* %".93"
+  %".95" = icmp eq i64 %".94", 0
+  %".96" = icmp sgt i64 %".88", 1
+  %".97" = and i1 %".95", %".96"
+  br i1 %".97", label %"trim_do", label %"trim_end"
+trim_do:
+  %".99" = sub i64 %".88", 1
+  store i64 %".99", i64* %".87"
+  br label %"trim_cond"
+trim_end:
+  %".102" = load i64, i64* %".87"
+  store i64 %".102", i64* %"work_len_slot"
+  br label %"div_loop"
+}
+
+@"dec_zero_fmt" = constant [3 x i8] c"0\0a\00"
+@"dec_minus_fmt" = constant [2 x i8] c"-\00"
+@"dec_digit_fmt" = constant [5 x i8] c"%llu\00"
+@"dec_dot_fmt" = constant [2 x i8] c".\00"
+@"dec_exp_fmt" = constant [6 x i8] c"e%lld\00"
+@"dec_nl_fmt" = constant [2 x i8] c"\0a\00"
+define void @"print_number"(%"number"* %".1")
+{
+entry:
+  %".3" = getelementptr %"number", %"number"* %".1", i32 0, i32 0
+  %".4" = load i8, i8* %".3"
+  switch i8 %".4", label %"end" [i8 0, label %"case_int" i8 1, label %"case_float" i8 2, label %"case_bigint" i8 3, label %"case_decimal"]
+case_int:
+  %".6" = getelementptr %"number", %"number"* %".1", i32 0, i32 1
+  %".7" = load i8*, i8** %".6"
+  %".8" = bitcast i8* %".7" to i64*
+  %".9" = load i64, i64* %".8"
+  %".10" = bitcast [6 x i8]* @"fmt_lld" to i8*
+  %".11" = call i32 (i8*, ...) @"printf"(i8* %".10", i64 %".9")
+  br label %"end"
+case_float:
+  %".13" = getelementptr %"number", %"number"* %".1", i32 0, i32 1
+  %".14" = load i8*, i8** %".13"
+  %".15" = bitcast i8* %".14" to double*
+  %".16" = load double, double* %".15"
+  %".17" = bitcast [4 x i8]* @"fmt_f" to i8*
+  %".18" = call i32 (i8*, ...) @"printf"(i8* %".17", double %".16")
+  br label %"end"
+case_bigint:
+  %".20" = getelementptr %"number", %"number"* %".1", i32 0, i32 1
+  %".21" = load i8*, i8** %".20"
+  %".22" = bitcast i8* %".21" to %"bigint"*
+  call void @"print_bigint"(%"bigint"* %".22")
+  br label %"end"
+case_decimal:
+  %".25" = getelementptr %"number", %"number"* %".1", i32 0, i32 1
+  %".26" = load i8*, i8** %".25"
+  %".27" = bitcast i8* %".26" to %"decimal"*
+  call void @"print_decimal"(%"decimal"* %".27")
+  br label %"end"
+end:
+  ret void
+}
+
+@"fmt_lld" = constant [6 x i8] c"%lld\0a\00"
+@"fmt_f" = constant [4 x i8] c"%g\0a\00"
+define void @"print_dynamic"(%"dynamic"* %".1")
+{
+entry:
+  %".3" = getelementptr %"dynamic", %"dynamic"* %".1", i32 0, i32 0
+  %".4" = load i32, i32* %".3"
+  %".5" = getelementptr %"dynamic", %"dynamic"* %".1", i32 0, i32 1
+  %".6" = load i8*, i8** %".5"
+  switch i32 %".4", label %"case_unknown" [i32 1, label %"case_int" i32 2, label %"case_float" i32 3, label %"case_bool" i32 4, label %"case_str" i32 5, label %"case_bigint" i32 6, label %"case_decimal"]
+case_int:
+  %".8" = bitcast i8* %".6" to i64*
+  %".9" = load i64, i64* %".8"
+  %".10" = bitcast [6 x i8]* @"dyn_fmt_int" to i8*
+  %".11" = call i32 (i8*, ...) @"printf"(i8* %".10", i64 %".9")
+  br label %"end"
+case_float:
+  %".13" = bitcast i8* %".6" to double*
+  %".14" = load double, double* %".13"
+  %".15" = bitcast [4 x i8]* @"dyn_fmt_flt" to i8*
+  %".16" = call i32 (i8*, ...) @"printf"(i8* %".15", double %".14")
+  br label %"end"
+case_bool:
+  %".18" = bitcast i8* %".6" to i1*
+  %".19" = load i1, i1* %".18"
+  %".20" = icmp ne i1 %".19", 0
+  br i1 %".20", label %"print_true", label %"print_false"
+case_str:
+  %".28" = bitcast i8* %".6" to %"i64.array"*
+  call void @"print"(%"i64.array"* %".28")
+  br label %"end"
+case_bigint:
+  %".31" = bitcast i8* %".6" to %"bigint"*
+  call void @"print_bigint"(%"bigint"* %".31")
+  br label %"end"
+case_decimal:
+  %".34" = bitcast i8* %".6" to %"decimal"*
+  call void @"print_decimal"(%"decimal"* %".34")
+  br label %"end"
+case_unknown:
+  %".37" = bitcast [11 x i8]* @"dyn_fmt_unk" to i8*
+  %".38" = call i32 (i8*, ...) @"printf"(i8* %".37")
+  br label %"end"
+end:
+  ret void
+print_true:
+  %".22" = bitcast [6 x i8]* @"dyn_fmt_true" to i8*
+  %".23" = call i32 (i8*, ...) @"printf"(i8* %".22")
+  br label %"end"
+print_false:
+  %".25" = bitcast [7 x i8]* @"dyn_fmt_false" to i8*
+  %".26" = call i32 (i8*, ...) @"printf"(i8* %".25")
+  br label %"end"
+}
+
+@"dyn_fmt_int" = constant [6 x i8] c"%lld\0a\00"
+@"dyn_fmt_flt" = constant [4 x i8] c"%g\0a\00"
+@"dyn_fmt_true" = constant [6 x i8] c"true\0a\00"
+@"dyn_fmt_false" = constant [7 x i8] c"false\0a\00"
+@"dyn_fmt_unk" = constant [11 x i8] c"<dynamic>\0a\00"
+define void @"free_bigint"(%"bigint"* %".1")
+{
+entry:
+  %".3" = icmp eq %"bigint"* %".1", null
+  br i1 %".3", label %"end", label %"not_null"
+not_null:
+  %".5" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".6" = load %"i64.array"*, %"i64.array"** %".5"
+  %".7" = icmp ne %"i64.array"* %".6", null
+  br i1 %".7", label %"free_digits", label %"end"
+end:
+  ret void
+free_digits:
+  %".9" = getelementptr %"i64.array", %"i64.array"* %".6", i32 0, i32 3
+  %".10" = load i64, i64* %".9"
+  %".11" = sub i64 %".10", 1
+  store i64 %".11", i64* %".9"
+  %".13" = icmp eq i64 %".11", 0
+  br i1 %".13", label %"do_free", label %"end"
+do_free:
+  %".15" = getelementptr %"i64.array", %"i64.array"* %".6", i32 0, i32 2
+  %".16" = load i64*, i64** %".15"
+  %".17" = bitcast i64* %".16" to i8*
+  call void @"free"(i8* %".17")
+  %".19" = bitcast %"i64.array"* %".6" to i8*
+  call void @"free"(i8* %".19")
+  br label %"end"
+}
+
+define %"bigint" @"bigint_add"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %"res" = alloca %"bigint"
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".7" = load %"i64.array"*, %"i64.array"** %".6"
+  %".8" = call i8* @"malloc"(i64 32)
+  %".9" = bitcast i8* %".8" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".9")
+  %"idx" = alloca i64
+  store i64 0, i64* %"idx"
+  %"carry" = alloca i64
+  store i64 0, i64* %"carry"
+  %"val_a" = alloca i64
+  %"val_b" = alloca i64
+  %".13" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".14" = call i64 @"i64.array.length"(%"i64.array"* %".7")
+  br label %"cond"
+cond:
+  %".16" = load i64, i64* %"idx"
+  %".17" = load i64, i64* %"carry"
+  %".18" = icmp slt i64 %".16", %".13"
+  %".19" = icmp slt i64 %".16", %".14"
+  %".20" = icmp ne i64 %".17", 0
+  %".21" = or i1 %".18", %".19"
+  %".22" = or i1 %".21", %".20"
+  br i1 %".22", label %"body", label %"end"
+body:
+  store i64 0, i64* %"val_a"
+  br i1 %".18", label %"body.if", label %"body.endif"
+end:
+  %".48" = getelementptr %"bigint", %"bigint"* %"res", i32 0, i32 1
+  store %"i64.array"* %".9", %"i64.array"** %".48"
+  %".50" = getelementptr %"bigint", %"bigint"* %"res", i32 0, i32 0
+  store i1 0, i1* %".50"
+  %".52" = load %"bigint", %"bigint"* %"res"
+  ret %"bigint" %".52"
+body.if:
+  %".26" = call i64 @"i64.array.get"(%"i64.array"* %".5", i64 %".16")
+  store i64 %".26", i64* %"val_a"
+  br label %"body.endif"
+body.endif:
+  store i64 0, i64* %"val_b"
+  br i1 %".19", label %"body.endif.if", label %"body.endif.endif"
+body.endif.if:
+  %".31" = call i64 @"i64.array.get"(%"i64.array"* %".7", i64 %".16")
+  store i64 %".31", i64* %"val_b"
+  br label %"body.endif.endif"
+body.endif.endif:
+  %".34" = load i64, i64* %"val_a"
+  %".35" = load i64, i64* %"val_b"
+  %".36" = load i64, i64* %"carry"
+  %".37" = add i64 %".34", %".35"
+  %".38" = icmp ult i64 %".37", %".34"
+  %".39" = add i64 %".37", %".36"
+  %".40" = icmp ult i64 %".39", %".37"
+  %".41" = or i1 %".38", %".40"
+  %".42" = zext i1 %".41" to i64
+  store i64 %".42", i64* %"carry"
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 %".39")
+  %".45" = add i64 %".16", 1
+  store i64 %".45", i64* %"idx"
+  br label %"cond"
+}
+
+define %"bigint" @"bigint_neg"(%"bigint"* %".1")
+{
+entry:
+  %"res" = alloca %"bigint"
+  %".3" = call i8* @"malloc"(i64 32)
+  %".4" = bitcast i8* %".3" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".4")
+  %".6" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".7" = load i1, i1* %".6"
+  %".8" = xor i1 %".7", -1
+  %".9" = getelementptr %"bigint", %"bigint"* %"res", i32 0, i32 0
+  store i1 %".8", i1* %".9"
+  %".11" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".12" = load %"i64.array"*, %"i64.array"** %".11"
+  %".13" = call i64 @"i64.array.length"(%"i64.array"* %".12")
+  %".14" = alloca i64
+  store i64 0, i64* %".14"
+  br label %"cond"
+cond:
+  %".17" = load i64, i64* %".14"
+  %".18" = icmp slt i64 %".17", %".13"
+  br i1 %".18", label %"body", label %"end"
+body:
+  %".20" = call i64 @"i64.array.get"(%"i64.array"* %".12", i64 %".17")
+  call void @"i64.array.append"(%"i64.array"* %".4", i64 %".20")
+  %".22" = add i64 %".17", 1
+  store i64 %".22", i64* %".14"
+  br label %"cond"
+end:
+  %".25" = getelementptr %"bigint", %"bigint"* %"res", i32 0, i32 1
+  store %"i64.array"* %".4", %"i64.array"** %".25"
+  %".27" = load %"bigint", %"bigint"* %"res"
+  ret %"bigint" %".27"
+}
+
+define i32 @"bigint_cmp"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".5" = load i1, i1* %".4"
+  %".6" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 0
+  %".7" = load i1, i1* %".6"
+  %".8" = icmp ne i1 %".5", %".7"
+  br i1 %".8", label %"diff_signs", label %"same_signs"
+diff_signs:
+  %".10" = select  i1 %".5", i32 -1, i32 1
+  ret i32 %".10"
+same_signs:
+  %".12" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".13" = load %"i64.array"*, %"i64.array"** %".12"
+  %".14" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".15" = load %"i64.array"*, %"i64.array"** %".14"
+  %".16" = call i64 @"i64.array.length"(%"i64.array"* %".13")
+  %".17" = call i64 @"i64.array.length"(%"i64.array"* %".15")
+  %".18" = icmp ne i64 %".16", %".17"
+  br i1 %".18", label %"len_check", label %"digits_check"
+len_check:
+  %".20" = icmp sgt i64 %".16", %".17"
+  %".21" = select  i1 %".20", i32 1, i32 -1
+  %".22" = select  i1 %".20", i32 -1, i32 1
+  %".23" = select  i1 %".5", i32 %".22", i32 %".21"
+  ret i32 %".23"
+digits_check:
+  %".25" = alloca i64
+  %".26" = sub i64 %".16", 1
+  store i64 %".26", i64* %".25"
+  br label %"loop_cond"
+loop_cond:
+  %".29" = load i64, i64* %".25"
+  %".30" = icmp sge i64 %".29", 0
+  br i1 %".30", label %"loop_body", label %"loop_end"
+loop_body:
+  %".32" = call i64 @"i64.array.get"(%"i64.array"* %".13", i64 %".29")
+  %".33" = call i64 @"i64.array.get"(%"i64.array"* %".15", i64 %".29")
+  %".34" = icmp ne i64 %".32", %".33"
+  br i1 %".34", label %"digits_diff", label %"continue"
+loop_end:
+  ret i32 0
+digits_diff:
+  %".36" = icmp ugt i64 %".32", %".33"
+  %".37" = select  i1 %".36", i32 1, i32 -1
+  %".38" = select  i1 %".36", i32 -1, i32 1
+  %".39" = select  i1 %".5", i32 %".38", i32 %".37"
+  ret i32 %".39"
+continue:
+  %".41" = sub i64 %".29", 1
+  store i64 %".41", i64* %".25"
+  br label %"loop_cond"
+}
+
+define %"bigint" @"bigint_sub"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".5" = load i1, i1* %".4"
+  %".6" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 0
+  %".7" = load i1, i1* %".6"
+  %".8" = icmp ne i1 %".5", %".7"
+  br i1 %".8", label %"signs_diff", label %"signs_same"
+signs_diff:
+  %".10" = call %"bigint" @"bigint_add"(%"bigint"* %".1", %"bigint"* %".2")
+  %".11" = alloca %"bigint"
+  store %"bigint" %".10", %"bigint"* %".11"
+  %".13" = getelementptr %"bigint", %"bigint"* %".11", i32 0, i32 0
+  store i1 %".5", i1* %".13"
+  %".15" = load %"bigint", %"bigint"* %".11"
+  ret %"bigint" %".15"
+signs_same:
+  %".17" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".18" = load %"i64.array"*, %"i64.array"** %".17"
+  %".19" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".20" = load %"i64.array"*, %"i64.array"** %".19"
+  %".21" = call i64 @"i64.array.length"(%"i64.array"* %".18")
+  %".22" = call i64 @"i64.array.length"(%"i64.array"* %".20")
+  %".23" = alloca %"bigint"*
+  %".24" = alloca %"bigint"*
+  %".25" = alloca i1
+  store %"bigint"* %".1", %"bigint"** %".23"
+  store %"bigint"* %".2", %"bigint"** %".24"
+  store i1 0, i1* %".25"
+  %".29" = icmp ne i64 %".21", %".22"
+  br i1 %".29", label %"len_check", label %"digits_check"
+len_check:
+  %".31" = icmp sgt i64 %".22", %".21"
+  store i1 %".31", i1* %".25"
+  br label %"set_x_y"
+digits_check:
+  %".34" = alloca i64
+  %".35" = sub i64 %".21", 1
+  store i64 %".35", i64* %".34"
+  br label %"d_loop_cond"
+set_x_y:
+  %".52" = load i1, i1* %".25"
+  %".53" = select  i1 %".52", %"bigint"* %".2", %"bigint"* %".1"
+  %".54" = select  i1 %".52", %"bigint"* %".1", %"bigint"* %".2"
+  store %"bigint"* %".53", %"bigint"** %".23"
+  store %"bigint"* %".54", %"bigint"** %".24"
+  %".57" = load %"bigint"*, %"bigint"** %".23"
+  %".58" = load %"bigint"*, %"bigint"** %".24"
+  %".59" = getelementptr %"bigint", %"bigint"* %".57", i32 0, i32 1
+  %".60" = load %"i64.array"*, %"i64.array"** %".59"
+  %".61" = getelementptr %"bigint", %"bigint"* %".58", i32 0, i32 1
+  %".62" = load %"i64.array"*, %"i64.array"** %".61"
+  %".63" = call i64 @"i64.array.length"(%"i64.array"* %".60")
+  %".64" = call i64 @"i64.array.length"(%"i64.array"* %".62")
+  %".65" = alloca %"bigint"
+  %".66" = call i8* @"malloc"(i64 32)
+  %".67" = bitcast i8* %".66" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".67")
+  %".69" = alloca i64
+  store i64 0, i64* %".69"
+  %".71" = alloca i64
+  store i64 0, i64* %".71"
+  %".73" = alloca i64
+  br label %"sub_loop_cond"
+d_loop_cond:
+  %".38" = load i64, i64* %".34"
+  %".39" = icmp sge i64 %".38", 0
+  br i1 %".39", label %"d_loop_body", label %"d_loop_end"
+d_loop_body:
+  %".41" = call i64 @"i64.array.get"(%"i64.array"* %".18", i64 %".38")
+  %".42" = call i64 @"i64.array.get"(%"i64.array"* %".20", i64 %".38")
+  %".43" = icmp ne i64 %".41", %".42"
+  br i1 %".43", label %"d_diff", label %"d_next"
+d_loop_end:
+  br label %"set_x_y"
+d_diff:
+  %".45" = icmp ugt i64 %".42", %".41"
+  store i1 %".45", i1* %".25"
+  br label %"set_x_y"
+d_next:
+  %".48" = sub i64 %".38", 1
+  store i64 %".48", i64* %".34"
+  br label %"d_loop_cond"
+sub_loop_cond:
+  %".75" = load i64, i64* %".69"
+  %".76" = icmp slt i64 %".75", %".63"
+  br i1 %".76", label %"sub_loop_body", label %"sub_loop_end"
+sub_loop_body:
+  %".78" = call i64 @"i64.array.get"(%"i64.array"* %".60", i64 %".75")
+  store i64 0, i64* %".73"
+  %".80" = icmp slt i64 %".75", %".64"
+  br i1 %".80", label %"sub_loop_body.if", label %"sub_loop_body.endif"
+sub_loop_end:
+  br label %"trim_cond"
+sub_loop_body.if:
+  %".82" = call i64 @"i64.array.get"(%"i64.array"* %".62", i64 %".75")
+  store i64 %".82", i64* %".73"
+  br label %"sub_loop_body.endif"
+sub_loop_body.endif:
+  %".85" = load i64, i64* %".73"
+  %".86" = load i64, i64* %".71"
+  %".87" = sub i64 %".78", %".85"
+  %".88" = icmp ult i64 %".78", %".85"
+  %".89" = sub i64 %".87", %".86"
+  %".90" = icmp ult i64 %".87", %".86"
+  %".91" = or i1 %".88", %".90"
+  %".92" = zext i1 %".91" to i64
+  store i64 %".92", i64* %".71"
+  call void @"i64.array.append"(%"i64.array"* %".67", i64 %".89")
+  %".95" = add i64 %".75", 1
+  store i64 %".95", i64* %".69"
+  br label %"sub_loop_cond"
+trim_cond:
+  %".99" = call i64 @"i64.array.length"(%"i64.array"* %".67")
+  %".100" = icmp sgt i64 %".99", 1
+  br i1 %".100", label %"check_zero", label %"trim_end"
+trim_body:
+  %".106" = getelementptr %"i64.array", %"i64.array"* %".67", i32 0, i32 0
+  %".107" = sub i64 %".99", 1
+  store i64 %".107", i64* %".106"
+  br label %"trim_cond"
+trim_end:
+  %".110" = getelementptr %"bigint", %"bigint"* %".65", i32 0, i32 1
+  store %"i64.array"* %".67", %"i64.array"** %".110"
+  %".112" = getelementptr %"bigint", %"bigint"* %".65", i32 0, i32 0
+  %".113" = xor i1 %".5", -1
+  %".114" = select  i1 %".52", i1 %".113", i1 %".5"
+  store i1 %".114", i1* %".112"
+  %".116" = call i64 @"i64.array.length"(%"i64.array"* %".67")
+  %".117" = icmp eq i64 %".116", 1
+  %".118" = call i64 @"i64.array.get"(%"i64.array"* %".67", i64 0)
+  %".119" = icmp eq i64 %".118", 0
+  %".120" = and i1 %".117", %".119"
+  br i1 %".120", label %"trim_end.if", label %"trim_end.endif"
+check_zero:
+  %".102" = sub i64 %".99", 1
+  %".103" = call i64 @"i64.array.get"(%"i64.array"* %".67", i64 %".102")
+  %".104" = icmp eq i64 %".103", 0
+  br i1 %".104", label %"trim_body", label %"trim_end"
+trim_end.if:
+  store i1 0, i1* %".112"
+  br label %"trim_end.endif"
+trim_end.endif:
+  %".124" = load %"bigint", %"bigint"* %".65"
+  ret %"bigint" %".124"
+}
+
+define %"bigint" @"bigint_mul_naive"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".5" = load i1, i1* %".4"
+  %".6" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 0
+  %".7" = load i1, i1* %".6"
+  %".8" = xor i1 %".5", %".7"
+  %".9" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".10" = load %"i64.array"*, %"i64.array"** %".9"
+  %".11" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".12" = load %"i64.array"*, %"i64.array"** %".11"
+  %".13" = call i64 @"i64.array.length"(%"i64.array"* %".10")
+  %".14" = call i64 @"i64.array.length"(%"i64.array"* %".12")
+  %".15" = alloca %"bigint"
+  %".16" = call i8* @"malloc"(i64 32)
+  %".17" = bitcast i8* %".16" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".17")
+  %".19" = add i64 %".13", %".14"
+  %".20" = alloca i64
+  store i64 0, i64* %".20"
+  br label %"fill_cond"
+fill_cond:
+  %".23" = load i64, i64* %".20"
+  %".24" = icmp slt i64 %".23", %".19"
+  br i1 %".24", label %"fill_body", label %"fill_end"
+fill_body:
+  call void @"i64.array.append"(%"i64.array"* %".17", i64 0)
+  %".27" = add i64 %".23", 1
+  store i64 %".27", i64* %".20"
+  br label %"fill_cond"
+fill_end:
+  %".30" = alloca i64
+  store i64 0, i64* %".30"
+  %".32" = alloca i128
+  %".33" = alloca i64
+  br label %"outer_cond"
+outer_cond:
+  %".35" = load i64, i64* %".30"
+  %".36" = icmp slt i64 %".35", %".13"
+  br i1 %".36", label %"outer_body", label %"outer_end"
+outer_body:
+  %".38" = call i64 @"i64.array.get"(%"i64.array"* %".10", i64 %".35")
+  %".39" = zext i64 %".38" to i128
+  store i128 0, i128* %".32"
+  store i64 0, i64* %".33"
+  br label %"inner_cond"
+outer_end:
+  br label %"trim_cond"
+inner_cond:
+  %".43" = load i64, i64* %".33"
+  %".44" = icmp slt i64 %".43", %".14"
+  br i1 %".44", label %"inner_body", label %"inner_end"
+inner_body:
+  %".46" = call i64 @"i64.array.get"(%"i64.array"* %".12", i64 %".43")
+  %".47" = zext i64 %".46" to i128
+  %".48" = add i64 %".35", %".43"
+  %".49" = call i64 @"i64.array.get"(%"i64.array"* %".17", i64 %".48")
+  %".50" = zext i64 %".49" to i128
+  %".51" = mul i128 %".39", %".47"
+  %".52" = load i128, i128* %".32"
+  %".53" = add i128 %".51", %".50"
+  %".54" = add i128 %".53", %".52"
+  %".55" = trunc i128 %".54" to i64
+  call void @"i64.array.set"(%"i64.array"* %".17", i64 %".48", i64 %".55")
+  %".57" = lshr i128 %".54", 64
+  store i128 %".57", i128* %".32"
+  %".59" = add i64 %".43", 1
+  store i64 %".59", i64* %".33"
+  br label %"inner_cond"
+inner_end:
+  %".62" = load i128, i128* %".32"
+  %".63" = trunc i128 %".62" to i64
+  %".64" = add i64 %".35", %".14"
+  call void @"i64.array.set"(%"i64.array"* %".17", i64 %".64", i64 %".63")
+  %".66" = add i64 %".35", 1
+  store i64 %".66", i64* %".30"
+  br label %"outer_cond"
+trim_cond:
+  %".70" = call i64 @"i64.array.length"(%"i64.array"* %".17")
+  %".71" = icmp sgt i64 %".70", 1
+  br i1 %".71", label %"check_zero", label %"trim_end"
+trim_body:
+  %".77" = getelementptr %"i64.array", %"i64.array"* %".17", i32 0, i32 0
+  %".78" = sub i64 %".70", 1
+  store i64 %".78", i64* %".77"
+  br label %"trim_cond"
+trim_end:
+  %".81" = getelementptr %"bigint", %"bigint"* %".15", i32 0, i32 1
+  store %"i64.array"* %".17", %"i64.array"** %".81"
+  %".83" = getelementptr %"bigint", %"bigint"* %".15", i32 0, i32 0
+  store i1 %".8", i1* %".83"
+  %".85" = call i64 @"i64.array.length"(%"i64.array"* %".17")
+  %".86" = icmp eq i64 %".85", 1
+  %".87" = call i64 @"i64.array.get"(%"i64.array"* %".17", i64 0)
+  %".88" = icmp eq i64 %".87", 0
+  %".89" = and i1 %".86", %".88"
+  br i1 %".89", label %"trim_end.if", label %"trim_end.endif"
+check_zero:
+  %".73" = sub i64 %".70", 1
+  %".74" = call i64 @"i64.array.get"(%"i64.array"* %".17", i64 %".73")
+  %".75" = icmp eq i64 %".74", 0
+  br i1 %".75", label %"trim_body", label %"trim_end"
+trim_end.if:
+  store i1 0, i1* %".83"
+  br label %"trim_end.endif"
+trim_end.endif:
+  %".93" = load %"bigint", %"bigint"* %".15"
+  ret %"bigint" %".93"
+}
+
+define %"bigint" @"bigint_split_low"(%"bigint"* %".1", i64 %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".7" = alloca %"bigint"
+  %".8" = call i8* @"malloc"(i64 32)
+  %".9" = bitcast i8* %".8" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".9")
+  %".11" = icmp slt i64 %".2", %".6"
+  %".12" = select  i1 %".11", i64 %".2", i64 %".6"
+  %".13" = alloca i64
+  store i64 0, i64* %".13"
+  br label %"cond"
+cond:
+  %".16" = load i64, i64* %".13"
+  %".17" = icmp slt i64 %".16", %".12"
+  br i1 %".17", label %"body", label %"end"
+body:
+  %".19" = call i64 @"i64.array.get"(%"i64.array"* %".5", i64 %".16")
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 %".19")
+  %".21" = add i64 %".16", 1
+  store i64 %".21", i64* %".13"
+  br label %"cond"
+end:
+  %".24" = call i64 @"i64.array.length"(%"i64.array"* %".9")
+  %".25" = icmp eq i64 %".24", 0
+  br i1 %".25", label %"end.if", label %"end.endif"
+end.if:
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 0)
+  br label %"end.endif"
+end.endif:
+  %".29" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".30" = load i1, i1* %".29"
+  %".31" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 0
+  store i1 %".30", i1* %".31"
+  %".33" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 1
+  store %"i64.array"* %".9", %"i64.array"** %".33"
+  %".35" = load %"bigint", %"bigint"* %".7"
+  ret %"bigint" %".35"
+}
+
+define %"bigint" @"bigint_split_high"(%"bigint"* %".1", i64 %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".7" = alloca %"bigint"
+  %".8" = call i8* @"malloc"(i64 32)
+  %".9" = bitcast i8* %".8" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".9")
+  %".11" = alloca i64
+  store i64 %".2", i64* %".11"
+  br label %"cond"
+cond:
+  %".14" = load i64, i64* %".11"
+  %".15" = icmp slt i64 %".14", %".6"
+  br i1 %".15", label %"body", label %"end"
+body:
+  %".17" = call i64 @"i64.array.get"(%"i64.array"* %".5", i64 %".14")
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 %".17")
+  %".19" = add i64 %".14", 1
+  store i64 %".19", i64* %".11"
+  br label %"cond"
+end:
+  %".22" = call i64 @"i64.array.length"(%"i64.array"* %".9")
+  %".23" = icmp eq i64 %".22", 0
+  br i1 %".23", label %"end.if", label %"end.endif"
+end.if:
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 0)
+  br label %"end.endif"
+end.endif:
+  %".27" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".28" = load i1, i1* %".27"
+  %".29" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 0
+  store i1 %".28", i1* %".29"
+  %".31" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 1
+  store %"i64.array"* %".9", %"i64.array"** %".31"
+  %".33" = load %"bigint", %"bigint"* %".7"
+  ret %"bigint" %".33"
+}
+
+define %"bigint" @"bigint_shift_left"(%"bigint"* %".1", i64 %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".7" = alloca %"bigint"
+  %".8" = call i8* @"malloc"(i64 32)
+  %".9" = bitcast i8* %".8" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".9")
+  %".11" = alloca i64
+  store i64 0, i64* %".11"
+  br label %"zero_cond"
+zero_cond:
+  %".14" = load i64, i64* %".11"
+  %".15" = icmp slt i64 %".14", %".2"
+  br i1 %".15", label %"zero_body", label %"zero_end"
+zero_body:
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 0)
+  %".18" = add i64 %".14", 1
+  store i64 %".18", i64* %".11"
+  br label %"zero_cond"
+zero_end:
+  %".21" = alloca i64
+  store i64 0, i64* %".21"
+  br label %"copy_cond"
+copy_cond:
+  %".24" = load i64, i64* %".21"
+  %".25" = icmp slt i64 %".24", %".6"
+  br i1 %".25", label %"copy_body", label %"copy_end"
+copy_body:
+  %".27" = call i64 @"i64.array.get"(%"i64.array"* %".5", i64 %".24")
+  call void @"i64.array.append"(%"i64.array"* %".9", i64 %".27")
+  %".29" = add i64 %".24", 1
+  store i64 %".29", i64* %".21"
+  br label %"copy_cond"
+copy_end:
+  %".32" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".33" = load i1, i1* %".32"
+  %".34" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 0
+  store i1 %".33", i1* %".34"
+  %".36" = getelementptr %"bigint", %"bigint"* %".7", i32 0, i32 1
+  store %"i64.array"* %".9", %"i64.array"** %".36"
+  %".38" = load %"bigint", %"bigint"* %".7"
+  ret %"bigint" %".38"
+}
+
+define %"bigint" @"bigint_mul"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".7" = load %"i64.array"*, %"i64.array"** %".6"
+  %".8" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".9" = call i64 @"i64.array.length"(%"i64.array"* %".7")
+  %".10" = icmp slt i64 %".8", 32
+  %".11" = icmp slt i64 %".9", 32
+  %".12" = and i1 %".10", %".11"
+  br i1 %".12", label %"naive", label %"karatsuba"
+naive:
+  %".14" = call %"bigint" @"bigint_mul_naive"(%"bigint"* %".1", %"bigint"* %".2")
+  ret %"bigint" %".14"
+karatsuba:
+  %".16" = icmp sgt i64 %".8", %".9"
+  %".17" = select  i1 %".16", i64 %".8", i64 %".9"
+  %".18" = sdiv i64 %".17", 2
+  %".19" = alloca %"bigint"
+  %".20" = alloca %"bigint"
+  %".21" = alloca %"bigint"
+  %".22" = alloca %"bigint"
+  %".23" = call %"bigint" @"bigint_split_low"(%"bigint"* %".1", i64 %".18")
+  store %"bigint" %".23", %"bigint"* %".19"
+  %".25" = call %"bigint" @"bigint_split_high"(%"bigint"* %".1", i64 %".18")
+  store %"bigint" %".25", %"bigint"* %".20"
+  %".27" = call %"bigint" @"bigint_split_low"(%"bigint"* %".2", i64 %".18")
+  store %"bigint" %".27", %"bigint"* %".21"
+  %".29" = call %"bigint" @"bigint_split_high"(%"bigint"* %".2", i64 %".18")
+  store %"bigint" %".29", %"bigint"* %".22"
+  %".31" = alloca %"bigint"
+  %".32" = alloca %"bigint"
+  %".33" = call %"bigint" @"bigint_mul"(%"bigint"* %".19", %"bigint"* %".21")
+  store %"bigint" %".33", %"bigint"* %".31"
+  %".35" = call %"bigint" @"bigint_mul"(%"bigint"* %".20", %"bigint"* %".22")
+  store %"bigint" %".35", %"bigint"* %".32"
+  %".37" = alloca %"bigint"
+  %".38" = call %"bigint" @"bigint_add"(%"bigint"* %".19", %"bigint"* %".20")
+  store %"bigint" %".38", %"bigint"* %".37"
+  %".40" = alloca %"bigint"
+  %".41" = call %"bigint" @"bigint_add"(%"bigint"* %".21", %"bigint"* %".22")
+  store %"bigint" %".41", %"bigint"* %".40"
+  %".43" = alloca %"bigint"
+  %".44" = call %"bigint" @"bigint_mul"(%"bigint"* %".37", %"bigint"* %".40")
+  store %"bigint" %".44", %"bigint"* %".43"
+  %".46" = alloca %"bigint"
+  %".47" = call %"bigint" @"bigint_sub"(%"bigint"* %".43", %"bigint"* %".31")
+  store %"bigint" %".47", %"bigint"* %".46"
+  %".49" = alloca %"bigint"
+  %".50" = call %"bigint" @"bigint_sub"(%"bigint"* %".46", %"bigint"* %".32")
+  store %"bigint" %".50", %"bigint"* %".49"
+  %".52" = mul i64 %".18", 2
+  %".53" = alloca %"bigint"
+  %".54" = call %"bigint" @"bigint_shift_left"(%"bigint"* %".32", i64 %".52")
+  store %"bigint" %".54", %"bigint"* %".53"
+  %".56" = alloca %"bigint"
+  %".57" = call %"bigint" @"bigint_shift_left"(%"bigint"* %".49", i64 %".18")
+  store %"bigint" %".57", %"bigint"* %".56"
+  %".59" = alloca %"bigint"
+  %".60" = call %"bigint" @"bigint_add"(%"bigint"* %".53", %"bigint"* %".56")
+  store %"bigint" %".60", %"bigint"* %".59"
+  %".62" = call %"bigint" @"bigint_add"(%"bigint"* %".59", %"bigint"* %".31")
+  call void @"free_bigint"(%"bigint"* %".19")
+  call void @"free_bigint"(%"bigint"* %".20")
+  call void @"free_bigint"(%"bigint"* %".21")
+  call void @"free_bigint"(%"bigint"* %".22")
+  call void @"free_bigint"(%"bigint"* %".31")
+  call void @"free_bigint"(%"bigint"* %".32")
+  call void @"free_bigint"(%"bigint"* %".37")
+  call void @"free_bigint"(%"bigint"* %".40")
+  call void @"free_bigint"(%"bigint"* %".43")
+  call void @"free_bigint"(%"bigint"* %".46")
+  call void @"free_bigint"(%"bigint"* %".49")
+  call void @"free_bigint"(%"bigint"* %".53")
+  call void @"free_bigint"(%"bigint"* %".56")
+  call void @"free_bigint"(%"bigint"* %".59")
+  ret %"bigint" %".62"
+}
+
+define %"bigint" @"bigint_div"(%"bigint"* %".1", %"bigint"* %".2")
+{
+entry:
+  %".4" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 1
+  %".5" = load %"i64.array"*, %"i64.array"** %".4"
+  %".6" = call i64 @"i64.array.length"(%"i64.array"* %".5")
+  %".7" = icmp eq i64 %".6", 1
+  %".8" = call i64 @"i64.array.get"(%"i64.array"* %".5", i64 0)
+  %".9" = icmp eq i64 %".8", 0
+  %".10" = and i1 %".7", %".9"
+  br i1 %".10", label %"div_zero", label %"start_div"
+div_zero:
+  %".12" = alloca [17 x i8]
+  store [17 x i8] c"Division by zero\00", [17 x i8]* %".12"
+  %".14" = getelementptr [17 x i8], [17 x i8]* %".12", i64 0, i64 0
+  %".15" = bitcast i8* %".14" to i64*
+  %".16" = call i64 @"puts"(i64* %".15")
+  call void @"exit"(i32 1)
+  unreachable
+start_div:
+  %".19" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 0
+  %".20" = load i1, i1* %".19"
+  %".21" = getelementptr %"bigint", %"bigint"* %".2", i32 0, i32 0
+  %".22" = load i1, i1* %".21"
+  %".23" = xor i1 %".20", %".22"
+  %".24" = alloca %"bigint"
+  %".25" = getelementptr %"bigint", %"bigint"* %".24", i32 0, i32 0
+  store i1 0, i1* %".25"
+  %".27" = getelementptr %"bigint", %"bigint"* %".24", i32 0, i32 1
+  store %"i64.array"* %".5", %"i64.array"** %".27"
+  %".29" = alloca %"bigint"
+  %".30" = getelementptr %"bigint", %"bigint"* %".29", i32 0, i32 0
+  store i1 0, i1* %".30"
+  %".32" = getelementptr %"bigint", %"bigint"* %".29", i32 0, i32 1
+  %".33" = call i8* @"malloc"(i64 32)
+  %".34" = bitcast i8* %".33" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".34")
+  call void @"i64.array.append"(%"i64.array"* %".34", i64 0)
+  store %"i64.array"* %".34", %"i64.array"** %".32"
+  %".38" = alloca %"bigint"
+  %".39" = call i8* @"malloc"(i64 32)
+  %".40" = bitcast i8* %".39" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".40")
+  %".42" = getelementptr %"bigint", %"bigint"* %".38", i32 0, i32 1
+  store %"i64.array"* %".40", %"i64.array"** %".42"
+  %".44" = getelementptr %"bigint", %"bigint"* %".38", i32 0, i32 0
+  store i1 0, i1* %".44"
+  %".46" = getelementptr %"bigint", %"bigint"* %".1", i32 0, i32 1
+  %".47" = load %"i64.array"*, %"i64.array"** %".46"
+  %".48" = call i64 @"i64.array.length"(%"i64.array"* %".47")
+  %".49" = alloca i64
+  store i64 0, i64* %".49"
+  br label %"fill_q_cond"
+fill_q_cond:
+  %".52" = load i64, i64* %".49"
+  %".53" = icmp slt i64 %".52", %".48"
+  br i1 %".53", label %"fill_q_body", label %"fill_q_end"
+fill_q_body:
+  call void @"i64.array.append"(%"i64.array"* %".40", i64 0)
+  %".56" = add i64 %".52", 1
+  store i64 %".56", i64* %".49"
+  br label %"fill_q_cond"
+fill_q_end:
+  %".59" = alloca i64
+  %".60" = alloca i64
+  %".61" = alloca i64
+  %".62" = mul i64 %".48", 64
+  %".63" = sub i64 %".62", 1
+  store i64 %".63", i64* %".59"
+  br label %"loop_div_cond"
+loop_div_cond:
+  %".66" = load i64, i64* %".59"
+  %".67" = icmp sge i64 %".66", 0
+  br i1 %".67", label %"loop_div_body", label %"loop_div_end"
+loop_div_body:
+  %".69" = sdiv i64 %".66", 64
+  %".70" = srem i64 %".66", 64
+  %".71" = call i64 @"i64.array.get"(%"i64.array"* %".47", i64 %".69")
+  %".72" = lshr i64 %".71", %".70"
+  %".73" = and i64 %".72", 1
+  %".74" = load %"i64.array"*, %"i64.array"** %".32"
+  %".75" = call i64 @"i64.array.length"(%"i64.array"* %".74")
+  store i64 %".73", i64* %".60"
+  store i64 0, i64* %".61"
+  br label %"shift_loop_cond"
+loop_div_end:
+  br label %"div_trim_cond"
+shift_loop_cond:
+  %".79" = load i64, i64* %".61"
+  %".80" = icmp slt i64 %".79", %".75"
+  br i1 %".80", label %"shift_loop_body", label %"shift_loop_end"
+shift_loop_body:
+  %".82" = call i64 @"i64.array.get"(%"i64.array"* %".74", i64 %".79")
+  %".83" = load i64, i64* %".60"
+  %".84" = shl i64 %".82", 1
+  %".85" = or i64 %".84", %".83"
+  %".86" = lshr i64 %".82", 63
+  call void @"i64.array.set"(%"i64.array"* %".74", i64 %".79", i64 %".85")
+  store i64 %".86", i64* %".60"
+  %".89" = add i64 %".79", 1
+  store i64 %".89", i64* %".61"
+  br label %"shift_loop_cond"
+shift_loop_end:
+  %".92" = load i64, i64* %".60"
+  %".93" = icmp ne i64 %".92", 0
+  br i1 %".93", label %"shift_loop_end.if", label %"shift_loop_end.endif"
+shift_loop_end.if:
+  call void @"i64.array.append"(%"i64.array"* %".74", i64 %".92")
+  br label %"shift_loop_end.endif"
+shift_loop_end.endif:
+  %".97" = call i32 @"bigint_cmp"(%"bigint"* %".29", %"bigint"* %".24")
+  %".98" = icmp sge i32 %".97", 0
+  br i1 %".98", label %"sub_block", label %"next_iter"
+sub_block:
+  %".100" = call %"bigint" @"bigint_sub"(%"bigint"* %".29", %"bigint"* %".24")
+  %".101" = alloca %"bigint"
+  store %"bigint" %".100", %"bigint"* %".101"
+  %".103" = getelementptr %"bigint", %"bigint"* %".101", i32 0, i32 1
+  %".104" = load %"i64.array"*, %"i64.array"** %".103"
+  %".105" = getelementptr %"bigint", %"bigint"* %".101", i32 0, i32 0
+  %".106" = load i1, i1* %".105"
+  call void @"free_bigint"(%"bigint"* %".29")
+  store %"i64.array"* %".104", %"i64.array"** %".32"
+  store i1 %".106", i1* %".30"
+  %".110" = call i64 @"i64.array.get"(%"i64.array"* %".40", i64 %".69")
+  %".111" = shl i64 1, %".70"
+  %".112" = or i64 %".110", %".111"
+  call void @"i64.array.set"(%"i64.array"* %".40", i64 %".69", i64 %".112")
+  br label %"next_iter"
+next_iter:
+  %".115" = sub i64 %".66", 1
+  store i64 %".115", i64* %".59"
+  br label %"loop_div_cond"
+div_trim_cond:
+  %".119" = call i64 @"i64.array.length"(%"i64.array"* %".40")
+  %".120" = icmp sgt i64 %".119", 1
+  br i1 %".120", label %"div_check_zero", label %"div_trim_end"
+div_trim_body:
+  %".126" = getelementptr %"i64.array", %"i64.array"* %".40", i32 0, i32 0
+  %".127" = sub i64 %".119", 1
+  store i64 %".127", i64* %".126"
+  br label %"div_trim_cond"
+div_trim_end:
+  store i1 %".23", i1* %".44"
+  %".131" = call i64 @"i64.array.length"(%"i64.array"* %".40")
+  %".132" = icmp eq i64 %".131", 1
+  %".133" = call i64 @"i64.array.get"(%"i64.array"* %".40", i64 0)
+  %".134" = icmp eq i64 %".133", 0
+  %".135" = and i1 %".132", %".134"
+  br i1 %".135", label %"div_trim_end.if", label %"div_trim_end.endif"
+div_check_zero:
+  %".122" = sub i64 %".119", 1
+  %".123" = call i64 @"i64.array.get"(%"i64.array"* %".40", i64 %".122")
+  %".124" = icmp eq i64 %".123", 0
+  br i1 %".124", label %"div_trim_body", label %"div_trim_end"
+div_trim_end.if:
+  store i1 0, i1* %".44"
+  br label %"div_trim_end.endif"
+div_trim_end.endif:
+  call void @"free_bigint"(%"bigint"* %".29")
+  %".140" = load %"bigint", %"bigint"* %".38"
+  ret %"bigint" %".140"
+}
+
+define %"decimal" @"decimal_add"(%"decimal"* %".1", %"decimal"* %".2")
+{
+entry:
+  %".4" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 0
+  %".5" = load %"bigint"*, %"bigint"** %".4"
+  %".6" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 1
+  %".7" = load i64, i64* %".6"
+  %".8" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 0
+  %".9" = load %"bigint"*, %"bigint"** %".8"
+  %".10" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 1
+  %".11" = load i64, i64* %".10"
+  %".12" = icmp slt i64 %".7", %".11"
+  %".13" = icmp sgt i64 %".7", %".11"
+  %".14" = alloca %"bigint"*
+  %".15" = alloca %"bigint"*
+  %".16" = alloca i64
+  store %"bigint"* %".5", %"bigint"** %".14"
+  store %"bigint"* %".9", %"bigint"** %".15"
+  store i64 %".7", i64* %".16"
+  br i1 %".12", label %"adjust_b", label %"adjust_a"
+adjust_b:
+  %".21" = sub i64 %".11", %".7"
+  store i64 %".7", i64* %".16"
+  %".23" = alloca %"bigint"
+  %".24" = call i8* @"malloc"(i64 32)
+  %".25" = bitcast i8* %".24" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".25")
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 10)
+  %".28" = getelementptr %"bigint", %"bigint"* %".23", i32 0, i32 0
+  store i1 0, i1* %".28"
+  %".30" = getelementptr %"bigint", %"bigint"* %".23", i32 0, i32 1
+  store %"i64.array"* %".25", %"i64.array"** %".30"
+  %".32" = alloca %"bigint"*
+  store %"bigint"* %".9", %"bigint"** %".32"
+  %".34" = alloca i64
+  store i64 0, i64* %".34"
+  br label %"loop_cond_b"
+adjust_a:
+  br i1 %".13", label %"need_adjust_a", label %"no_adjust"
+do_add:
+  %".85" = load %"bigint"*, %"bigint"** %".14"
+  %".86" = load %"bigint"*, %"bigint"** %".15"
+  %".87" = load i64, i64* %".16"
+  %".88" = call %"bigint" @"bigint_add"(%"bigint"* %".85", %"bigint"* %".86")
+  %".89" = call i8* @"malloc"(i64 16)
+  %".90" = bitcast i8* %".89" to %"bigint"*
+  store %"bigint" %".88", %"bigint"* %".90"
+  %".92" = alloca %"decimal"
+  %".93" = getelementptr %"decimal", %"decimal"* %".92", i32 0, i32 0
+  store %"bigint"* %".90", %"bigint"** %".93"
+  %".95" = getelementptr %"decimal", %"decimal"* %".92", i32 0, i32 1
+  store i64 %".87", i64* %".95"
+  %".97" = load %"decimal", %"decimal"* %".92"
+  ret %"decimal" %".97"
+loop_cond_b:
+  %".37" = load i64, i64* %".34"
+  %".38" = icmp slt i64 %".37", %".21"
+  br i1 %".38", label %"loop_body_b", label %"loop_end_b"
+loop_body_b:
+  %".40" = load %"bigint"*, %"bigint"** %".32"
+  %".41" = call %"bigint" @"bigint_mul"(%"bigint"* %".40", %"bigint"* %".23")
+  %".42" = call i8* @"malloc"(i64 16)
+  %".43" = bitcast i8* %".42" to %"bigint"*
+  store %"bigint" %".41", %"bigint"* %".43"
+  store %"bigint"* %".43", %"bigint"** %".32"
+  %".46" = add i64 %".37", 1
+  store i64 %".46", i64* %".34"
+  br label %"loop_cond_b"
+loop_end_b:
+  %".49" = load %"bigint"*, %"bigint"** %".32"
+  store %"bigint"* %".49", %"bigint"** %".15"
+  br label %"do_add"
+need_adjust_a:
+  %".53" = sub i64 %".7", %".11"
+  store i64 %".11", i64* %".16"
+  %".55" = alloca %"bigint"
+  %".56" = call i8* @"malloc"(i64 32)
+  %".57" = bitcast i8* %".56" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".57")
+  call void @"i64.array.append"(%"i64.array"* %".57", i64 10)
+  %".60" = getelementptr %"bigint", %"bigint"* %".55", i32 0, i32 0
+  store i1 0, i1* %".60"
+  %".62" = getelementptr %"bigint", %"bigint"* %".55", i32 0, i32 1
+  store %"i64.array"* %".57", %"i64.array"** %".62"
+  %".64" = alloca %"bigint"*
+  store %"bigint"* %".5", %"bigint"** %".64"
+  %".66" = alloca i64
+  store i64 0, i64* %".66"
+  br label %"loop_cond_a"
+no_adjust:
+  br label %"do_add"
+loop_cond_a:
+  %".69" = load i64, i64* %".66"
+  %".70" = icmp slt i64 %".69", %".53"
+  br i1 %".70", label %"loop_body_a", label %"loop_end_a"
+loop_body_a:
+  %".72" = load %"bigint"*, %"bigint"** %".64"
+  %".73" = call %"bigint" @"bigint_mul"(%"bigint"* %".72", %"bigint"* %".55")
+  %".74" = call i8* @"malloc"(i64 16)
+  %".75" = bitcast i8* %".74" to %"bigint"*
+  store %"bigint" %".73", %"bigint"* %".75"
+  store %"bigint"* %".75", %"bigint"** %".64"
+  %".78" = add i64 %".69", 1
+  store i64 %".78", i64* %".66"
+  br label %"loop_cond_a"
+loop_end_a:
+  %".81" = load %"bigint"*, %"bigint"** %".64"
+  store %"bigint"* %".81", %"bigint"** %".14"
+  br label %"do_add"
+}
+
+define %"decimal" @"decimal_sub"(%"decimal"* %".1", %"decimal"* %".2")
+{
+entry:
+  %".4" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 0
+  %".5" = load %"bigint"*, %"bigint"** %".4"
+  %".6" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 1
+  %".7" = load i64, i64* %".6"
+  %".8" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 0
+  %".9" = load %"bigint"*, %"bigint"** %".8"
+  %".10" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 1
+  %".11" = load i64, i64* %".10"
+  %".12" = icmp slt i64 %".7", %".11"
+  %".13" = icmp sgt i64 %".7", %".11"
+  %".14" = alloca %"bigint"*
+  %".15" = alloca %"bigint"*
+  %".16" = alloca i64
+  store %"bigint"* %".5", %"bigint"** %".14"
+  store %"bigint"* %".9", %"bigint"** %".15"
+  store i64 %".7", i64* %".16"
+  br i1 %".12", label %"adjust_b", label %"adjust_a"
+adjust_b:
+  %".21" = sub i64 %".11", %".7"
+  store i64 %".7", i64* %".16"
+  %".23" = alloca %"bigint"
+  %".24" = call i8* @"malloc"(i64 32)
+  %".25" = bitcast i8* %".24" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".25")
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 10)
+  %".28" = getelementptr %"bigint", %"bigint"* %".23", i32 0, i32 0
+  store i1 0, i1* %".28"
+  %".30" = getelementptr %"bigint", %"bigint"* %".23", i32 0, i32 1
+  store %"i64.array"* %".25", %"i64.array"** %".30"
+  %".32" = alloca %"bigint"*
+  store %"bigint"* %".9", %"bigint"** %".32"
+  %".34" = alloca i64
+  store i64 0, i64* %".34"
+  br label %"loop_cond_b"
+adjust_a:
+  br i1 %".13", label %"need_adjust_a", label %"no_adjust"
+do_sub:
+  %".83" = load %"bigint"*, %"bigint"** %".14"
+  %".84" = load %"bigint"*, %"bigint"** %".15"
+  %".85" = load i64, i64* %".16"
+  %".86" = call %"bigint" @"bigint_sub"(%"bigint"* %".83", %"bigint"* %".84")
+  %".87" = call i8* @"malloc"(i64 16)
+  %".88" = bitcast i8* %".87" to %"bigint"*
+  store %"bigint" %".86", %"bigint"* %".88"
+  %".90" = alloca %"decimal"
+  %".91" = getelementptr %"decimal", %"decimal"* %".90", i32 0, i32 0
+  store %"bigint"* %".88", %"bigint"** %".91"
+  %".93" = getelementptr %"decimal", %"decimal"* %".90", i32 0, i32 1
+  store i64 %".85", i64* %".93"
+  %".95" = load %"decimal", %"decimal"* %".90"
+  ret %"decimal" %".95"
+loop_cond_b:
+  %".37" = load i64, i64* %".34"
+  %".38" = icmp slt i64 %".37", %".21"
+  br i1 %".38", label %"loop_body_b", label %"loop_end_b"
+loop_body_b:
+  %".40" = load %"bigint"*, %"bigint"** %".32"
+  %".41" = call %"bigint" @"bigint_mul"(%"bigint"* %".40", %"bigint"* %".23")
+  %".42" = alloca %"bigint"
+  store %"bigint" %".41", %"bigint"* %".42"
+  store %"bigint"* %".42", %"bigint"** %".32"
+  %".45" = add i64 %".37", 1
+  store i64 %".45", i64* %".34"
+  br label %"loop_cond_b"
+loop_end_b:
+  %".48" = load %"bigint"*, %"bigint"** %".32"
+  store %"bigint"* %".48", %"bigint"** %".15"
+  br label %"do_sub"
+need_adjust_a:
+  %".52" = sub i64 %".7", %".11"
+  store i64 %".11", i64* %".16"
+  %".54" = alloca %"bigint"
+  %".55" = call i8* @"malloc"(i64 32)
+  %".56" = bitcast i8* %".55" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".56")
+  call void @"i64.array.append"(%"i64.array"* %".56", i64 10)
+  %".59" = getelementptr %"bigint", %"bigint"* %".54", i32 0, i32 0
+  store i1 0, i1* %".59"
+  %".61" = getelementptr %"bigint", %"bigint"* %".54", i32 0, i32 1
+  store %"i64.array"* %".56", %"i64.array"** %".61"
+  %".63" = alloca %"bigint"*
+  store %"bigint"* %".5", %"bigint"** %".63"
+  %".65" = alloca i64
+  store i64 0, i64* %".65"
+  br label %"loop_cond_a"
+no_adjust:
+  br label %"do_sub"
+loop_cond_a:
+  %".68" = load i64, i64* %".65"
+  %".69" = icmp slt i64 %".68", %".52"
+  br i1 %".69", label %"loop_body_a", label %"loop_end_a"
+loop_body_a:
+  %".71" = load %"bigint"*, %"bigint"** %".63"
+  %".72" = call %"bigint" @"bigint_mul"(%"bigint"* %".71", %"bigint"* %".54")
+  %".73" = alloca %"bigint"
+  store %"bigint" %".72", %"bigint"* %".73"
+  store %"bigint"* %".73", %"bigint"** %".63"
+  %".76" = add i64 %".68", 1
+  store i64 %".76", i64* %".65"
+  br label %"loop_cond_a"
+loop_end_a:
+  %".79" = load %"bigint"*, %"bigint"** %".63"
+  store %"bigint"* %".79", %"bigint"** %".14"
+  br label %"do_sub"
+}
+
+define %"decimal" @"decimal_mul"(%"decimal"* %".1", %"decimal"* %".2")
+{
+entry:
+  %".4" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 0
+  %".5" = load %"bigint"*, %"bigint"** %".4"
+  %".6" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 1
+  %".7" = load i64, i64* %".6"
+  %".8" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 0
+  %".9" = load %"bigint"*, %"bigint"** %".8"
+  %".10" = getelementptr %"decimal", %"decimal"* %".2", i32 0, i32 1
+  %".11" = load i64, i64* %".10"
+  %".12" = call %"bigint" @"bigint_mul"(%"bigint"* %".5", %"bigint"* %".9")
+  %".13" = add i64 %".7", %".11"
+  %".14" = alloca %"decimal"
+  %".15" = call i8* @"malloc"(i64 16)
+  %".16" = bitcast i8* %".15" to %"bigint"*
+  store %"bigint" %".12", %"bigint"* %".16"
+  %".18" = getelementptr %"decimal", %"decimal"* %".14", i32 0, i32 0
+  store %"bigint"* %".16", %"bigint"** %".18"
+  %".20" = getelementptr %"decimal", %"decimal"* %".14", i32 0, i32 1
+  store i64 %".13", i64* %".20"
+  %".22" = load %"decimal", %"decimal"* %".14"
+  ret %"decimal" %".22"
+}
+
+define %"decimal" @"decimal_neg"(%"decimal"* %".1")
+{
+entry:
+  %".3" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 0
+  %".4" = load %"bigint"*, %"bigint"** %".3"
+  %".5" = getelementptr %"decimal", %"decimal"* %".1", i32 0, i32 1
+  %".6" = load i64, i64* %".5"
+  %".7" = call %"bigint" @"bigint_neg"(%"bigint"* %".4")
+  %".8" = alloca %"decimal"
+  %".9" = call i8* @"malloc"(i64 16)
+  %".10" = bitcast i8* %".9" to %"bigint"*
+  store %"bigint" %".7", %"bigint"* %".10"
+  %".12" = getelementptr %"decimal", %"decimal"* %".8", i32 0, i32 0
+  store %"bigint"* %".10", %"bigint"** %".12"
+  %".14" = getelementptr %"decimal", %"decimal"* %".8", i32 0, i32 1
+  store i64 %".6", i64* %".14"
+  %".16" = load %"decimal", %"decimal"* %".8"
+  ret %"decimal" %".16"
+}
+
+define %"decimal"* @"number_to_decimal"(%"number"* %".1")
+{
+entry:
+  %".3" = getelementptr %"number", %"number"* %".1", i32 0, i32 0
+  %".4" = load i8, i8* %".3"
+  %".5" = getelementptr %"number", %"number"* %".1", i32 0, i32 1
+  %".6" = load i8*, i8** %".5"
+  %"result" = alloca %"decimal"*
+  switch i8 %".4", label %"case_int" [i8 0, label %"case_int" i8 1, label %"case_float" i8 2, label %"case_bigint" i8 3, label %"case_decimal"]
+case_int:
+  %".8" = bitcast i8* %".6" to i64*
+  %".9" = load i64, i64* %".8"
+  %".10" = call i8* @"malloc"(i64 16)
+  %".11" = bitcast i8* %".10" to %"decimal"*
+  %".12" = call i8* @"malloc"(i64 16)
+  %".13" = bitcast i8* %".12" to %"bigint"*
+  %".14" = call i8* @"malloc"(i64 32)
+  %".15" = bitcast i8* %".14" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".15")
+  %".17" = icmp slt i64 %".9", 0
+  %".18" = sub i64 0, %".9"
+  %".19" = select  i1 %".17", i64 %".18", i64 %".9"
+  call void @"i64.array.append"(%"i64.array"* %".15", i64 %".19")
+  %".21" = getelementptr %"bigint", %"bigint"* %".13", i32 0, i32 0
+  store i1 %".17", i1* %".21"
+  %".23" = getelementptr %"bigint", %"bigint"* %".13", i32 0, i32 1
+  store %"i64.array"* %".15", %"i64.array"** %".23"
+  %".25" = getelementptr %"decimal", %"decimal"* %".11", i32 0, i32 0
+  store %"bigint"* %".13", %"bigint"** %".25"
+  %".27" = getelementptr %"decimal", %"decimal"* %".11", i32 0, i32 1
+  store i64 0, i64* %".27"
+  store %"decimal"* %".11", %"decimal"** %"result"
+  br label %"end"
+case_float:
+  %".31" = bitcast i8* %".6" to double*
+  %".32" = load double, double* %".31"
+  %".33" = fmul double %".32", 0x412e848000000000
+  %".34" = fptosi double %".33" to i64
+  %".35" = call i8* @"malloc"(i64 16)
+  %".36" = bitcast i8* %".35" to %"decimal"*
+  %".37" = call i8* @"malloc"(i64 16)
+  %".38" = bitcast i8* %".37" to %"bigint"*
+  %".39" = call i8* @"malloc"(i64 32)
+  %".40" = bitcast i8* %".39" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".40")
+  %".42" = icmp slt i64 %".34", 0
+  %".43" = sub i64 0, %".34"
+  %".44" = select  i1 %".42", i64 %".43", i64 %".34"
+  call void @"i64.array.append"(%"i64.array"* %".40", i64 %".44")
+  %".46" = getelementptr %"bigint", %"bigint"* %".38", i32 0, i32 0
+  store i1 %".42", i1* %".46"
+  %".48" = getelementptr %"bigint", %"bigint"* %".38", i32 0, i32 1
+  store %"i64.array"* %".40", %"i64.array"** %".48"
+  %".50" = getelementptr %"decimal", %"decimal"* %".36", i32 0, i32 0
+  store %"bigint"* %".38", %"bigint"** %".50"
+  %".52" = getelementptr %"decimal", %"decimal"* %".36", i32 0, i32 1
+  store i64 -6, i64* %".52"
+  store %"decimal"* %".36", %"decimal"** %"result"
+  br label %"end"
+case_bigint:
+  %".56" = bitcast i8* %".6" to %"bigint"*
+  %".57" = call i8* @"malloc"(i64 16)
+  %".58" = bitcast i8* %".57" to %"decimal"*
+  %".59" = getelementptr %"decimal", %"decimal"* %".58", i32 0, i32 0
+  store %"bigint"* %".56", %"bigint"** %".59"
+  %".61" = getelementptr %"decimal", %"decimal"* %".58", i32 0, i32 1
+  store i64 0, i64* %".61"
+  store %"decimal"* %".58", %"decimal"** %"result"
+  br label %"end"
+case_decimal:
+  %".65" = bitcast i8* %".6" to %"decimal"*
+  store %"decimal"* %".65", %"decimal"** %"result"
+  br label %"end"
+end:
+  %".68" = load %"decimal"*, %"decimal"** %"result"
+  ret %"decimal"* %".68"
+}
+
+define %"i64.array"* @"input_line"()
+{
+entry:
+  %".2" = call i8* @"malloc"(i64 32)
+  %".3" = bitcast i8* %".2" to %"i64.array"*
+  %".4" = getelementptr inbounds %"i64.array", %"i64.array"* %".3", i64 0, i32 0
+  %".5" = getelementptr inbounds %"i64.array", %"i64.array"* %".3", i64 0, i32 1
+  %".6" = getelementptr inbounds %"i64.array", %"i64.array"* %".3", i64 0, i32 2
+  store i64 0, i64* %".4"
+  store i64 256, i64* %".5"
+  %".9" = mul i64 256, 8
+  %".10" = call i8* @"malloc"(i64 %".9")
+  %".11" = bitcast i8* %".10" to i64*
+  store i64* %".11", i64** %".6"
+  %".13" = alloca i8
+  br label %"loop"
+loop:
+  %".15" = call i8 @"getchar"()
+  store i8 %".15", i8* %".13"
+  %".17" = icmp eq i8 %".15", 10
+  %".18" = icmp eq i8 %".15", -1
+  %".19" = or i1 %".17", %".18"
+  br i1 %".19", label %"done", label %"store"
+store:
+  %".21" = load i64, i64* %".4"
+  %".22" = add i64 %".21", 1
+  store i64 %".22", i64* %".4"
+  %".24" = load i64*, i64** %".6"
+  %".25" = load i8, i8* %".13"
+  %".26" = sext i8 %".25" to i64
+  %".27" = getelementptr inbounds i64, i64* %".24", i64 %".22"
+  store i64 %".26", i64* %".27"
+  br label %"loop"
+done:
+  ret %"i64.array"* %".3"
+}
+
+define i64 @"str_to_int"(%"i64.array"* %".1")
+{
+entry:
+  %".3" = getelementptr inbounds %"i64.array", %"i64.array"* %".1", i64 0, i32 0
+  %".4" = getelementptr inbounds %"i64.array", %"i64.array"* %".1", i64 0, i32 2
+  %".5" = load i64, i64* %".3"
+  %".6" = load i64*, i64** %".4"
+  %".7" = alloca i64
+  store i64 0, i64* %".7"
+  %".9" = alloca i64
+  store i64 1, i64* %".9"
+  %".11" = alloca i64
+  store i64 0, i64* %".11"
+  br label %"check_neg"
+check_neg:
+  %".14" = getelementptr inbounds i64, i64* %".6", i64 1
+  %".15" = load i64, i64* %".14"
+  %".16" = icmp eq i64 %".15", 45
+  br i1 %".16", label %"check_neg.if", label %"check_neg.endif"
+loop:
+  %".22" = load i64, i64* %".9"
+  %".23" = icmp sle i64 %".22", %".5"
+  br i1 %".23", label %"body", label %"done"
+body:
+  %".25" = getelementptr inbounds i64, i64* %".6", i64 %".22"
+  %".26" = load i64, i64* %".25"
+  %".27" = sub i64 %".26", 48
+  %".28" = load i64, i64* %".7"
+  %".29" = mul i64 %".28", 10
+  %".30" = add i64 %".29", %".27"
+  store i64 %".30", i64* %".7"
+  %".32" = add i64 %".22", 1
+  store i64 %".32", i64* %".9"
+  br label %"loop"
+done:
+  %".35" = load i64, i64* %".7"
+  %".36" = load i64, i64* %".11"
+  %".37" = icmp ne i64 %".36", 0
+  %".38" = sub i64 0, %".35"
+  %".39" = select  i1 %".37", i64 %".38", i64 %".35"
+  ret i64 %".39"
+check_neg.if:
+  store i64 1, i64* %".11"
+  store i64 2, i64* %".9"
+  br label %"check_neg.endif"
+check_neg.endif:
+  br label %"loop"
+}
+
+define i64 @"main"()
+{
+entry:
+  call void @"test_catch_raise"()
+  %".3" = call i8* @"malloc"(i64 32)
+  %".4" = bitcast i8* %".3" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".4")
+  call void @"i64.array.append"(%"i64.array"* %".4", i64 45)
+  call void @"i64.array.append"(%"i64.array"* %".4", i64 45)
+  call void @"i64.array.append"(%"i64.array"* %".4", i64 45)
+  call void @"print"(%"i64.array"* %".4")
+  call void @"test_catch_propagate"()
+  %".11" = call i8* @"malloc"(i64 32)
+  %".12" = bitcast i8* %".11" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".12")
+  call void @"i64.array.append"(%"i64.array"* %".12", i64 45)
+  call void @"i64.array.append"(%"i64.array"* %".12", i64 45)
+  call void @"i64.array.append"(%"i64.array"* %".12", i64 45)
+  call void @"print"(%"i64.array"* %".12")
+  call void @"test_nested"()
+  %".19" = call i8* @"malloc"(i64 32)
+  %".20" = bitcast i8* %".19" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".20")
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 68)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 101)
+  call void @"print"(%"i64.array"* %".20")
+  br label %"exit"
+exit:
+  ret i64 0
+}
+
+@"MyError_ArgError" = internal constant %"MyError" {i8 0}
+@"MyError_Fail" = internal constant %"MyError" {i8 1}
+define {i8, i64, %"MyError"} @"fail_func"(i64 %"x")
+{
+entry:
+  %"x.1" = alloca i64
+  store i64 %"x", i64* %"x.1"
+  %"ret_var" = alloca {i8, i64, %"MyError"}
+  br label %"if.start"
+exit:
+  %".18" = load {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %"ret_var"
+  ret {i8, i64, %"MyError"} %".18"
+if.start:
+  %".5" = load i64, i64* %"x.1"
+  %"cmptmp" = icmp slt i64 %".5", 0
+  br i1 %"cmptmp", label %"if.true.0", label %"if.end"
+if.end:
+  %".12" = load i64, i64* %"x.1"
+  %".13" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %"ret_var", i64 0, i32 0
+  store i8 0, i8* %".13"
+  %".15" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %"ret_var", i64 0, i32 1
+  store i64 %".12", i64* %".15"
+  br label %"exit"
+if.true.0:
+  %".7" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %"ret_var", i64 0, i32 0
+  store i8 1, i8* %".7"
+  %".9" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %"ret_var", i64 0, i32 2
+  store %"MyError" {i8 0}, %"MyError"* %".9"
+  br label %"exit"
+}
+
+define void @"test_catch_raise"()
+{
+entry:
+  %".2" = call i8* @"malloc"(i64 32)
+  %".3" = bitcast i8* %".2" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".3")
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 84)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 99)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 82)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 58)
+  call void @"print"(%"i64.array"* %".3")
+  %"exception_store" = alloca {i8}
+  br label %"try.body"
+exit:
+  ret void
+try.body:
+  %".24" = call i8* @"malloc"(i64 32)
+  %".25" = bitcast i8* %".24" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".25")
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 82)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 70)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 46)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 46)
+  call void @"i64.array.append"(%"i64.array"* %".25", i64 46)
+  call void @"print"(%"i64.array"* %".25")
+  %"e" = alloca %"MyError"
+  store %"MyError" {i8 1}, %"MyError"* %"e"
+  %".44" = load %"MyError", %"MyError"* %"e"
+  %".45" = extractvalue %"MyError" %".44", 0
+  %".46" = getelementptr {i8}, {i8}* %"exception_store", i64 0, i32 0
+  store i8 %".45", i8* %".46"
+  br label %"try.landing"
+  %".49" = call i8* @"malloc"(i64 32)
+  %".50" = bitcast i8* %".49" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".50")
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 85)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 99)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 98)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".50", i64 101)
+  call void @"print"(%"i64.array"* %".50")
+try.landing:
+  %".64" = load {i8}, {i8}* %"exception_store"
+  %".65" = extractvalue {i8} %".64", 0
+  %".66" = icmp eq i8 %".65", 1
+  br i1 %".66", label %"catch.body.0", label %"catch.next.0"
+try.end:
+  br label %"exit"
+catch.body.0:
+  %".68" = call i8* @"malloc"(i64 32)
+  %".69" = bitcast i8* %".68" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".69")
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 70)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".69", i64 108)
+  call void @"print"(%"i64.array"* %".69")
+  br label %"try.end"
+catch.next.0:
+  %".84" = extractvalue {i8} %".64", 0
+  %".85" = icmp eq i8 %".84", 0
+  br i1 %".85", label %"catch.body.1", label %"catch.next.1"
+catch.body.1:
+  %".87" = call i8* @"malloc"(i64 32)
+  %".88" = bitcast i8* %".87" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".88")
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 65)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 69)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 40)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 87)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".88", i64 41)
+  call void @"print"(%"i64.array"* %".88")
+  br label %"try.end"
+catch.next.1:
+  br label %"exit"
+}
+
+define void @"test_catch_propagate"()
+{
+entry:
+  %".2" = call i8* @"malloc"(i64 32)
+  %".3" = bitcast i8* %".2" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".3")
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 84)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 99)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 80)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 112)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 58)
+  call void @"print"(%"i64.array"* %".3")
+  %"exception_store" = alloca {i8}
+  br label %"try.body"
+exit:
+  ret void
+try.body:
+  %".28" = call i8* @"malloc"(i64 32)
+  %".29" = bitcast i8* %".28" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".29")
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 102)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 95)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 102)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 99)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 46)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 46)
+  call void @"i64.array.append"(%"i64.array"* %".29", i64 46)
+  call void @"print"(%"i64.array"* %".29")
+  %".52" = sub i64 0, 1
+  %".53" = call {i8, i64, %"MyError"} @"fail_func"(i64 %".52")
+  %".54" = alloca {i8, i64, %"MyError"}
+  store {i8, i64, %"MyError"} %".53", {i8, i64, %"MyError"}* %".54"
+  %".56" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %".54", i64 0, i32 0
+  %".57" = load i8, i8* %".56"
+  %".58" = icmp eq i8 %".57", 1
+  br i1 %".58", label %"prop.error", label %"prop.success"
+try.landing:
+  %".85" = load {i8}, {i8}* %"exception_store"
+  %".86" = extractvalue {i8} %".85", 0
+  %".87" = icmp eq i8 %".86", 0
+  br i1 %".87", label %"catch.body.0", label %"catch.next.0"
+try.end:
+  br label %"exit"
+prop.error:
+  %".60" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %".54", i64 0, i32 2
+  %".61" = load %"MyError", %"MyError"* %".60"
+  %".62" = extractvalue %"MyError" %".61", 0
+  %".63" = getelementptr {i8}, {i8}* %"exception_store", i64 0, i32 0
+  store i8 %".62", i8* %".63"
+  br label %"try.landing"
+prop.success:
+  %".66" = getelementptr {i8, i64, %"MyError"}, {i8, i64, %"MyError"}* %".54", i64 0, i32 1
+  %".67" = load i64, i64* %".66"
+  %"val" = alloca i64
+  store i64 %".67", i64* %"val"
+  %".69" = call i8* @"malloc"(i64 32)
+  %".70" = bitcast i8* %".69" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".70")
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 85)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 99)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 98)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".70", i64 101)
+  call void @"print"(%"i64.array"* %".70")
+  br label %"try.end"
+catch.body.0:
+  %".89" = call i8* @"malloc"(i64 32)
+  %".90" = bitcast i8* %".89" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".90")
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 80)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 112)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 100)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 65)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 69)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".90", i64 114)
+  call void @"print"(%"i64.array"* %".90")
+  br label %"try.end"
+catch.next.0:
+  %".120" = extractvalue {i8} %".85", 0
+  %".121" = icmp eq i8 %".120", 1
+  br i1 %".121", label %"catch.body.1", label %"catch.next.1"
+catch.body.1:
+  %".123" = call i8* @"malloc"(i64 32)
+  %".124" = bitcast i8* %".123" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".124")
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 70)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 108)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 40)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 87)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".124", i64 41)
+  call void @"print"(%"i64.array"* %".124")
+  br label %"try.end"
+catch.next.1:
+  br label %"exit"
+}
+
+define void @"test_nested"()
+{
+entry:
+  %".2" = call i8* @"malloc"(i64 32)
+  %".3" = bitcast i8* %".2" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".3")
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 84)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 78)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 115)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 100)
+  call void @"i64.array.append"(%"i64.array"* %".3", i64 58)
+  call void @"print"(%"i64.array"* %".3")
+  %"exception_store" = alloca {i8}
+  br label %"try.body"
+exit:
+  ret void
+try.body:
+  %".19" = call i8* @"malloc"(i64 32)
+  %".20" = bitcast i8* %".19" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".20")
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 69)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 79)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".20", i64 114)
+  call void @"print"(%"i64.array"* %".20")
+  %"exception_store.1" = alloca {i8}
+  br label %"try.body.1"
+try.landing:
+  %".94" = load {i8}, {i8}* %"exception_store"
+  %".95" = extractvalue {i8} %".94", 0
+  %".96" = icmp eq i8 %".95", 1
+  br i1 %".96", label %"catch.body.0.1", label %"catch.next.0.1"
+try.end:
+  br label %"exit"
+try.body.1:
+  %".35" = call i8* @"malloc"(i64 32)
+  %".36" = bitcast i8* %".35" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".36")
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 69)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 73)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".36", i64 114)
+  call void @"print"(%"i64.array"* %".36")
+  %".50" = getelementptr {i8}, {i8}* %"exception_store.1", i64 0, i32 0
+  store i8 1, i8* %".50"
+  br label %"try.landing.1"
+try.landing.1:
+  %".53" = load {i8}, {i8}* %"exception_store.1"
+  %".54" = extractvalue {i8} %".53", 0
+  %".55" = icmp eq i8 %".54", 0
+  br i1 %".55", label %"catch.body.0", label %"catch.next.0"
+try.end.1:
+  br label %"try.end"
+catch.body.0:
+  %".57" = call i8* @"malloc"(i64 32)
+  %".58" = bitcast i8* %".57" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".58")
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 73)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 65)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 69)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 40)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 87)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 111)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 110)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".58", i64 41)
+  call void @"print"(%"i64.array"* %".58")
+  br label %"try.end.1"
+catch.next.0:
+  store {i8} %".53", {i8}* %"exception_store"
+  br label %"try.landing"
+catch.body.0.1:
+  %".98" = call i8* @"malloc"(i64 32)
+  %".99" = bitcast i8* %".98" to %"i64.array"*
+  call void @"i64.array.init"(%"i64.array"* %".99")
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 79)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 101)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 114)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 67)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 117)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 103)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 104)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 116)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 32)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 70)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 97)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 105)
+  call void @"i64.array.append"(%"i64.array"* %".99", i64 108)
+  call void @"print"(%"i64.array"* %".99")
+  br label %"try.end"
+catch.next.0.1:
+  br label %"exit"
+}

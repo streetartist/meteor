@@ -88,7 +88,51 @@ class ClassSymbol(Symbol):
         self.methods = methods
         self.accessed = False
         self.val_assigned = False
+        self.traits = []  # List of trait names this class implements
 
+
+class TraitSymbol(Symbol):
+    """Symbol for a trait definition."""
+    def __init__(self, name, methods):
+        super().__init__(name)
+        self.methods = methods  # dict: method_name -> FuncSymbol or None (abstract)
+        self.accessed = False
+        self.val_assigned = False
+
+    def __str__(self) -> str:
+        return '<trait {}>'.format(self.name)
+
+
+class ImplSymbol(Symbol):
+    """Symbol for a trait implementation on a class."""
+    def __init__(self, trait_name, class_name, methods):
+        super().__init__("{}_for_{}".format(trait_name, class_name))
+        self.trait_name = trait_name
+        self.class_name = class_name
+        self.methods = methods  # dict: method_name -> FuncSymbol
+        self.accessed = False
+        self.val_assigned = False
+
+class ErrorSymbol(Symbol):
+    """Symbol for an error enum definition."""
+    def __init__(self, name, variants):
+        super().__init__(name)
+        self.variants = variants  # list of variant names
+        self.accessed = False
+        self.val_assigned = False
+
+    def __str__(self) -> str:
+        return '<error {}>'.format(self.name)
+
+
+class UnionSymbol(Symbol):
+    """Symbol for a union type (Success ! Error)."""
+    def __init__(self, success_type, error_type):
+        super().__init__("{} ! {}".format(success_type.name, error_type.name))
+        self.success_type = success_type
+        self.error_type = error_type
+        self.accessed = False
+        self.val_assigned = False
 
 class CollectionSymbol(Symbol):
     def __init__(self, name, var_type, item_types):

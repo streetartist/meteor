@@ -1,0 +1,15 @@
+# Simple trait test without complex class fields
+trait Printable
+    pass
+
+class Counter
+    count: int
+    def new()
+        self.count = 0
+
+impl Printable for Counter
+    pass
+
+c = Counter()
+print(c.count)
+print("Trait test passed!")

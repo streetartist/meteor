@@ -1,0 +1,15 @@
+# Test error handling basic parsing and execution
+# Based on RFC-003 Section 3
+
+# Define an error enum
+error IOError
+    NotFound
+    PermissionDenied
+
+# Test try/catch (simplified - just print in try block for now)
+try
+    print("In try block")
+catch IOError.NotFound
+    print("Caught NotFound")
+
+print("Error handling test passed!")

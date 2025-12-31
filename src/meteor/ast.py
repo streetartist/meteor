@@ -49,11 +49,12 @@ class Var(AST):
 
 
 class FuncDecl(AST):
-    def __init__(self, name, return_type, parameters, body, line_num, parameter_defaults=None, varargs=None):
+    def __init__(self, name, return_type, parameters, body, line_num, parameter_defaults=None, varargs=None, param_modes=None):
         self.name = name
         self.return_type = return_type
         self.parameters = parameters
         self.parameter_defaults = parameter_defaults or {}
+        self.param_modes = param_modes or {}
         self.varargs = varargs
         self.body = body
         self.line_num = line_num
@@ -119,13 +120,115 @@ class EnumDeclaration(AST):
 
 
 class ClassDeclaration(AST):
-    def __init__(self, name, base=None, methods=None, fields=None, defaults=None, instance_fields=None):
+    def __init__(self, name, base=None, methods=None, fields=None, defaults=None, instance_fields=None, weak_fields=None):
         self.name = name
         self.base = base
         self.methods = methods
         self.fields = fields
         self.defaults = defaults
         self.instance_fields = instance_fields
+        self.weak_fields = weak_fields or set()  # RFC-001: weak reference fields
+
+
+class TraitDeclaration(AST):
+    """Trait definition with abstract and default methods.
+    
+    Example:
+        trait Drawable
+            def draw(self)           # abstract method
+            def describe(self)       # default implementation
+                print("drawable")
+    """
+    def __init__(self, name, methods, line_num):
+        self.name = name
+        self.methods = methods  # dict: name -> (FuncDecl or None for abstract)
+        self.line_num = line_num
+
+
+class ImplBlock(AST):
+    """Implementation of a trait for a class.
+    
+    Example:
+        impl Drawable for Circle
+            def draw(self)
+                print("circle")
+    """
+    def __init__(self, trait_name, class_name, methods, line_num):
+        self.trait_name = trait_name
+        self.class_name = class_name
+        self.methods = methods  # dict: name -> FuncDecl
+        self.line_num = line_num
+
+
+class ErrorDeclaration(AST):
+    """Error enum declaration.
+    
+    Example:
+        error IOError
+            NotFound
+            PermissionDenied
+    """
+    def __init__(self, name, variants, line_num):
+        self.name = name
+        self.variants = variants  # list of variant names
+        self.line_num = line_num
+
+
+class UnionType(AST):
+    """Union return type for error handling.
+    
+    Example:
+        def read_file(path: str) -> str ! IOError
+    """
+    def __init__(self, success_type, error_type, line_num):
+        self.success_type = success_type
+        self.error_type = error_type
+        self.line_num = line_num
+
+
+class Raise(AST):
+    """Raise an error value.
+    
+    Example:
+        raise IOError.NotFound
+    """
+    def __init__(self, error_value, line_num):
+        self.error_value = error_value
+        self.line_num = line_num
+
+
+class TryStatement(AST):
+    """Try/catch block for error handling.
+    
+    Example:
+        try
+            x = may_fail()
+        catch IOError.NotFound
+            print("Not found")
+    """
+    def __init__(self, try_block, catch_clauses, line_num):
+        self.try_block = try_block
+        self.catch_clauses = catch_clauses  # list of CatchClause
+        self.line_num = line_num
+
+
+class CatchClause(AST):
+    """Catch clause with error pattern and handler body."""
+    def __init__(self, error_pattern, body, line_num):
+        self.error_pattern = error_pattern  # e.g., IOError.NotFound or just IOError
+        self.body = body
+        self.line_num = line_num
+
+
+class ErrorPropagation(AST):
+    """Error propagation with ? operator.
+    
+    Example:
+        content = read_file("test.txt")?
+    """
+    def __init__(self, expr, line_num):
+        self.expr = expr
+        self.line_num = line_num
 
 
 class Assign(AST):
@@ -293,11 +396,12 @@ class DotAccess(AST):
 
 
 class Type(AST):
-    def __init__(self, value, line_num, func_params=None, func_ret_type=None):
+    def __init__(self, value, line_num, func_params=None, func_ret_type=None, is_frozen=False):
         self.value = value
         self.func_params = func_params
         self.func_ret_type = func_ret_type
         self.line_num = line_num
+        self.is_frozen = is_frozen  # RFC-001: frozen type modifier
 
 
 class TypeDeclaration(AST):

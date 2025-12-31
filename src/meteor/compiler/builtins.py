@@ -60,6 +60,19 @@ def define_builtins(self):
     # Memory Management
     define_free_bigint(self)
 
+    # RFC-001 Memory Management Runtime
+    define_object_header(self)
+    define_channel_type(self)  # Channel for concurrency
+    define_spawn_runtime(self)  # Thread spawning
+    define_meteor_destroy(self)  # Must be before retain/release
+    define_meteor_retain(self)
+    define_meteor_release(self)
+    define_meteor_weak_retain(self)
+    define_meteor_weak_release(self)
+    define_meteor_weak_upgrade(self)
+    define_meteor_alloc(self)
+    define_meteor_freeze(self)
+
     # Arithmetic
     define_bigint_add(self)
     define_bigint_neg(self)
@@ -71,6 +84,7 @@ def define_builtins(self):
     define_bigint_shift_left(self)  # Helper for Karatsuba
     define_bigint_mul(self)         # Karatsuba multiplication
     define_bigint_div(self)
+    define_bigint_mod(self)
 
 
     # Decimal Arithmetic
@@ -4074,3 +4088,502 @@ def define_number_func(self):
     neg_result = builder.sub(zero, final_result)
     result = builder.select(is_negative, neg_result, final_result)
     builder.ret(result)
+
+
+# ============================================================================
+# Memory Management Runtime Functions (RFC-001)
+# ============================================================================
+
+def define_object_header(self):
+    """Define unified object header structure for RC memory management.
+
+    Layout (16 bytes on 64-bit):
+    - strong_rc: u32 [0] - Strong reference count
+    - weak_rc: u32 [1] - Weak reference count
+    - flags: u8 [2] - Bit 0: IS_FROZEN, Bit 1: IS_ZOMBIE
+    - type_tag: u8 [3] - Runtime type information
+    - reserved: u16 [4] - Alignment padding
+    """
+    from meteor.compiler.base import OBJECT_HEADER
+
+    header_struct = self.module.context.get_identified_type(OBJECT_HEADER)
+    header_struct.name = OBJECT_HEADER
+    header_struct.set_body(
+        type_map[UINT32],   # strong_rc
+        type_map[UINT32],   # weak_rc
+        type_map[UINT8],    # flags
+        type_map[UINT8],    # type_tag
+        type_map[UINT16]    # reserved
+    )
+
+    self.define(OBJECT_HEADER, header_struct)
+    return header_struct
+
+
+def define_channel_type(self):
+    """Define Channel structure for CSP-style concurrency.
+
+    Layout:
+    - header: meteor.header (for RC)
+    - mutex: i8* (pthread_mutex_t pointer)
+    - cond: i8* (pthread_cond_t pointer)
+    - queue: i8** (circular buffer of void pointers)
+    - capacity: i64
+    - head: i64
+    - tail: i64
+    - count: i64
+    """
+    from meteor.compiler.base import OBJECT_HEADER
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    channel_struct = self.module.context.get_identified_type('meteor.channel')
+    channel_struct.set_body(
+        header_struct,              # header
+        type_map[INT8].as_pointer(), # mutex
+        type_map[INT8].as_pointer(), # cond
+        type_map[INT8].as_pointer().as_pointer(), # queue
+        type_map[INT64],            # capacity
+        type_map[INT64],            # head
+        type_map[INT64],            # tail
+        type_map[INT64]             # count
+    )
+    self.define('meteor.channel', channel_struct)
+    return channel_struct
+
+
+def define_spawn_runtime(self):
+    """Define spawn runtime function for creating threads.
+    i64 meteor_spawn(void* func_ptr, void* arg)
+    Returns thread handle.
+    """
+    i8_ptr = type_map[INT8].as_pointer()
+
+    # pthread_create declaration
+    pthread_t = type_map[INT64]
+    pthread_create_type = ir.FunctionType(
+        type_map[INT32],
+        [pthread_t.as_pointer(), i8_ptr, i8_ptr, i8_ptr]
+    )
+    try:
+        pthread_create = self.module.get_global('pthread_create')
+    except KeyError:
+        pthread_create = ir.Function(self.module, pthread_create_type, 'pthread_create')
+
+    # meteor_spawn wrapper
+    func_type = ir.FunctionType(type_map[INT64], [i8_ptr, i8_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_spawn')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+
+    func_ptr = func.args[0]
+    arg_ptr = func.args[1]
+
+    # Allocate thread handle
+    thread_handle = builder.alloca(type_map[INT64])
+
+    # Call pthread_create
+    null_ptr = ir.Constant(i8_ptr, None)
+    result = builder.call(pthread_create, [thread_handle, null_ptr, func_ptr, arg_ptr])
+
+    # Return thread handle
+    handle = builder.load(thread_handle)
+    builder.ret(handle)
+
+
+def define_meteor_retain(self):
+    """Define retain function for incrementing strong reference count.
+    void meteor_retain(meteor.header* obj)
+    Supports atomic operations for frozen objects.
+    """
+    from meteor.compiler.base import OBJECT_HEADER, HEADER_STRONG_RC, HEADER_FLAGS, FLAG_IS_FROZEN
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_retain')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    do_inc = func.append_basic_block('do_inc')
+    frozen_inc = func.append_basic_block('frozen_inc')
+    normal_inc = func.append_basic_block('normal_inc')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    # Null check
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned(EQUALS, obj_ptr, null_ptr)
+    builder.cbranch(is_null, exit_block, do_inc)
+
+    # Check IS_FROZEN flag
+    builder.position_at_end(do_inc)
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    flags = builder.load(flags_ptr)
+    frozen_mask = ir.Constant(type_map[UINT8], FLAG_IS_FROZEN)
+    is_frozen = builder.and_(flags, frozen_mask)
+    is_frozen_bool = builder.icmp_unsigned(NOT_EQUALS, is_frozen, ir.Constant(type_map[UINT8], 0))
+    builder.cbranch(is_frozen_bool, frozen_inc, normal_inc)
+
+    # Frozen: use atomic increment
+    builder.position_at_end(frozen_inc)
+    rc_ptr_f = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.atomic_rmw('add', rc_ptr_f, ir.Constant(type_map[UINT32], 1), 'seq_cst')
+    builder.branch(exit_block)
+
+    # Normal: use regular increment
+    builder.position_at_end(normal_inc)
+    rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    rc = builder.load(rc_ptr)
+    new_rc = builder.add(rc, ir.Constant(type_map[UINT32], 1))
+    builder.store(new_rc, rc_ptr)
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+
+def define_meteor_release(self):
+    """Define release function for decrementing strong reference count.
+    void meteor_release(meteor.header* obj)
+    Supports atomic operations for frozen objects.
+    """
+    from meteor.compiler.base import (OBJECT_HEADER, HEADER_STRONG_RC,
+                                       HEADER_WEAK_RC, HEADER_FLAGS, FLAG_IS_ZOMBIE, FLAG_IS_FROZEN)
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_release')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    do_dec = func.append_basic_block('do_dec')
+    frozen_dec = func.append_basic_block('frozen_dec')
+    normal_dec = func.append_basic_block('normal_dec')
+    check_zero = func.append_basic_block('check_zero')
+    do_destroy = func.append_basic_block('do_destroy')
+    check_weak = func.append_basic_block('check_weak')
+    do_free = func.append_basic_block('do_free')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    # Null check
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned(EQUALS, obj_ptr, null_ptr)
+    builder.cbranch(is_null, exit_block, do_dec)
+
+    # Check IS_FROZEN flag
+    builder.position_at_end(do_dec)
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    flags = builder.load(flags_ptr)
+    frozen_mask = ir.Constant(type_map[UINT8], FLAG_IS_FROZEN)
+    is_frozen = builder.and_(flags, frozen_mask)
+    is_frozen_bool = builder.icmp_unsigned(NOT_EQUALS, is_frozen, ir.Constant(type_map[UINT8], 0))
+    builder.cbranch(is_frozen_bool, frozen_dec, normal_dec)
+
+    # Frozen: use atomic decrement
+    builder.position_at_end(frozen_dec)
+    rc_ptr_f = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    old_rc_f = builder.atomic_rmw('sub', rc_ptr_f, ir.Constant(type_map[UINT32], 1), 'seq_cst')
+    new_rc_f = builder.sub(old_rc_f, ir.Constant(type_map[UINT32], 1))
+    builder.branch(check_zero)
+
+    # Normal: use regular decrement
+    builder.position_at_end(normal_dec)
+    rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    rc = builder.load(rc_ptr)
+    new_rc_n = builder.sub(rc, ir.Constant(type_map[UINT32], 1))
+    builder.store(new_rc_n, rc_ptr)
+    builder.branch(check_zero)
+
+    # Check if RC reached zero (use phi node)
+    builder.position_at_end(check_zero)
+    new_rc = builder.phi(type_map[UINT32])
+    new_rc.add_incoming(new_rc_f, frozen_dec)
+    new_rc.add_incoming(new_rc_n, normal_dec)
+    is_zero = builder.icmp_unsigned(EQUALS, new_rc, ir.Constant(type_map[UINT32], 0))
+    builder.cbranch(is_zero, do_destroy, exit_block)
+
+    # Destroy payload before setting zombie flag
+    builder.position_at_end(do_destroy)
+    destroy_func = self.module.get_global('meteor_destroy')
+    if destroy_func:
+        builder.call(destroy_func, [obj_ptr])
+
+    # Set IS_ZOMBIE flag
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    old_flags = builder.load(flags_ptr)
+    new_flags = builder.or_(old_flags, ir.Constant(type_map[UINT8], FLAG_IS_ZOMBIE))
+    builder.store(new_flags, flags_ptr)
+    builder.branch(check_weak)
+
+    # Check if weak_rc is also zero
+    builder.position_at_end(check_weak)
+    weak_rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    weak_rc = builder.load(weak_rc_ptr)
+    weak_is_zero = builder.icmp_unsigned(EQUALS, weak_rc, ir.Constant(type_map[UINT32], 0))
+    builder.cbranch(weak_is_zero, do_free, exit_block)
+
+    # Free the header
+    builder.position_at_end(do_free)
+    free_func = self.module.get_global('free')
+    if not free_func:
+        free_type = ir.FunctionType(type_map[VOID], [type_map[INT8].as_pointer()])
+        free_func = ir.Function(self.module, free_type, 'free')
+    obj_i8 = builder.bitcast(obj_ptr, type_map[INT8].as_pointer())
+    builder.call(free_func, [obj_i8])
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+
+def define_meteor_weak_retain(self):
+    """Increment weak reference count."""
+    from meteor.compiler.base import OBJECT_HEADER, HEADER_WEAK_RC
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_weak_retain')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    not_null = func.append_basic_block('not_null')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned(EQUALS, obj_ptr, null_ptr)
+    builder.cbranch(is_null, exit_block, not_null)
+
+    builder.position_at_end(not_null)
+    weak_rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    weak_rc = builder.load(weak_rc_ptr)
+    new_weak_rc = builder.add(weak_rc, ir.Constant(type_map[UINT32], 1))
+    builder.store(new_weak_rc, weak_rc_ptr)
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+
+def define_meteor_weak_release(self):
+    """Decrement weak reference count. Free header if zombie and weak_rc==0."""
+    from meteor.compiler.base import (OBJECT_HEADER, HEADER_WEAK_RC,
+                                       HEADER_FLAGS, FLAG_IS_ZOMBIE)
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_weak_release')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    not_null = func.append_basic_block('not_null')
+    check_free = func.append_basic_block('check_free')
+    do_free = func.append_basic_block('do_free')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned(EQUALS, obj_ptr, null_ptr)
+    builder.cbranch(is_null, exit_block, not_null)
+
+    builder.position_at_end(not_null)
+    weak_rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    weak_rc = builder.load(weak_rc_ptr)
+    new_weak_rc = builder.sub(weak_rc, ir.Constant(type_map[UINT32], 1))
+    builder.store(new_weak_rc, weak_rc_ptr)
+    builder.branch(check_free)
+
+    # Check if zombie and weak_rc == 0
+    builder.position_at_end(check_free)
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    flags = builder.load(flags_ptr)
+    is_zombie = builder.and_(flags, ir.Constant(type_map[UINT8], FLAG_IS_ZOMBIE))
+    is_zombie_bool = builder.icmp_unsigned(NOT_EQUALS, is_zombie, ir.Constant(type_map[UINT8], 0))
+    weak_is_zero = builder.icmp_unsigned(EQUALS, new_weak_rc, ir.Constant(type_map[UINT32], 0))
+    should_free = builder.and_(is_zombie_bool, weak_is_zero)
+    builder.cbranch(should_free, do_free, exit_block)
+
+    builder.position_at_end(do_free)
+    free_func = self.module.get_global('free')
+    obj_i8 = builder.bitcast(obj_ptr, type_map[INT8].as_pointer())
+    builder.call(free_func, [obj_i8])
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+
+def define_meteor_weak_upgrade(self):
+    """Try to upgrade weak reference to strong reference.
+    Returns NULL if object is zombie, otherwise increments strong_rc.
+    """
+    from meteor.compiler.base import (OBJECT_HEADER, HEADER_STRONG_RC,
+                                       HEADER_FLAGS, FLAG_IS_ZOMBIE)
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(header_ptr, [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_weak_upgrade')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    not_null = func.append_basic_block('not_null')
+    do_retain = func.append_basic_block('do_retain')
+    ret_null = func.append_basic_block('ret_null')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned(EQUALS, obj_ptr, null_ptr)
+    builder.cbranch(is_null, ret_null, not_null)
+
+    builder.position_at_end(not_null)
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    flags = builder.load(flags_ptr)
+    is_zombie = builder.and_(flags, ir.Constant(type_map[UINT8], FLAG_IS_ZOMBIE))
+    is_zombie_bool = builder.icmp_unsigned(NOT_EQUALS, is_zombie, ir.Constant(type_map[UINT8], 0))
+    builder.cbranch(is_zombie_bool, ret_null, do_retain)
+
+    builder.position_at_end(do_retain)
+    rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    rc = builder.load(rc_ptr)
+    new_rc = builder.add(rc, ir.Constant(type_map[UINT32], 1))
+    builder.store(new_rc, rc_ptr)
+    builder.branch(exit_block)
+
+    builder.position_at_end(ret_null)
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    result = builder.phi(header_ptr)
+    result.add_incoming(obj_ptr, do_retain)
+    result.add_incoming(null_ptr, ret_null)
+    builder.ret(result)
+
+
+def define_meteor_destroy(self):
+    """Type-specific destructor dispatch based on type_tag."""
+    from meteor.compiler.base import (OBJECT_HEADER, HEADER_TYPE_TAG,
+                                       TYPE_TAG_STR, TYPE_TAG_BIGINT,
+                                       TYPE_TAG_LIST, TYPE_TAG_CLASS)
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(type_map[VOID], [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_destroy')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    exit_block = func.append_basic_block('exit')
+
+    builder = ir.IRBuilder(entry)
+    obj_ptr = func.args[0]
+
+    # Get type tag
+    type_tag_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    type_tag = builder.load(type_tag_ptr)
+
+    # For now, just return - type-specific cleanup will be added later
+    # when we migrate existing types to use the new header
+    builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+
+def define_meteor_alloc(self):
+    """Allocate memory with object header initialized.
+    meteor.header* meteor_alloc(i64 size, u8 type_tag)
+    """
+    from meteor.compiler.base import (OBJECT_HEADER, HEADER_STRONG_RC,
+                                       HEADER_WEAK_RC, HEADER_FLAGS,
+                                       HEADER_TYPE_TAG, FLAG_NONE)
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(header_ptr, [type_map[INT], type_map[UINT8]])
+    func = ir.Function(self.module, func_type, 'meteor_alloc')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+
+    size = func.args[0]
+    type_tag = func.args[1]
+
+    # Add header size (16 bytes)
+    header_size = ir.Constant(type_map[INT], 16)
+    total_size = builder.add(size, header_size)
+
+    # Call malloc
+    malloc_func = self.module.get_global('malloc')
+    mem = builder.call(malloc_func, [total_size])
+    obj_ptr = builder.bitcast(mem, header_ptr)
+
+    # Initialize header: strong_rc = 1
+    rc_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+
+    # weak_rc = 0
+    weak_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+
+    # flags = 0
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], FLAG_NONE), flags_ptr)
+
+    # type_tag
+    tag_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(type_tag, tag_ptr)
+
+    builder.ret(obj_ptr)
+
+
+def define_meteor_freeze(self):
+    """Freeze an object (set IS_FROZEN flag).
+    meteor.header* meteor_freeze(meteor.header* obj)
+    """
+    from meteor.compiler.base import OBJECT_HEADER, HEADER_FLAGS, FLAG_IS_FROZEN
+
+    header_struct = self.search_scopes(OBJECT_HEADER)
+    header_ptr = header_struct.as_pointer()
+
+    func_type = ir.FunctionType(header_ptr, [header_ptr])
+    func = ir.Function(self.module, func_type, 'meteor_freeze')
+    func.linkage = 'internal'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+
+    obj_ptr = func.args[0]
+
+    # Set IS_FROZEN flag
+    flags_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    old_flags = builder.load(flags_ptr)
+    new_flags = builder.or_(old_flags, ir.Constant(type_map[UINT8], FLAG_IS_FROZEN))
+    builder.store(new_flags, flags_ptr)
+
+    builder.ret(obj_ptr)

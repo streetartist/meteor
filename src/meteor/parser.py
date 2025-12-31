@@ -88,6 +88,7 @@ class Parser(object):
         methods = []
         fields = OrderedDict()
         defaults = {}
+        weak_fields = set()  # Track weak reference fields
         instance_fields = None
         self.next_token()
         class_name = self.current_token
@@ -102,12 +103,19 @@ class Parser(object):
             if self.current_token.type == NEWLINE:
                 self.eat_type(NEWLINE)
                 continue
+            # Check for weak keyword
+            is_weak = False
+            if self.current_token.value == WEAK:
+                is_weak = True
+                self.eat_value(WEAK)
             if self.current_token.type == NAME and self.preview().value == COLON:
                 field = self.current_token.value
                 self.eat_type(NAME)
                 self.eat_value(COLON)
                 field_type = self.type_spec()
                 fields[field] = field_type
+                if is_weak:
+                    weak_fields.add(field)
                 if self.current_token.value == ASSIGN:
                     self.eat_value(ASSIGN)
                     defaults[field] = self.expr()
@@ -116,7 +124,214 @@ class Parser(object):
             if self.current_token.value == DEF:
                 methods.append(self.method_declaration(class_name))
         self.indent_level -= 1
-        return ClassDeclaration(class_name.value, base, methods, fields, defaults, instance_fields)
+        result = ClassDeclaration(class_name.value, base, methods, fields, defaults, instance_fields)
+        result.weak_fields = weak_fields
+        return result
+
+    def trait_declaration(self):
+        """Parse a trait definition.
+        
+        Syntax:
+            trait TraitName
+                def method_name(self)           # abstract (no body)
+                def method_with_default(self)   # has body = default impl
+                    print("default")
+        """
+        self.eat_value(TRAIT)
+        trait_name = self.current_token.value
+        self.user_types.append(trait_name)
+        self.eat_type(NAME)
+        self.eat_type(NEWLINE)
+        self.indent_level += 1
+        
+        methods = {}  # name -> FuncDecl or None (abstract)
+        
+        while self.keep_indent():
+            if self.current_token.type == NEWLINE:
+                self.eat_type(NEWLINE)
+                continue
+            if self.current_token.value == DEF:
+                method = self._parse_trait_method(trait_name)
+                methods[method.name.split('.')[-1]] = method
+            elif self.current_token.value == PASS:
+                self.eat_value(PASS)
+                if self.current_token.type == NEWLINE:
+                    self.eat_type(NEWLINE)
+            else:
+                # Unknown token at trait indent level - stop parsing trait body
+                break
+        
+        self.indent_level -= 1
+        return TraitDeclaration(trait_name, methods, self.line_num)
+
+    def _parse_trait_method(self, trait_name):
+        """Parse a method inside a trait. Can be abstract (no body) or have default impl."""
+        self.eat_value(DEF)
+        name = self.next_token()
+        self.eat_value(LPAREN)
+        params = OrderedDict()
+        param_defaults = {}
+        vararg = None
+        
+        # First param is implicitly self
+        while self.current_token.value != RPAREN:
+            param_name = self.current_token.value
+            self.eat_type(NAME)
+            if self.current_token.value == COLON:
+                self.eat_value(COLON)
+                param_type = self.type_spec()
+            else:
+                param_type = Type(ANY, self.line_num)  # Default to any for self
+            params[param_name] = param_type
+            if self.current_token.value != RPAREN:
+                if self.current_token.value == COMMA:
+                    self.eat_value(COMMA)
+        self.eat_value(RPAREN)
+        
+        # Return type
+        if self.current_token.value != ARROW:
+            return_type = Void()
+        else:
+            self.eat_value(ARROW)
+            if self.current_token.value == VOID:
+                return_type = Void()
+                self.next_token()
+            else:
+                return_type = self.type_spec()
+        
+        # Check if this is abstract (no body) or has default implementation
+        if self.current_token.type == NEWLINE:
+            self.eat_type(NEWLINE)
+            # Check if next line is more indented (has body)
+            if self.current_token.indent_level > self.indent_level:
+                self.indent_level += 1
+                stmts = self.compound_statement()
+                self.indent_level -= 1
+                return FuncDecl("{}.{}".format(trait_name, name.value), return_type, params, stmts, self.line_num, param_defaults, vararg)
+            else:
+                # Abstract method - no body
+                return FuncDecl("{}.{}".format(trait_name, name.value), return_type, params, None, self.line_num, param_defaults, vararg)
+        else:
+            # Abstract method - just signature on one line
+            return FuncDecl("{}.{}".format(trait_name, name.value), return_type, params, None, self.line_num, param_defaults, vararg)
+
+    def impl_block(self):
+        """Parse an impl block.
+        
+        Syntax:
+            impl TraitName for ClassName
+                def method_name(self)
+                    ... implementation ...
+        """
+        self.eat_value(IMPL)
+        trait_name = self.current_token.value
+        self.eat_type(NAME)
+        self.eat_value(FOR)
+        class_name = self.current_token
+        self.eat_type(NAME)
+        self.eat_type(NEWLINE)
+        self.indent_level += 1
+        
+        methods = {}
+        
+        while self.keep_indent():
+            if self.current_token.type == NEWLINE:
+                self.eat_type(NEWLINE)
+                continue
+            if self.current_token.value == DEF:
+                method = self.method_declaration(class_name)
+                # Extract just the method name (without class prefix)
+                method_name = method.name.split('.')[-1]
+                methods[method_name] = method
+            elif self.current_token.value == PASS:
+                self.eat_value(PASS)
+                if self.current_token.type == NEWLINE:
+                    self.eat_type(NEWLINE)
+            else:
+                break
+        
+        self.indent_level -= 1
+        return ImplBlock(trait_name, class_name.value, methods, self.line_num)
+
+    def error_declaration(self):
+        """Parse an error enum declaration.
+        
+        Syntax:
+            error IOError
+                NotFound
+                PermissionDenied
+        """
+        self.eat_value(ERROR)
+        error_name = self.current_token.value
+        self.user_types.append(error_name)
+        self.eat_type(NAME)
+        self.eat_type(NEWLINE)
+        self.indent_level += 1
+        
+        variants = []
+        
+        while self.keep_indent():
+            if self.current_token.type == NEWLINE:
+                self.eat_type(NEWLINE)
+                continue
+            if self.current_token.type == NAME:
+                variants.append(self.current_token.value)
+                self.eat_type(NAME)
+                if self.current_token.type == NEWLINE:
+                    self.eat_type(NEWLINE)
+            else:
+                break
+        
+        self.indent_level -= 1
+        return ErrorDeclaration(error_name, variants, self.line_num)
+
+    def raise_statement(self):
+        """Parse a raise statement.
+        
+        Syntax:
+            raise IOError.NotFound
+        """
+        self.eat_value(RAISE)
+        error_value = self.expr()
+        return Raise(error_value, self.line_num)
+
+    def try_statement(self):
+        """Parse a try/catch statement.
+        
+        Syntax:
+            try
+                <body>
+            catch ErrorType
+                <body>
+            catch ErrorType2
+                <body>
+        """
+        self.eat_value(TRY)
+        self.eat_type(NEWLINE)
+        
+        self.indent_level += 1
+        try_body_nodes = self.statement_list()
+        try_body = Compound()
+        try_body.children = try_body_nodes
+        self.indent_level -= 1
+        
+        catch_clauses = []
+        while self.current_token.value == CATCH:
+            if self.current_token.indent_level < self.indent_level:
+                break
+            self.eat_value(CATCH)
+            error_pattern = self.expr() # e.g. IOError or IOError.NotFound
+            self.eat_type(NEWLINE)
+            
+            self.indent_level += 1
+            catch_body_nodes = self.statement_list()
+            catch_body = Compound()
+            catch_body.children = catch_body_nodes
+            self.indent_level -= 1
+            
+            catch_clauses.append(CatchClause(error_pattern, catch_body, self.line_num))
+        
+        return TryStatement(try_body, catch_clauses, self.line_num)
 
     def variable_declaration(self):
         var_node = Var(self.current_token.value, self.line_num)
@@ -157,8 +372,21 @@ class Parser(object):
         self.eat_value(LPAREN)
         params = OrderedDict()
         param_defaults = {}
+        param_modes = {}  # Track parameter passing modes
         vararg = None
         while self.current_token.value != RPAREN:
+            # Check for parameter mode keywords (owned, escape, ref)
+            param_mode = 'borrow'  # Default mode
+            if self.current_token.value == OWNED:
+                param_mode = 'owned'
+                self.eat_value(OWNED)
+            elif self.current_token.value == ESCAPE:
+                param_mode = 'escape'
+                self.eat_value(ESCAPE)
+            elif self.current_token.value == REF:
+                param_mode = 'ref'
+                self.eat_value(REF)
+
             param_name = self.current_token.value
             self.eat_type(NAME)
             if self.current_token.value == COLON:
@@ -168,6 +396,7 @@ class Parser(object):
                 param_type = self.variable(self.current_token)
 
             params[param_name] = param_type
+            param_modes[param_name] = param_mode
             if self.current_token.value != RPAREN:
                 if self.current_token.value == ASSIGN:
                     if extern_func:
@@ -195,6 +424,11 @@ class Parser(object):
                 self.next_token()
             else:
                 return_type = self.type_spec()
+            # Check for union return type: T ! Error
+            if self.current_token.value == NOT_BANG:
+                self.eat_value(NOT_BANG)
+                error_type = self.type_spec()
+                return_type = UnionType(return_type, error_type, self.line_num)
 
         if extern_func:
             return ExternFuncDecl(name.value, return_type, params, self.line_num, vararg)
@@ -214,7 +448,7 @@ class Parser(object):
                 type_name = str(type_map[str(params[param].value)]) if str(params[param].value) in type_map else str(params[param].value)
                 name.value += '.' + type_name
 
-        return FuncDecl(name.value, return_type, params, stmts, self.line_num, param_defaults, vararg)
+        return FuncDecl(name.value, return_type, params, stmts, self.line_num, param_defaults, vararg, param_modes)
 
     def method_declaration(self, class_name):
         self.eat_value(DEF)
@@ -307,12 +541,19 @@ class Parser(object):
         return func
 
     def type_spec(self):
+        # Check for frozen modifier
+        is_frozen = False
+        if self.current_token.value == FROZEN:
+            is_frozen = True
+            self.eat_value(FROZEN)
+
         token = self.current_token
         if token.value in self.user_types:
             self.eat_type(NAME)
-            return Type(token.value, self.line_num)
+            result = Type(token.value, self.line_num, is_frozen=is_frozen)
+            return result
         self.eat_type(LTYPE)
-        type_spec = Type(token.value, self.line_num)
+        type_spec = Type(token.value, self.line_num, is_frozen=is_frozen)
         func_ret_type = None
         func_params = OrderedDict()
         param_num = 0
@@ -362,19 +603,33 @@ class Parser(object):
             self.next_token()
         if isinstance(node, Return):
             return [node]
+            
         results = [node]
         while self.keep_indent():
             results.append(self.statement())
             if self.current_token.type == NEWLINE:
                 self.next_token()
             elif self.current_token.type == EOF:
-                results = [x for x in results if x is not None]
                 break
+                
+        # Filter None nodes (from empty lines or EOF)
+        results = [x for x in results if x is not None]
         return results
 
     def statement(self):
+        # Skip newlines iteratively to avoid recursion depth issues
+        while self.current_token.type == NEWLINE:
+            self.next_token()
+            
+        node = None
         if self.current_token.value == IF:
             node = self.if_statement()
+        elif self.current_token.value == ELSE:
+             # Handle stray else? Or Error?
+             # For now let's just parse it or error
+             self.next_token()
+             # recurse or error. 
+             # Original code falling through generic 'else' would recurse.
         elif self.current_token.value == WHILE:
             node = self.while_statement()
         elif self.current_token.value == FOR:
@@ -417,8 +672,22 @@ class Parser(object):
                 node = self.class_declaration()
             elif self.current_token.value == ENUM:
                 node = self.enum_declaration()
+        elif self.current_token.value == IMPORT:
+            node = self.import_statement()
+        elif self.current_token.value == FROM:
+            node = self.from_import_statement()
+        elif self.current_token.value == TRAIT:
+            node = self.trait_declaration()
+        elif self.current_token.value == IMPL:
+            node = self.impl_block()
+        elif self.current_token.value == ERROR:
+            node = self.error_declaration()
+        elif self.current_token.value == RAISE:
+            node = self.raise_statement()
+        elif self.current_token.value == TRY:
+            node = self.try_statement()
         elif self.current_token.value == EOF:
-            return
+            return None
         else:
             self.next_token()
             node = self.statement()
@@ -780,6 +1049,10 @@ class Parser(object):
         while self.current_token.value in (PLUS, MINUS):
             token = self.next_token()
             node = BinOp(node, token.value, self.term(), self.line_num)
+        # Check for ? error propagation operator
+        if self.current_token.value == QUESTION:
+            self.eat_value(QUESTION)
+            node = ErrorPropagation(node, self.line_num)
         return node
 
     def parse(self) -> Program:

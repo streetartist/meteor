@@ -1,19 +1,19 @@
-number: int = 0
-print(number)
-number += 5
-print(number)
-number -= 1
-print(number)
-number /= 2
-print(number)
-number *= 10
-print(number)
-number //= 7
-print(number)
-number ^= 3
-print(number)
-number %= 3
-print(number)
+number1: int = 0
+print(number1)
+number1 += 5
+print(number1)
+number1 -= 1
+print(number1)
+number1 /= 2
+print(number1)
+number1 *= 10
+print(number1)
+number1 //= 7
+print(number1)
+number1 ^= 3
+print(number1)
+number1 %= 3
+print(number1)
 
 number2: double = 0
 print(number2)

@@ -1,0 +1,31 @@
+error MyError
+    Fail
+    BadInput
+
+def process(x: int) -> int ! MyError
+    if x < 0
+        raise MyError.BadInput
+    if x == 0
+        raise MyError.Fail
+    return x + 10
+
+def test_success() -> int ! MyError
+    print("Testing success...")
+    # This should unwrap to 15
+    val = process(5)?
+    print(val) 
+    return val
+
+def test_fail() -> int ! MyError
+    print("Testing failure...")
+    # This should propagate and NOT print "Unreachable"
+    val = process(-1)?
+    print("Unreachable")
+    return val
+
+test_success()
+print("---")
+test_fail()
+print("Done") # This might not be reached if test_fail causes main to exit?
+# Wait, test_fail returns a Union. Top level ignores return value.
+# So "Done" should be printed.

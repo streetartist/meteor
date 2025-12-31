@@ -1,0 +1,49 @@
+error MyError
+    ArgError
+    Fail
+
+def fail_func(x: int) -> int ! MyError
+    if x < 0
+        raise MyError.ArgError
+    return x
+
+def test_catch_raise()
+    print("Test Catch Raise:")
+    try
+        print("Raising Fail...")
+        raise MyError.Fail
+        print("Unreachable")
+    catch MyError.Fail
+        print("Caught Fail")
+    catch MyError.ArgError
+        print("Caught ArgError (Wrong)")
+
+def test_catch_propagate()
+    print("Test Catch Propagate:")
+    try
+        print("Calling fail_func...")
+        val = fail_func(-1)?
+        print("Unreachable")
+    catch MyError.ArgError
+        print("Caught Propagated ArgError")
+    catch MyError.Fail
+        print("Caught Fail (Wrong)")
+
+def test_nested()
+    print("Test Nested:")
+    try
+        print("Enter Outer")
+        try
+            print("Enter Inner")
+            raise MyError.Fail
+        catch MyError.ArgError
+            print("Inner Caught ArgError (Wrong)")
+    catch MyError.Fail
+        print("Outer Caught Fail")
+
+test_catch_raise()
+print("---")
+test_catch_propagate()
+print("---")
+test_nested()
+print("Done")
