@@ -95,30 +95,30 @@ print("Hello, Meteor!")
 
 ### 变量与类型
 ```
-let x: int = 42
-let pi: float = 3.14159
-let name: str = "Meteor"
-let flag: bool = true
+x: int = 42
+pi: float = 3.14159
+name: str = "Meteor"
+flag: bool = true
 ```
 
 ### 大整数运算
 ```
-let big: bigint = 12345678901234567890
-let result = big * big
+big: bigint = 12345678901234567890
+result: bigint = big * big
 print(result)
 ```
 
 ### 高精度小数
 ```
-let price: decimal = 19.99
-let quantity: decimal = 3
-let total = price * quantity
+price: decimal = 19.99
+quantity: decimal = 3
+total: decimal = price * quantity
 print(total)  # 输出: 5.997e1
 ```
 
 ### 动态类型
 ```
-let arr: list[dynamic] = []
+arr: list<dynamic> = []
 arr.append(42)
 arr.append(3.14)
 arr.append("hello")
