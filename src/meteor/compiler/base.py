@@ -8,12 +8,16 @@ RET_VAR = 'ret_var'
 # Memory Management Constants (RFC-001)
 # ============================================================================
 
-# Object Header Field Indices
-HEADER_STRONG_RC = 0   # Strong reference count (u32)
-HEADER_WEAK_RC = 1     # Weak reference count (u32)
-HEADER_FLAGS = 2       # Flags byte (u8)
-HEADER_TYPE_TAG = 3    # Type tag (u8)
-HEADER_RESERVED = 4    # Reserved for alignment (u16)
+# Object Header Field Indices (16 bytes total)
+HEADER_STRONG_RC = 0   # Strong reference count (u32) - 4 bytes
+HEADER_WEAK_RC = 1     # Weak reference count (u32) - 4 bytes
+HEADER_FLAGS = 2       # Flags byte (u8) - 1 byte
+HEADER_TYPE_TAG = 3    # Type tag (u8) - 1 byte
+HEADER_RESERVED1 = 4   # Reserved for alignment (u16) - 2 bytes
+HEADER_RESERVED2 = 5   # Reserved for alignment (u32) - 4 bytes = 16 total
+
+# Object Header Size in bytes
+OBJECT_HEADER_SIZE = 16
 
 # Type Tags for Runtime Type Information
 TYPE_TAG_UNKNOWN = 0

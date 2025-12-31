@@ -1,0 +1,15 @@
+# Test ref parameter mode
+# ref parameters allow modifying caller's variables
+
+def swap(ref a: int, ref b: int)
+    temp = a
+    a = b
+    b = temp
+
+x = 10
+y = 20
+print(x)
+print(y)
+swap(x, y)
+print(x)
+print(y)

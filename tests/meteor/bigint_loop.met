@@ -1,0 +1,9 @@
+# Simple bigint loop test
+a: bigint = 1
+i: int = 0
+
+while i < 3
+    a = a + a
+    i = i + 1
+
+print(a)

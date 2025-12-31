@@ -1,5 +1,6 @@
 import os
 import subprocess
+import ctypes
 from ctypes import CFUNCTYPE, c_void_p
 from decimal import Decimal
 from math import inf
@@ -35,6 +36,12 @@ class CodeGenerator(NodeVisitor):
         self.current_function = func
         self.function_stack = [func]
         self.builder = ir.IRBuilder(entry_block)
+
+        # Call mi_version() to ensure mimalloc DLL is initialized
+        mi_version_func = self.module.get_global('mi_version')
+        if mi_version_func:
+            self.builder.call(mi_version_func, [])
+
         self.exit_blocks = [exit_block]
         self.block_stack = [entry_block]
         self.defer_stack = [[]]
@@ -2796,6 +2803,15 @@ class CodeGenerator(NodeVisitor):
                 if func.name == "main":
                     print(func)
 
+        # Provide mi_version symbol for JIT mode (returns dummy value)
+        def dummy_mi_version():
+            return 0
+        MI_VERSION_FUNC = ctypes.CFUNCTYPE(ctypes.c_int)
+        mi_version_callback = MI_VERSION_FUNC(dummy_mi_version)
+        # Keep reference to prevent garbage collection
+        self._mi_version_callback = mi_version_callback
+        llvm.add_symbol('mi_version', ctypes.cast(mi_version_callback, ctypes.c_void_p).value)
+
         llvmmod = llvm.parse_assembly(str(self.module))
         target_machine = llvm.Target.from_default_triple().create_target_machine()
         if optimize:
@@ -2828,7 +2844,22 @@ class CodeGenerator(NodeVisitor):
             out.write(prog_str)
 
         with open(os.devnull, "w") as tmpout:
-            subprocess.call('clang {0}.ll -O3 -o {0}'.format(output).split(" "), stdout=tmpout, stderr=tmpout)
+            # Link with mimalloc DLL for better memory allocation performance
+            mimalloc_dir = 'D:/Project/mimalloc/out/shared/Release'
+            mimalloc_lib = f'{mimalloc_dir}/mimalloc.dll.lib'
+            if os.path.exists(mimalloc_lib):
+                cmd = ['clang', f'{output}.ll', '-O3', '-o', output, mimalloc_lib]
+                # Copy DLLs to output directory
+                output_dir = os.path.dirname(os.path.abspath(output)) or '.'
+                import shutil
+                for dll in ['mimalloc.dll', 'mimalloc-redirect.dll']:
+                    src = f'{mimalloc_dir}/{dll}'
+                    dst = f'{output_dir}/{dll}'
+                    if os.path.exists(src) and not os.path.exists(dst):
+                        shutil.copy2(src, dst)
+            else:
+                cmd = ['clang', f'{output}.ll', '-O3', '-o', output]
+            subprocess.call(cmd, stdout=tmpout, stderr=tmpout)
             successful("compilation done in: %.3f seconds" % (time() - compile_time))
             successful("binary file wrote to " + output)
 

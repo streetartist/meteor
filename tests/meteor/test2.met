@@ -1,0 +1,4 @@
+a: bigint = 10
+b: bigint = 20
+c: bigint = a * b
+print(c)

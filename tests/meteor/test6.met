@@ -1,0 +1,8 @@
+def test() -> bigint
+    a: bigint = 1
+    b: bigint = 2
+    c: bigint = a * b
+    return c
+
+result: bigint = test()
+print(result)

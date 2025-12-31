@@ -84,6 +84,10 @@ def define_builtins(self):
     # Memory Management
     define_free_bigint(self)
 
+    # Declare mi_version for mimalloc DLL initialization
+    mi_version_type = ir.FunctionType(type_map[INT32], [])
+    ir.Function(self.module, mi_version_type, 'mi_version')
+
     # RFC-001 Memory Management Runtime
     # Note: define_object_header already called above for array structure
     define_channel_type(self)  # Channel for concurrency

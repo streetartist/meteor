@@ -1,0 +1,10 @@
+# Test Use-After-Move detection
+# This should abort at runtime when accessing moved variable
+
+def consume(owned data: bigint)
+    print(data)
+
+x: bigint = 12345
+consume(x)
+# x has been moved, accessing it should trigger abort
+print(x)

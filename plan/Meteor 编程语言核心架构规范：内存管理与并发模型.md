@@ -39,27 +39,7 @@ struct Object {
  * Payload 销毁: 当 strong_rc == 0。释放大数据内存（如 10GB 的 buffer），标记 IS_ZOMBIE。
  * Header 销毁: 当 strong_rc == 0 且 weak_rc == 0。回收对象头内存。
 4. 编译器层：代码生成规程 (Compiler Codegen)
-4.1 变量赋值卫生 (Hygiene) 
-为了防止循环内的内存复用泄漏，编译器对所有指针赋值（target = source）生成如下 IR：
-```
-// 伪代码：赋值操作的底层逻辑
-void assign(Object** target_ptr, Object* source) {
-    Object* old_obj = *target_ptr;
-    
-    // 1. 运行时检查：如果目标持有旧资源，先释放
-    if (old_obj != NULL) {
-        release(old_obj); 
-    }
-    
-    // 2. 只有 source 非空才持有
-    if (source != NULL) {
-        retain(source);
-    }
-    
-    // 3. 写入指针
-    *target_ptr = source;
-}
-```
+4.1 能够防止循环内的内存复用泄漏
 4.2 函数调用 ABI (Function Passing ABI)
 Meteor 通过静态分析优化传参成本，避免不必要的 RC 操作。
 | 参数类型 | 语义 | 底层行为 | 适用场景 |
@@ -127,7 +107,7 @@ def main():
 7. 安全性保障分析 (Safety Guarantee)
 7.1 内存泄漏 (Memory Leaks)
  * 机械性泄漏（忘记 Free）： ✅ 100% 免疫。编译器自动插入 release。
- * 复用泄漏（循环覆盖）： ✅ 100% 免疫。由 "19-Line Logic" 的运行时检查保障。
+ * 复用泄漏（循环覆盖）： ✅ 100% 免疫。
  * 循环引用（拓扑泄漏）： ⚠️ 需用户介入。编译器无法自动解环，依赖用户使用 weak。这是 RC 系统的物理特性。
 7.2 线程安全 (Thread Safety)
  * 数据竞争 (Data Race): ✅ 100% 免疫。
