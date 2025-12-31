@@ -93,7 +93,6 @@ Meteor 旨在简化并发编程，充分利用多核 CPU。
 |------|--------|------|----------|
 | **Meteor** (native bigint) | **~40 lines** | **54.0s** | **1.00x** |
 | C (GCC -O3, custom mp_int) | ~280 lines | 48.8s | 1.11x |
-| Python 3.9 (native) | ~40 lines | > 500s | < 0.1x |
 
 > Meteor 以 Python 级别的代码简洁度，实现了接近纯 C 语言手写优化的性能。
 
