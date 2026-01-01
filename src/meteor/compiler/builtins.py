@@ -310,8 +310,9 @@ def dynamic_array_double_if_full(self, dyn_array_ptr, array_type):
 
 def dynamic_array_append(self, dyn_array_ptr, array_type):
     # START
+    type_name = _normalize_type_name(array_type)
     dyn_array_append_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr, array_type])
-    dyn_array_append = ir.Function(self.module, dyn_array_append_type, '{}.array.append'.format(_normalize_type_name(array_type)))
+    dyn_array_append = ir.Function(self.module, dyn_array_append_type, '{}.array.append'.format(type_name))
     dyn_array_append.args[0].name = 'self'
     dyn_array_append_entry = dyn_array_append.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_append_entry)
@@ -324,7 +325,7 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
     builder.store(dyn_array_append.args[1], value_ptr)
 
     # BODY
-    builder.call(self.module.get_global('{}.array.double_capacity_if_full'.format(_normalize_type_name(array_type))), [builder.load(array_ptr)])
+    builder.call(self.module.get_global('{}.array.double_capacity_if_full'.format(type_name)), [builder.load(array_ptr)])
 
     size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
@@ -332,7 +333,45 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
     # Store element at current size index (0-based: element goes at index size)
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
     data_element_ptr = builder.gep(builder.load(data_ptr), [size_val], inbounds=True)
-    builder.store(builder.load(value_ptr), data_element_ptr)
+
+    elem_val = builder.load(value_ptr)
+
+    # For managed types (class pointers), call rc_retain
+    if isinstance(array_type, ir.PointerType):
+        retain_func = self.module.get_global('meteor_retain')
+        if retain_func:
+            from meteor.compiler.base import OBJECT_HEADER
+            header_struct = self.search_scopes(OBJECT_HEADER)
+            if header_struct:
+                pointee = array_type.pointee
+                # Check if element is a class type (header at -16) or array (header at 0)
+                is_class = hasattr(pointee, 'methods') or (
+                    hasattr(pointee, 'name') and
+                    self.search_scopes(pointee.name) is not None and
+                    hasattr(self.search_scopes(pointee.name), 'methods')
+                )
+                # Null check before retain
+                null_ptr = ir.Constant(array_type, None)
+                is_not_null = builder.icmp_unsigned('!=', elem_val, null_ptr)
+
+                retain_block = dyn_array_append.append_basic_block('retain')
+                store_block = dyn_array_append.append_basic_block('store')
+
+                builder.cbranch(is_not_null, retain_block, store_block)
+
+                builder.position_at_end(retain_block)
+                if is_class:
+                    i8_ptr = builder.bitcast(elem_val, ir.IntType(8).as_pointer())
+                    header_ptr = builder.gep(i8_ptr, [ir.Constant(type_map[INT], -16)])
+                    header_ptr = builder.bitcast(header_ptr, header_struct.as_pointer())
+                else:
+                    header_ptr = builder.bitcast(elem_val, header_struct.as_pointer())
+                builder.call(retain_func, [header_ptr])
+                builder.branch(store_block)
+
+                builder.position_at_end(store_block)
+
+    builder.store(elem_val, data_element_ptr)
 
     # Then increment size
     new_size = builder.add(size_val, one)

@@ -1,0 +1,27 @@
+# 简单内存泄漏测试
+
+# 测试1: 字符串拼接
+def test_string_concat()
+    i = 0
+    while i < 100
+        s = "hello" + "world"
+        i = i + 1
+    print("test1 done")
+
+# 测试2: 字符串重赋值
+def test_string_reassign()
+    s = "a"
+    i = 0
+    while i < 100
+        s = "b" + s
+        i = i + 1
+    print("test2 done")
+
+# 主函数
+def run_tests()
+    print("=== Start ===")
+    test_string_concat()
+    test_string_reassign()
+    print("=== Done ===")
+
+run_tests()

@@ -501,6 +501,24 @@ class CodeGenerator(NodeVisitor):
             return type_str[1:]
         return type_str
 
+    def _is_temp_string(self, val, ast_node):
+        """Check if a value is a temporary string (not from variable load)."""
+        from meteor.ast import Str, BinOp
+        # String literals are temporary
+        if isinstance(ast_node, Str):
+            return True
+        # String concatenation results are temporary
+        if isinstance(ast_node, BinOp):
+            return True
+        # Check if it's a string type but not from a load instruction
+        if hasattr(val, 'type') and hasattr(val.type, 'pointee'):
+            if hasattr(val.type.pointee, 'name') and val.type.pointee.name == 'i64.array':
+                # If it came from a load, it's a variable reference
+                if hasattr(val, 'opname') and val.opname == 'load':
+                    return False
+                return True
+        return False
+
     def _get_type_name_from_value(self, obj):
         """Get type name from a value."""
         if hasattr(obj.type, 'pointee'):
@@ -538,6 +556,8 @@ class CodeGenerator(NodeVisitor):
 
     def methodcall(self, node, func, obj):
         func_type = func.function_type
+        temp_string_args = []  # Track temporary string arguments to release after call
+
         if len(node.arguments) + 1 < len(func_type.args):
             args = []
             args_supplied = []
@@ -550,7 +570,11 @@ class CodeGenerator(NodeVisitor):
                 if x == 0:
                     continue
                 if x < len(node.arguments):
-                    args.append(self.visit(node.arguments[x]))
+                    arg_val = self.visit(node.arguments[x])
+                    # Track temporary strings (not from variable load)
+                    if self._is_temp_string(arg_val, node.arguments[x]):
+                        temp_string_args.append(arg_val)
+                    args.append(arg_val)
                 else:
                     if node.named_arguments and arg_names[x] in node.named_arguments:
                         args.append(self.comp_cast(
@@ -575,10 +599,20 @@ class CodeGenerator(NodeVisitor):
             for i, arg in enumerate(node.arguments):
                 # func_type.args includes 'self' at index 0, so use i+1 for user arguments
                 target_type = func_type.args[i+1] if i+1 < len(func_type.args) else func_type.args[i]
-                args.append(self.comp_cast(self.visit(arg), target_type, node))
+                arg_val = self.visit(arg)
+                # Track temporary strings
+                if self._is_temp_string(arg_val, arg):
+                    temp_string_args.append(arg_val)
+                args.append(self.comp_cast(arg_val, target_type, node))
 
         args.insert(0, obj)
-        return self.builder.call(func, args)
+        result = self.builder.call(func, args)
+
+        # Release temporary string arguments after call
+        for temp_arg in temp_string_args:
+            self.rc_release(temp_arg)
+
+        return result
 
     def visit_funccall(self, node):
         # Handle parse() builtin for string to int conversion
