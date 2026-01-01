@@ -249,6 +249,10 @@ class Lexer(object):
 
         if self.word_type == OPERATIC:
             while self.char_type == OPERATIC:
+                # Special handling for ! to avoid merging with . or other operators unless it's !=
+                if self.word == '!' and self.current_char != '=':
+                    break
+
                 self.word += self.current_char
                 self.next_char()
                 if self.current_char in SINGLE_OPERATORS or self.word in SINGLE_OPERATORS:

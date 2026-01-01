@@ -4,6 +4,49 @@
 @include("std/http")
 @link("std/http/http_native")
 import http.server
+import c "time.h"
+
+# 整数转字符串辅助函数
+def int_to_str(n: int) -> str
+    if n == 0
+        return "0"
+    
+    result = ""
+    num = n
+    is_neg = false
+    
+    if num < 0
+        is_neg = true
+        num = 0 - num
+    
+    while num > 0
+        d = num % 10
+        if d == 0
+            result = "0" + result
+        else if d == 1
+            result = "1" + result
+        else if d == 2
+            result = "2" + result
+        else if d == 3
+            result = "3" + result
+        else if d == 4
+            result = "4" + result
+        else if d == 5
+            result = "5" + result
+        else if d == 6
+            result = "6" + result
+        else if d == 7
+            result = "7" + result
+        else if d == 8
+            result = "8" + result
+        else
+            result = "9" + result
+        num = num / 10
+    
+    if is_neg
+        result = "-" + result
+    
+    return result
 
 # 首页处理器
 def home_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
@@ -48,8 +91,10 @@ def api_info_handler(req: http.server.Request, res: http.server.Response) -> htt
 
 # API Time 处理器
 def api_time_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
-    # 注意：实际时间需要调用系统函数，这里用占位符
-    json_data = '{"timestamp": "2026-01-01T12:00:00Z", "message": "Current server time"}'
+    # 获取当前时间戳
+    timestamp: int = c.time(null)
+    ts_str = int_to_str(timestamp)
+    json_data = '{"timestamp": ' + ts_str + ', "message": "Current server time (Unix timestamp)"}'
     return res.json(json_data)
 
 # 主函数

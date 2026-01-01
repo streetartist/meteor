@@ -1131,6 +1131,11 @@ class Parser(object):
 
             self.next_token()
             return self.dot_access(token)
+        # Check STRING type first, before checking for unary operators
+        # This prevents strings like "-" from being parsed as unary minus
+        elif token.type == STRING:
+            self.next_token()
+            return Str(token.value, self.line_num)
         elif token.value in (PLUS, MINUS, BINARY_ONES_COMPLIMENT):
             self.next_token()
             return UnaryOp(token.value, self.factor(), self.line_num)
@@ -1140,9 +1145,6 @@ class Parser(object):
         elif token.type == LNUMBER:
             self.next_token()
             return Num(token.value, token.value_type, self.line_num)
-        elif token.type == STRING:
-            self.next_token()
-            return Str(token.value, self.line_num)
         elif token.value == DEF:
             return self.function_declaration()
         elif token.type == LTYPE:
@@ -1156,6 +1158,7 @@ class Parser(object):
                 self.next_token()
                 node = self.expr()
                 self.eat_value(RPAREN)
+
             else:
                 token = self.next_token()
                 node = self.tuple_expression(token)
@@ -1188,6 +1191,25 @@ class Parser(object):
 
     def term(self):
         node = self.factor()
+        
+        # Handle postfix ! (null unwrap) operator with chained access
+        while self.current_token.value == NOT_BANG:
+            self.next_token()  # consume '!'
+            node = NullUnwrap(node, self.line_num)
+            
+            # Handle chained dot access after unwrap: conn!.id
+            while self.current_token.value == DOT:
+                self.next_token()  # consume '.'
+                field = self.current_token.value
+                self.next_token()
+                
+                # Check if this is a method call
+                if self.current_token.value == LPAREN:
+                    node = self.method_call_on_expr(node, field)
+                    break
+                else:
+                    node = DotAccess(node, field, self.line_num)
+        
         ops = (MUL, DIV, FLOORDIV, MOD, POWER, CAST, RANGE) + COMPARISON_OP + LOGICAL_OP + BINARY_OP
         while self.current_token.value in ops:
             token = self.next_token()
@@ -1198,6 +1220,7 @@ class Parser(object):
             else:
                 node = BinOp(node, token.value, self.factor(), self.line_num)
         return node
+
 
     def expr(self):
         node = self.term()

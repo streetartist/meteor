@@ -49,6 +49,14 @@ def is_int_type(typ):
     return isinstance(typ, ir.IntType)
 
 
+def _is_nullable_type(typ):
+    """Check if a type is a nullable struct {i1, T}"""
+    if isinstance(typ, ir.LiteralStructType) and len(typ.elements) == 2:
+        if isinstance(typ.elements[0], ir.IntType) and typ.elements[0].width == 1:
+            return True
+    return False
+
+
 def int_to_bigint(self, int_val):
     """Convert an int value to a bigint"""
     bigint_struct = type_map[BIGINT]
@@ -431,6 +439,31 @@ def binary_op(self, node):
         else:
             error('file={} line={}: Unsupported operator {} for pointers'.format(
                 self.file_name, node.line_num, op))
+    # Handle nullable type comparison with null
+    elif _is_nullable_type(left.type) and isinstance(right.type, ir.PointerType) and str(right.type) == 'i8*':
+        # Comparing nullable struct {i1, T} with null - extract the is_null flag
+        if op == EQUALS:
+            # Extract is_null flag from the nullable struct (index 0)
+            is_null = self.builder.extract_value(left, 0, name='is_null')
+            return is_null  # Returns i1, true if null
+        elif op == NOT_EQUALS:
+            is_null = self.builder.extract_value(left, 0, name='is_null')
+            return self.builder.not_(is_null)  # Returns i1, true if not null
+        else:
+            error('file={} line={}: Unsupported operator {} for nullable'.format(
+                self.file_name, node.line_num, op))
+    elif isinstance(left.type, ir.PointerType) and _is_nullable_type(left.type.pointee) and isinstance(right.type, ir.PointerType) and str(right.type) == 'i8*':
+        # Left is a pointer to nullable struct - load then extract
+        nullable_val = self.builder.load(left)
+        if op == EQUALS:
+            is_null = self.builder.extract_value(nullable_val, 0, name='is_null')
+            return is_null
+        elif op == NOT_EQUALS:
+            is_null = self.builder.extract_value(nullable_val, 0, name='is_null')
+            return self.builder.not_(is_null)
+        else:
+            error('file={} line={}: Unsupported operator {} for nullable'.format(
+                self.file_name, node.line_num, op))
     else:
         error('file={} line={}: Unknown operator {} for {} and {}'.format(
             self.file_name,
@@ -593,7 +626,9 @@ def cast_ops(self, left, right, node):
 
     elif cast_type in int_types:  # int
         if orig_type in float_types:  # from float
-            if right.signed:
+            # Default to signed conversion if 'signed' attribute not set
+            is_signed = getattr(right, 'signed', True)
+            if is_signed or is_signed is None:
                 return self.builder.fptosi(left, llvm_type_map[cast_type])
             else:
                 return self.builder.fptoui(left, llvm_type_map[cast_type])
@@ -601,7 +636,7 @@ def cast_ops(self, left, right, node):
             width_cast = int(cast_type.split("i")[1])
             width_orig = int(orig_type.split("i")[1])
             if width_cast > width_orig:
-                if left.type.signed:
+                if getattr(left.type, 'signed', True):
                     return self.builder.sext(left, llvm_type_map[cast_type])
                 else:
                     return self.builder.zext(left, llvm_type_map[cast_type])

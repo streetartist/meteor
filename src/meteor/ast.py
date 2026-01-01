@@ -207,6 +207,27 @@ class NullableType(AST):
     def __init__(self, inner_type, line_num):
         self.inner_type = inner_type  # The wrapped type
         self.line_num = line_num
+    
+    @property
+    def value(self):
+        """Return a string representation for compatibility with Type nodes."""
+        inner_val = self.inner_type.value if hasattr(self.inner_type, 'value') else str(self.inner_type)
+        return f"{inner_val}?"
+
+
+class NullUnwrap(AST):
+    """Null unwrap operator (postfix !).
+    
+    Extracts the inner value from a nullable type.
+    Panics at runtime if the value is null.
+    
+    Example:
+        conn: Conn? = get_conn()
+        print(conn!.id)  # Extract Conn from Conn?
+    """
+    def __init__(self, expr, line_num):
+        self.expr = expr  # The nullable expression to unwrap
+        self.line_num = line_num
 
 
 class Import(AST):

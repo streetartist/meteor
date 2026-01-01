@@ -1,0 +1,40 @@
+# 模拟 HTTP 服务器的 C 调用模式
+
+import c "http_native.h"
+@include("std/http")
+@link("std/http/http_native")
+
+def test_server()
+    print("Creating server...")
+    server = c.meteor_http_server_create()
+    print("Server created")
+    
+    c.meteor_http_server_set_port(server, 8888)
+    print("Port set to 8888")
+    
+    result = c.meteor_http_server_bind(server)
+    print("Bind result: ")
+    print(result)
+    
+    print("Entering loop...")
+    count: int = 0
+    while true
+        print("Waiting for connection...")
+        conn = c.meteor_http_server_accept(server)
+        print("Accept returned")
+        
+        if conn == null
+            print("conn is null, continue")
+            continue
+        
+        print("Got a connection!")
+        c.meteor_http_connection_close(conn)
+        count = count + 1
+        if count >= 3
+            break
+    
+    print("Loop done")
+    c.meteor_http_server_stop(server)
+    print("Server stopped")
+
+test_server()

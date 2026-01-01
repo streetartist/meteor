@@ -1,6 +1,6 @@
 from typing import Iterator, Union, List, Tuple, Any
 
-from meteor.ast import Collection, CollectionAccess, DotAccess, Range, Var, VarDecl, AST, UnionType, NullableType
+from meteor.ast import Collection, CollectionAccess, DotAccess, Range, Var, VarDecl, AST, UnionType
 from meteor.grammar import *
 from meteor.utils import error, warning
 from meteor.visitor import (BuiltinTypeSymbol, ClassSymbol, CollectionSymbol,
@@ -27,28 +27,6 @@ def types_compatible(left_type: AST, right_type: AST) -> bool:
     # ANY type is compatible with everything
     if l_type == 'any' or r_type == 'any':
         return True
-    
-    # Handle NullableType compatibility
-    # null is compatible with any nullable type (T?)
-    if l_type == 'null':
-        # Check if right_type is a nullable type
-        if isinstance(right_type, NullableType) or r_type.endswith('?'):
-            return True
-    if r_type == 'null':
-        # Check if left_type is a nullable type
-        if isinstance(left_type, NullableType) or l_type.endswith('?'):
-            return True
-    
-    # T is compatible with T? (inner type can be assigned to nullable)
-    if isinstance(left_type, NullableType):
-        # Extract inner type
-        inner_l = str(left_type.inner_type) if hasattr(left_type, 'inner_type') else l_type.rstrip('?')
-        if types_compatible(inner_l, r_type):
-            return True
-    if isinstance(right_type, NullableType):
-        inner_r = str(right_type.inner_type) if hasattr(right_type, 'inner_type') else r_type.rstrip('?')
-        if types_compatible(l_type, inner_r):
-            return True
     
     int_type = ('i8', 'i16', 'i32', 'i64', 'int8', 'int16', 'int32', 'int64', 'int')
     float_type = ('float', 'double')
@@ -182,13 +160,6 @@ class Preprocessor(NodeVisitor):
         if typ is self.search_scopes(FUNC):
             typ.return_type = self.visit(node.func_ret_type)
         return typ
-
-    def visit_nullabletype(self, node):
-        """Type check a nullable type annotation (e.g., int?, str?)."""
-        # Visit the inner type to validate it
-        inner_type = self.visit(node.inner_type)
-        # Return the inner type - nullable is a modifier, not a new type
-        return inner_type
 
     def visit_assign(self, node):  # TODO clean up this mess of a function
         collection_type = None

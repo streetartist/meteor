@@ -5,6 +5,12 @@ class Conn
     def new(i: int)
         self.id = i
 
+def get_conn(i: int) -> Conn?
+    if i == 2
+        print("Returning null")
+        return null
+    return Conn(i)
+
 def test()
     i: int = 0
     while i < 5
@@ -12,14 +18,13 @@ def test()
         print("Iteration ")
         print(i)
         
-        # 模拟可能返回 null 的情况
-        if i == 2
-            print("  Simulating null, continue")
+        conn = get_conn(i)
+        if conn == null
+            print("  conn is null, continue")
             continue
         
-        conn = Conn(i)
         print("  conn.id = ")
-        print(conn.id)
+        print(conn!.id)
     print("Loop done")
 
 test()

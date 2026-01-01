@@ -11,7 +11,7 @@ import llvmlite.binding as llvm
 from llvmlite import ir
 
 import meteor.compiler.llvmlite_custom
-from meteor.ast import Collection, CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation, NullableType
+from meteor.ast import Collection, CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation, NullableType, NullUnwrap
 from meteor.compiler.base import RET_VAR, type_map
 from meteor.compiler.builtins import (array_types, create_dynamic_array_methods,
                                      define_builtins)
@@ -86,6 +86,24 @@ class CodeGenerator(NodeVisitor):
 
     def visit_binop(self, node):
         return binary_op(self, node)
+
+    def visit_nullunwrap(self, node):
+        """Handle null unwrap operator (postfix !).
+        
+        Extracts the inner value from nullable struct {i1, T}.
+        For now, no runtime null check (could add panic later).
+        """
+        val = self.visit(node.expr)
+        
+        # Check if it's a nullable struct {i1, T}
+        if isinstance(val.type, ir.LiteralStructType) and len(val.type.elements) == 2:
+            if isinstance(val.type.elements[0], ir.IntType) and val.type.elements[0].width == 1:
+                # Extract the inner value (index 1)
+                inner_val = self.builder.extract_value(val, 1, name='unwrapped')
+                return inner_val
+        
+        # If not a nullable type, just return the value as-is
+        return val
 
     def visit_defer(self, node):
         self.defer_stack[-1].append(node.statement)
@@ -187,6 +205,31 @@ class CodeGenerator(NodeVisitor):
                      # Attempt fallback cast
                      val = self.comp_cast(val, dest_type, node)
                      self.store(val, RET_VAR)
+            # Check for Nullable Type {i1, T}
+            elif isinstance(dest_type, ir.LiteralStructType) and len(dest_type.elements) == 2 and isinstance(dest_type.elements[0], ir.IntType) and dest_type.elements[0].width == 1:
+                inner_type = dest_type.elements[1]
+                # Check if returning null (i8* null pointer)
+                is_null_ptr = isinstance(val.type, ir.PointerType) and str(val.type) == 'i8*'
+                if is_null_ptr:
+                    # Pack {1, undef} - is_null = true
+                    is_null_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                    self.builder.store(ir.Constant(ir.IntType(1), 1), is_null_ptr)
+                    # Leave value as undef (don't store anything)
+                elif val.type == dest_type:
+                    # Direct assignment (already a nullable struct)
+                    self.store(val, RET_VAR)
+                elif val.type == inner_type or (hasattr(val.type, 'pointee') and val.type.pointee == inner_type):
+                    # Pack {0, val} - is_null = false, has value
+                    is_null_ptr = self.builder.gep(ret_var, [self.const(0), self.const(0, width=INT32)])
+                    self.builder.store(ir.Constant(ir.IntType(1), 0), is_null_ptr)
+                    val_ptr = self.builder.gep(ret_var, [self.const(0), self.const(1, width=INT32)])
+                    if isinstance(val.type, ir.PointerType) and not isinstance(inner_type, ir.PointerType):
+                        val = self.builder.load(val)
+                    self.builder.store(val, val_ptr)
+                else:
+                    # Attempt fallback cast
+                    val = self.comp_cast(val, dest_type, node)
+                    self.store(val, RET_VAR)
             else:
                 val = self.comp_cast(val, dest_type, node)
                 # If casting returned a pointer (e.g. int_to_bigint) but we need the value (struct), load it.
@@ -256,21 +299,44 @@ class CodeGenerator(NodeVisitor):
         if func is None:
             error(f"C function not found: {func_name}")
 
+        return self._call_c_func_ptr(func, node.arguments)
+
+    def _call_c_func_ptr(self, func, arg_nodes):
+        """Call a C function pointer with arguments, handling type coercion and memory cleanup."""
         # Convert arguments with type coercion for C interop
         args = []
+        cleanup_ptrs = []  # Keep track of pointers that need to be freed
         func_arg_types = func.function_type.args
-        for i, arg_node in enumerate(node.arguments):
+        for i, arg_node in enumerate(arg_nodes):
             arg = self.visit(arg_node)
             # Get expected type if available
             expected_type = func_arg_types[i] if i < len(func_arg_types) else None
             if expected_type is not None:
-                arg = self._coerce_c_arg(arg, expected_type)
+                new_arg, needs_free = self._coerce_c_arg_with_cleanup(arg, expected_type)
+                arg = new_arg
+                if needs_free:
+                    cleanup_ptrs.append(arg)
             args.append(arg)
 
-        return self.builder.call(func, args)
+        result = self.builder.call(func, args)
 
-    def _coerce_c_arg(self, arg, expected_type):
-        """Coerce an argument to match the expected C type."""
+        # Cleanup temporary C strings
+        if cleanup_ptrs:
+            free_func = self.module.get_global('free')
+            if not free_func:
+                 # Define free if not exists (should be defined by _define_stdlib_h or similar)
+                 void_ty = type_map[VOID]
+                 void_ptr = type_map[INT8].as_pointer()
+                 func_ty = ir.FunctionType(void_ty, [void_ptr])
+                 free_func = ir.Function(self.module, func_ty, 'free')
+
+            for ptr in cleanup_ptrs:
+                self.builder.call(free_func, [ptr])
+
+        return result
+
+    def _coerce_c_arg_with_cleanup(self, arg, expected_type):
+        """Coerce an argument to match the expected C type, returning (arg, needs_free)."""
         expected_str = str(expected_type)
         arg_type_str = str(arg.type)
 
@@ -278,17 +344,18 @@ class CodeGenerator(NodeVisitor):
         if expected_str == 'i8*':
             if hasattr(arg.type, 'pointee') and hasattr(arg.type.pointee, 'name'):
                 if arg.type.pointee.name == 'i64.array':
-                    return self._convert_meteor_string_to_cstr(arg)
+                    cstr = self._convert_meteor_string_to_cstr(arg)
+                    return cstr, True  # True means this pointer needs to be freed
 
         # Convert integer types
         if isinstance(expected_type, ir.IntType) and isinstance(arg.type, ir.IntType):
             if expected_type.width != arg.type.width:
                 if expected_type.width < arg.type.width:
-                    return self.builder.trunc(arg, expected_type)
+                    return self.builder.trunc(arg, expected_type), False
                 else:
-                    return self.builder.sext(arg, expected_type)
+                    return self.builder.sext(arg, expected_type), False
 
-        return arg
+        return arg, False
 
     def _handle_dotaccess_methodcall(self, node):
         """Handle method call on DotAccess result."""
@@ -307,8 +374,7 @@ class CodeGenerator(NodeVisitor):
             func_name = node.name
             func = self.module.get_global(func_name)
             if func is not None:
-                args = [self.visit(arg) for arg in node.arguments]
-                return self.builder.call(func, args)
+                return self._call_c_func_ptr(func, node.arguments)
 
         # Check if full path + method is a module function
         full_func_path = f"{full_path}.{node.name}"
@@ -333,8 +399,7 @@ class CodeGenerator(NodeVisitor):
             func = self.module.get_global(c_func_name)
             if func is None:
                 error(f"C function not found: {c_func_name}")
-            args = [self.visit(arg) for arg in node.arguments]
-            return self.builder.call(func, args)
+            return self._call_c_func_ptr(func, node.arguments)
 
         # Handle module dict
         if isinstance(obj, dict) and '__module__' in obj:
@@ -2340,6 +2405,10 @@ class CodeGenerator(NodeVisitor):
                                 # rc_assign handles: null check on old, release old, retain new (if needed), store new
                                 self.rc_assign(var_value, var)
                             else:
+                                # Cast if types don't match (e.g., C function returning double to int variable)
+                                target_type = var_value.type.pointee
+                                if var.type != target_type:
+                                    var = cast_ops(self, var, target_type, node)
                                 self.store(var, var_name)
                         else:
                             self.store(var, var_name)
@@ -2521,10 +2590,12 @@ class CodeGenerator(NodeVisitor):
         # First, try to get the object value
         if isinstance(node.obj, str):
             obj = self.search_scopes(node.obj)
-        elif isinstance(node.obj, DotAccessAST):
-            obj = self.visit(node.obj)
+        elif hasattr(node.obj, 'value') and isinstance(node.obj.value, DotAccessAST):
+             # Handle wrapped DotAccess (legacy compatibility)
+             obj = self.visit(node.obj.value)
         else:
-            obj = None
+            # Visit any other AST node (DotAccessAST, NullUnwrap, Call, Var, etc.)
+            obj = self.visit(node.obj)
 
         if obj is None:
             error(f"Unknown identifier: {base_name}")
@@ -2818,11 +2889,20 @@ class CodeGenerator(NodeVisitor):
                 collection.type.pointee.pointee == array_struct):
                 # Load the pointer and call get
                 arr_ptr = self.load(collection)
-                return self.call('{}.array.get'.format(type_name), [arr_ptr, key])
+                result = self.call('{}.array.get'.format(type_name), [arr_ptr, key])
+                # IMPORTANT: Retain the object when extracting from array
+                # This prevents use-after-free when the variable is later reassigned
+                if self.is_managed_type(result.type):
+                    self.rc_retain(result)
+                return result
             # Also check direct pointee match (for when collection is already a pointer)
             elif (hasattr(collection.type, 'pointee') and
                   collection.type.pointee == array_struct):
-                return self.call('{}.array.get'.format(type_name), [collection, key])
+                result = self.call('{}.array.get'.format(type_name), [collection, key])
+                # IMPORTANT: Retain the object when extracting from array
+                if self.is_managed_type(result.type):
+                    self.rc_retain(result)
+                return result
 
         return self.builder.extract_value(self.load(collection.name), [key])
 
@@ -3780,7 +3860,8 @@ class CodeGenerator(NodeVisitor):
             null_val = ir.Constant(typ, None)
             self.builder.store(null_val, var_addr)
             # Register managed types for scope cleanup
-            if self.is_managed_type(typ):
+            # Skip ret_var - return value lifetime is managed by caller, not current scope
+            if self.is_managed_type(typ) and name != RET_VAR:
                 self.register_managed_var(name, var_addr)
         return var_addr
 
@@ -3900,19 +3981,22 @@ class CodeGenerator(NodeVisitor):
         val = self.builder.load(ptr)
 
         # RFC-001: Runtime NULL Check for Use-After-Move detection
-        # Only check pointer types that could have been moved
+        # Only check Meteor managed types (classes with object headers), not raw C pointers
+        # C functions can legitimately return NULL which should be checked with == null
         if isinstance(val.type, ir.PointerType):
-            null_ptr = ir.Constant(val.type, None)
-            is_null = self.builder.icmp_unsigned('==', val, null_ptr)
+            # Check if this is a managed Meteor type (has object header)
+            if self.is_managed_type(val.type.pointee):
+                null_ptr = ir.Constant(val.type, None)
+                is_null = self.builder.icmp_unsigned('==', val, null_ptr)
 
-            with self.builder.if_then(is_null):
-                # Print error message before abort
-                self.print_string("Error: Use-After-Move detected!", newline=True)
-                # Call abort
-                abort_func = self.module.get_global('abort')
-                if abort_func:
-                    self.builder.call(abort_func, [])
-                self.builder.unreachable()
+                with self.builder.if_then(is_null):
+                    # Print error message before abort
+                    self.print_string("Error: Use-After-Move detected!", newline=True)
+                    # Call abort
+                    abort_func = self.module.get_global('abort')
+                    if abort_func:
+                        self.builder.call(abort_func, [])
+                    self.builder.unreachable()
 
         return val
 

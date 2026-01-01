@@ -1,0 +1,22 @@
+# 测试 while true 和 continue 的组合
+
+def test()
+    count: int = 0
+    while true
+        count = count + 1
+        print("Count: ")
+        print(count)
+        
+        if count == 3
+            print("  Skipping 3")
+            continue
+        
+        if count >= 5
+            print("  Breaking at 5")
+            break
+        
+        print("  Processing")
+    print("Done, final count: ")
+    print(count)
+
+test()
