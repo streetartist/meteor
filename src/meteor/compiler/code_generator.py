@@ -11,7 +11,7 @@ import llvmlite.binding as llvm
 from llvmlite import ir
 
 import meteor.compiler.llvmlite_custom
-from meteor.ast import Collection, CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation
+from meteor.ast import Collection, CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation, NullableType
 from meteor.compiler.base import RET_VAR, type_map
 from meteor.compiler.builtins import (array_types, create_dynamic_array_methods,
                                      define_builtins)
@@ -1327,7 +1327,10 @@ class CodeGenerator(NodeVisitor):
 
     def visit_vardecl(self, node):
         typ = self.get_type(node.type)
-        if node.type.value == FUNC:
+        # Handle NullableType which doesn't have .value attribute
+        if isinstance(node.type, NullableType):
+            self.alloc_and_define(node.value.value, typ)
+        elif node.type.value == FUNC:
             func_ret_type = self.get_type(node.type.func_ret_type)
             func_parameters = self.get_args(node.type.func_params)
             func_ty = ir.FunctionType(func_ret_type, func_parameters, None).as_pointer()
@@ -1341,8 +1344,18 @@ class CodeGenerator(NodeVisitor):
         else:
             self.alloc_and_define(node.value.value, typ)
 
+
     def visit_type(self, node):
         return type_map[node.value] if node.value in type_map else self.search_scopes(node.value)
+
+    def visit_nullabletype(self, node):
+        """Handle nullable type annotation (e.g., int?, str?).
+        
+        Returns the LLVM struct type { i1 is_null, T value }.
+        """
+        inner_type = self.get_type(node.inner_type)
+        nullable_struct = ir.LiteralStructType([ir.IntType(1), inner_type])
+        return nullable_struct
 
     def visit_if(self, node):
         start_block = self.add_block('if.start')
@@ -2964,10 +2977,18 @@ class CodeGenerator(NodeVisitor):
             param_name = param_names[idx] if idx < len(param_names) else None
             is_ref = param_modes.get(param_name) == 'ref'
 
+            # Handle NullableType which wraps another type
+            if isinstance(param, NullableType):
+                inner_type = self.get_type(param.inner_type)
+                nullable_struct = ir.LiteralStructType([ir.IntType(1), inner_type])
+                args.append(nullable_struct)
+                continue
+
             # Handle untyped parameters (param.value is None or empty)
-            if param.value is None or param.value == '':
+            if not hasattr(param, 'value') or param.value is None or param.value == '':
                 args.append(type_map[INT8].as_pointer())
                 continue
+
 
             # Handle DotAccess type (e.g., http.server.Request)
             if isinstance(param.value, DotAccessAST):
@@ -3100,6 +3121,13 @@ class CodeGenerator(NodeVisitor):
             error_type = self.get_type(param.error_type)
             union_struct = ir.LiteralStructType([type_map[INT8], success_type, error_type])
             return union_struct
+        
+        if isinstance(param, NullableType):
+            # Nullable type: { i1 is_null, T value }
+            # is_null: 0 = has value, 1 = is null
+            inner_type = self.get_type(param.inner_type)
+            nullable_struct = ir.LiteralStructType([ir.IntType(1), inner_type])
+            return nullable_struct
             
         if param.value == FUNC:
             if param.func_ret_type is None:

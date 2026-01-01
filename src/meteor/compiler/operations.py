@@ -649,12 +649,30 @@ def cast_ops(self, left, right, node):
             cast_type
         ))
 
+    # Handle nullable type cast: T -> {i1, T}
+    # A nullable struct is {i1 is_null, T value}
+    if isinstance(right, ir.LiteralStructType) and len(right.elements) == 2:
+        if isinstance(right.elements[0], ir.IntType) and right.elements[0].width == 1:
+            # Target is a nullable type
+            inner_target = right.elements[1]
+            # Cast the value to the inner type if needed
+            if orig_type != str(inner_target):
+                left = cast_ops(self, left, inner_target, node)
+            # Create the nullable struct with is_null=0 (has value)
+            result = self.builder.alloca(right, name='nullable_tmp')
+            is_null_ptr = self.builder.gep(result, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+            value_ptr = self.builder.gep(result, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 1)])
+            self.builder.store(ir.Constant(ir.IntType(1), 0), is_null_ptr)  # is_null = false
+            self.builder.store(left, value_ptr)
+            return self.builder.load(result)
+
     raise TypeError('file={} line={}: Unknown cast from {} to {}'.format(
         self.file_name,
         node.line_num,
         orig_type,
         cast_type
     ))
+
 
 
 def string_concat(self, left, right):

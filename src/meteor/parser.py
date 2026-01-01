@@ -572,6 +572,7 @@ class Parser(object):
             self.eat_value(FROZEN)
 
         token = self.current_token
+        type_spec = None
         
         # Support for dotted type names like http.server.Request
         if token.type == NAME:
@@ -585,50 +586,55 @@ class Parser(object):
                     self.next_token()
                 else:
                     break
-            result = Type(type_name, self.line_num, is_frozen=is_frozen)
-            return result
+            type_spec = Type(type_name, self.line_num, is_frozen=is_frozen)
         
-        if token.value in self.user_types:
+        elif token.value in self.user_types:
             self.eat_type(NAME)
-            result = Type(token.value, self.line_num, is_frozen=is_frozen)
-            return result
-        self.eat_type(LTYPE)
-        type_spec = Type(token.value, self.line_num, is_frozen=is_frozen)
-        func_ret_type = None
-        func_params = OrderedDict()
-        param_num = 0
-        if self.current_token.value == LESS_THAN and token.value in (LIST, TUPLE):
-            self.next_token()
-            while self.current_token.value != GREATER_THAN:
-                param_type = self.type_spec()
-                func_params[str(param_num)] = param_type
-                param_num += 1
-                if self.current_token.value != GREATER_THAN:
-                    self.eat_value(COMMA)
-
-            self.eat_value(GREATER_THAN)
-            type_spec.func_params = func_params
-
-        elif self.current_token.value == LESS_THAN and token.value == FUNC:
-            self.next_token()
-            while self.current_token.value != GREATER_THAN:
-                param_type = self.type_spec()
-                func_params[str(param_num)] = param_type
-                param_num += 1
-                if self.current_token.value != GREATER_THAN:
-                    self.eat_value(COMMA)
-
-            self.eat_value(GREATER_THAN)
-            if self.current_token.value == ARROW:
+            type_spec = Type(token.value, self.line_num, is_frozen=is_frozen)
+        else:
+            self.eat_type(LTYPE)
+            type_spec = Type(token.value, self.line_num, is_frozen=is_frozen)
+            func_ret_type = None
+            func_params = OrderedDict()
+            param_num = 0
+            if self.current_token.value == LESS_THAN and token.value in (LIST, TUPLE):
                 self.next_token()
-                func_ret_type = self.type_spec()
-            else:
-                func_ret_type = Type(VOID, self.line_num)
+                while self.current_token.value != GREATER_THAN:
+                    param_type = self.type_spec()
+                    func_params[str(param_num)] = param_type
+                    param_num += 1
+                    if self.current_token.value != GREATER_THAN:
+                        self.eat_value(COMMA)
 
-            type_spec.func_params = func_params
-            type_spec.func_ret_type = func_ret_type
+                self.eat_value(GREATER_THAN)
+                type_spec.func_params = func_params
+
+            elif self.current_token.value == LESS_THAN and token.value == FUNC:
+                self.next_token()
+                while self.current_token.value != GREATER_THAN:
+                    param_type = self.type_spec()
+                    func_params[str(param_num)] = param_type
+                    param_num += 1
+                    if self.current_token.value != GREATER_THAN:
+                        self.eat_value(COMMA)
+
+                self.eat_value(GREATER_THAN)
+                if self.current_token.value == ARROW:
+                    self.next_token()
+                    func_ret_type = self.type_spec()
+                else:
+                    func_ret_type = Type(VOID, self.line_num)
+
+                type_spec.func_params = func_params
+                type_spec.func_ret_type = func_ret_type
+
+        # Check for nullable suffix: type?
+        if self.current_token.value == QUESTION:
+            self.eat_value(QUESTION)
+            type_spec = NullableType(type_spec, self.line_num)
 
         return type_spec
+
 
     def compound_statement(self):
         nodes = self.statement_list()

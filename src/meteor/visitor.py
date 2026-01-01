@@ -1,7 +1,7 @@
 from decimal import Decimal
 from enum import Enum
 
-from meteor.ast import Type
+from meteor.ast import Type, NullableType
 from meteor.compiler.base import *
 
 
@@ -305,6 +305,9 @@ class NodeVisitor(object):
             return value.type
         if isinstance(value, Type):
             return self.search_scopes(value.value)
+        if isinstance(value, NullableType):
+            # For nullable types, infer the inner type
+            return self.infer_type(value.inner_type)
         if isinstance(value, int):
             return self.search_scopes(INT)
         if isinstance(value, Decimal):

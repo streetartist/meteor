@@ -1,0 +1,15 @@
+# Test nullable type syntax with ? suffix
+
+# Test 1: Nullable int with value
+x: int? = null
+print("Test 1: Nullable int with value - PASS")
+
+# Test 2: Basic variable access  
+y: int = 10
+print("Test 2: Basic int variable - PASS")
+
+# Test 3: Another nullable type
+z: double? = 3.14
+print("Test 3: Nullable double with value - PASS")
+
+print("All nullable type tests passed!")

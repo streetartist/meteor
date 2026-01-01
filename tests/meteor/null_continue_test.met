@@ -1,0 +1,25 @@
+# 测试 while true 和 null 检查
+
+class Conn
+    id: int
+    def new(i: int)
+        self.id = i
+
+def test()
+    i: int = 0
+    while i < 5
+        i = i + 1
+        print("Iteration ")
+        print(i)
+        
+        # 模拟可能返回 null 的情况
+        if i == 2
+            print("  Simulating null, continue")
+            continue
+        
+        conn = Conn(i)
+        print("  conn.id = ")
+        print(conn.id)
+    print("Loop done")
+
+test()

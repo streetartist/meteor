@@ -1,0 +1,14 @@
+# 测试 continue 语句
+
+def test()
+    i: int = 0
+    while i < 5
+        i = i + 1
+        if i == 3
+            print("Skipping 3")
+            continue
+        print("i = ")
+        print(i)
+    print("Done")
+
+test()

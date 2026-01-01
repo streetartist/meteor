@@ -197,6 +197,18 @@ class Raise(AST):
         self.line_num = line_num
 
 
+class NullableType(AST):
+    """Nullable type wrapper.
+    
+    Example:
+        x: int?  # x can be int or null
+        name: str?  # name can be str or null
+    """
+    def __init__(self, inner_type, line_num):
+        self.inner_type = inner_type  # The wrapped type
+        self.line_num = line_num
+
+
 class Import(AST):
     """Import a Meteor module.
 
