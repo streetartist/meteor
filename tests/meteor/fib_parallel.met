@@ -41,13 +41,13 @@ r3: Result = Result()
 print("=== 4-Thread Parallel Fibonacci ===")
 
 # Spawn 4 threads and capture handles
-h0 = spawn worker(10000000, r0)
-h1 = spawn worker(10000000, r1)
-h2 = spawn worker(10000000, r2)
-h3 = spawn worker(10000000, r3)
-h4 = spawn worker(10000000, r3)
-h5 = spawn worker(10000000, r3)
-h6 = spawn worker(10000000, r3)
+h0 = spawn worker(100000, r0)
+h1 = spawn worker(100000, r1)
+h2 = spawn worker(100000, r2)
+h3 = spawn worker(100000, r3)
+h4 = spawn worker(100000, r3)
+h5 = spawn worker(100000, r3)
+h6 = spawn worker(100000, r3)
 
 # Wait for all threads using join
 join(h0)

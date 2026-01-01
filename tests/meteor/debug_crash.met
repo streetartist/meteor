@@ -1,0 +1,6 @@
+s = "a"
+i = 0
+while i < 100
+    s = "b" + s
+    i = i + 1
+print(s)

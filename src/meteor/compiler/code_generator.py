@@ -305,10 +305,14 @@ class CodeGenerator(NodeVisitor):
         """Call a C function pointer with arguments, handling type coercion and memory cleanup."""
         # Convert arguments with type coercion for C interop
         args = []
-        cleanup_ptrs = []  # Keep track of pointers that need to be freed
+        cleanup_ptrs = []  # Keep track of C string pointers that need to be freed
+        temp_managed_args = []  # Track temporary managed values to release
         func_arg_types = func.function_type.args
         for i, arg_node in enumerate(arg_nodes):
             arg = self.visit(arg_node)
+            # Track temporary managed values
+            if self._is_temp_managed_value(arg, arg_node):
+                temp_managed_args.append(arg)
             # Get expected type if available
             expected_type = func_arg_types[i] if i < len(func_arg_types) else None
             if expected_type is not None:
@@ -332,6 +336,10 @@ class CodeGenerator(NodeVisitor):
 
             for ptr in cleanup_ptrs:
                 self.builder.call(free_func, [ptr])
+
+        # Release temporary managed values
+        for temp_arg in temp_managed_args:
+            self.rc_release(temp_arg)
 
         return result
 
@@ -503,20 +511,58 @@ class CodeGenerator(NodeVisitor):
 
     def _is_temp_string(self, val, ast_node):
         """Check if a value is a temporary string (not from variable load)."""
-        from meteor.ast import Str, BinOp
+        from meteor.ast import Str, BinOp, Var, DotAccess, CollectionAccess, FuncCall, MethodCall
+        
         # String literals are temporary
         if isinstance(ast_node, Str):
             return True
         # String concatenation results are temporary
         if isinstance(ast_node, BinOp):
             return True
-        # Check if it's a string type but not from a load instruction
+        # Function/Method calls return temporaries
+        if isinstance(ast_node, (FuncCall, MethodCall)):
+            return True
+            
+        # Variables are NOT temporary
+        if isinstance(ast_node, (Var, DotAccess, CollectionAccess)):
+            return False
+            
+        # Fallback to existing logic
         if hasattr(val, 'type') and hasattr(val.type, 'pointee'):
             if hasattr(val.type.pointee, 'name') and val.type.pointee.name == 'i64.array':
                 # If it came from a load, it's a variable reference
                 if hasattr(val, 'opname') and val.opname == 'load':
                     return False
                 return True
+        return False
+
+    def _is_temp_managed_value(self, val, ast_node):
+        """Check if a value is a temporary managed type (class instance, not from variable)."""
+        from meteor.ast import Str, BinOp, FuncCall
+        # Class constructor calls are temporary
+        if isinstance(ast_node, FuncCall):
+            # Check if it's a class constructor
+            class_type = self.search_scopes(ast_node.name)
+            if class_type is not None and hasattr(class_type, 'type') and class_type.type == CLASS:
+                return True
+        # String literals and concatenations
+        if isinstance(ast_node, (Str, BinOp)):
+            return True
+        # Check if it's a managed type but not from a load instruction
+        if hasattr(val, 'type') and hasattr(val.type, 'pointee'):
+            pointee = val.type.pointee
+            if hasattr(pointee, 'name'):
+                # String type
+                if pointee.name == 'i64.array':
+                    if hasattr(val, 'opname') and val.opname == 'load':
+                        return False
+                    return True
+                # Class type
+                class_def = self.search_scopes(pointee.name)
+                if class_def is not None and hasattr(class_def, 'methods'):
+                    if hasattr(val, 'opname') and val.opname == 'load':
+                        return False
+                    return True
         return False
 
     def _get_type_name_from_value(self, obj):
@@ -556,7 +602,7 @@ class CodeGenerator(NodeVisitor):
 
     def methodcall(self, node, func, obj):
         func_type = func.function_type
-        temp_string_args = []  # Track temporary string arguments to release after call
+        temp_managed_args = []  # Track temporary managed arguments to release after call
 
         if len(node.arguments) + 1 < len(func_type.args):
             args = []
@@ -571,9 +617,9 @@ class CodeGenerator(NodeVisitor):
                     continue
                 if x < len(node.arguments):
                     arg_val = self.visit(node.arguments[x])
-                    # Track temporary strings (not from variable load)
-                    if self._is_temp_string(arg_val, node.arguments[x]):
-                        temp_string_args.append(arg_val)
+                    # Track temporary managed values (strings, class instances)
+                    if self._is_temp_managed_value(arg_val, node.arguments[x]):
+                        temp_managed_args.append(arg_val)
                     args.append(arg_val)
                 else:
                     if node.named_arguments and arg_names[x] in node.named_arguments:
@@ -600,16 +646,16 @@ class CodeGenerator(NodeVisitor):
                 # func_type.args includes 'self' at index 0, so use i+1 for user arguments
                 target_type = func_type.args[i+1] if i+1 < len(func_type.args) else func_type.args[i]
                 arg_val = self.visit(arg)
-                # Track temporary strings
-                if self._is_temp_string(arg_val, arg):
-                    temp_string_args.append(arg_val)
+                # Track temporary managed values
+                if self._is_temp_managed_value(arg_val, arg):
+                    temp_managed_args.append(arg_val)
                 args.append(self.comp_cast(arg_val, target_type, node))
 
         args.insert(0, obj)
         result = self.builder.call(func, args)
 
-        # Release temporary string arguments after call
-        for temp_arg in temp_string_args:
+        # Release temporary managed arguments after call
+        for temp_arg in temp_managed_args:
             self.rc_release(temp_arg)
 
         return result
@@ -667,13 +713,17 @@ class CodeGenerator(NodeVisitor):
             args = []
             args_supplied = []
             arg_names = []
+            temp_managed_args = []  # Track temporary managed values
 
             for i in func_type.parameters:
                 arg_names.append(i)
 
             for x, arg in enumerate(func_type.args):
                 if x < len(node.arguments):
-                    args.append(self.visit(node.arguments[x]))
+                    arg_val = self.visit(node.arguments[x])
+                    if self._is_temp_managed_value(arg_val, node.arguments[x]):
+                        temp_managed_args.append(arg_val)
+                    args.append(arg_val)
                 else:
                     if node.named_arguments and arg_names[x] in node.named_arguments:
                         args.append(self.comp_cast(
@@ -695,6 +745,7 @@ class CodeGenerator(NodeVisitor):
             raise SyntaxError('Unexpected arguments')
         else:
             args = []
+            temp_managed_args = []  # Track temporary managed values
             param_names = list(func_type.parameters.keys()) if hasattr(func_type, 'parameters') else []
             param_modes = getattr(func_type, 'param_modes', {})
             for i, arg in enumerate(node.arguments):
@@ -706,12 +757,23 @@ class CodeGenerator(NodeVisitor):
                         if var_ptr:
                             args.append(var_ptr)
                             continue
-                args.append(self.comp_cast(self.visit(arg), func_type.args[i], node))
+                arg_val = self.visit(arg)
+                if self._is_temp_managed_value(arg_val, arg):
+                    temp_managed_args.append(arg_val)
+                args.append(self.comp_cast(arg_val, func_type.args[i], node))
 
         if isFunc:
-            return self.builder.call(name, args)
+            result = self.builder.call(name, args)
+            # Release temporary managed arguments
+            for temp_arg in temp_managed_args:
+                self.rc_release(temp_arg)
+            return result
 
         result = self.call(name, args)
+
+        # Release temporary managed arguments
+        for temp_arg in temp_managed_args:
+            self.rc_release(temp_arg)
 
         # Move semantics: null out owned arguments after call
         # param_modes is stored in func_symbol (FuncSymbol), not func_type (ir.FunctionType)
@@ -2177,6 +2239,9 @@ class CodeGenerator(NodeVisitor):
                         self.rc_release(old_val)
                     self.rc_retain(val)
                     self.builder.store(val, elem)
+                    # Release temporary value after assignment (retain already increased RC)
+                    if self._is_temp_managed_value(val, node.right):
+                        self.rc_release(val)
                 else:
                     self.builder.store(val, elem)
             elif isinstance(node.left, CollectionAccess):
@@ -2447,7 +2512,13 @@ class CodeGenerator(NodeVisitor):
                         # For managed types (classes, arrays), use rc_assign for proper RC handling
                         if hasattr(var_value, 'type') and hasattr(var_value.type, 'pointee'):
                             if self.is_managed_type(var_value.type.pointee):
-                                # rc_assign handles: null check on old, release old, retain new (if needed), store new
+                                # If assigning from a variable (not temp), retain the new value
+                                # Temp values already have RC=1, but variable refs need retain
+                                # Note: CollectionAccess already retains in visit_collectionaccess
+                                is_from_variable = isinstance(node.right, (Var, DotAccess))
+                                if is_from_variable:
+                                    self.rc_retain(var)
+                                # rc_assign handles: null check on old, release old, store new
                                 self.rc_assign(var_value, var)
                             else:
                                 # Cast if types don't match (e.g., C function returning double to int variable)
@@ -3031,7 +3102,7 @@ class CodeGenerator(NodeVisitor):
             # Original logic for potential other pointers? 
             # Though original code fell through for non-int/float.
             pass
-             
+
         self.call('print', [val])
 
     def print_string(self, string, newline=True):

@@ -245,6 +245,15 @@ def dynamic_array_init(self, dyn_array_ptr, array_type):
     rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)], inbounds=True)
     builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
 
+    # Initialize weak_rc to 0
+    from meteor.compiler.base import HEADER_WEAK_RC, HEADER_FLAGS
+    weak_rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)], inbounds=True)
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_rc_ptr)
+
+    # Initialize flags to 0
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)], inbounds=True)
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+
     # Set type_tag: TYPE_TAG_STR for i64.array (strings), TYPE_TAG_LIST for other arrays
     type_tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)], inbounds=True)
     # Check if this is a string array (i64.array) or other array type

@@ -413,13 +413,12 @@ def binary_op(self, node):
         # Handle string operations
         if op == PLUS:
             # String concatenation
-            # Retain variable references before concat (they will be released in string_concat)
-            # Check if left/right are from variable loads (not temporaries)
-            left_is_var = hasattr(left, 'opname') and left.opname == 'load'
-            right_is_var = hasattr(right, 'opname') and right.opname == 'load'
-            if left_is_var:
+            # Retain non-temporary operands so string_concat's release does not free variables
+            left_is_temp = self._is_temp_string(left, node.left) if hasattr(self, '_is_temp_string') else False
+            right_is_temp = self._is_temp_string(right, node.right) if hasattr(self, '_is_temp_string') else False
+            if not left_is_temp:
                 self.rc_retain(left)
-            if right_is_var:
+            if not right_is_temp:
                 self.rc_retain(right)
             return string_concat(self, left, right)
         elif op == EQUALS:

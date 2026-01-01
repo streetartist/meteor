@@ -1,0 +1,5 @@
+i = 0
+while i < 100
+    s = "hello" + "world"
+    i = i + 1
+print("test1 done")

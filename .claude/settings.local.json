@@ -8,7 +8,9 @@
       "Bash(dir:*)",
       "Bash(clang:*)",
       "Bash(gcc:*)",
-      "Bash(./http_simple:*)"
+      "Bash(./http_simple:*)",
+      "Bash(./http_demo.exe:*)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Dr. Memory\\\\bin\\\\drmemory.exe\" --version)"
     ]
   }
 }
