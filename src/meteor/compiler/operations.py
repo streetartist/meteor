@@ -31,6 +31,19 @@ def is_number_type(typ):
     return getattr(typ, 'name', '') == 'number'
 
 
+def is_string_type(typ):
+    """Check if a type is a Meteor string (i64.array pointer)"""
+    if isinstance(typ, ir.PointerType):
+        pointee = typ.pointee
+        # Check for i64.array struct
+        if hasattr(pointee, 'name') and pointee.name == 'i64.array':
+            return True
+        # Also check for pointer to i64.array (double pointer from alloca)
+        if isinstance(pointee, ir.PointerType) and hasattr(pointee.pointee, 'name'):
+            return pointee.pointee.name == 'i64.array'
+    return False
+
+
 def is_int_type(typ):
     """Check if a type is an integer type"""
     return isinstance(typ, ir.IntType)
@@ -388,6 +401,20 @@ def binary_op(self, node):
         else:
             error('file={} line={}: Unsupported operator {} for decimal'.format(
                 self.file_name, node.line_num, op))
+    elif is_string_type(left.type) or is_string_type(right.type):
+        # Handle string operations
+        if op == PLUS:
+            # String concatenation
+            return string_concat(self, left, right)
+        elif op == EQUALS:
+            # String equality comparison
+            return string_equals(self, left, right, equal=True)
+        elif op == NOT_EQUALS:
+            # String inequality comparison
+            return string_equals(self, left, right, equal=False)
+        else:
+            error('file={} line={}: Unsupported operator {} for string'.format(
+                self.file_name, node.line_num, op))
     else:
         error('file={} line={}: Unknown operator {} for {} and {}'.format(
             self.file_name,
@@ -612,3 +639,169 @@ def cast_ops(self, left, right, node):
         orig_type,
         cast_type
     ))
+
+
+def string_concat(self, left, right):
+    """Concatenate two Meteor strings (i64.array pointers).
+    
+    Creates a new string containing all characters from left followed by right.
+    """
+    # Ensure we have pointers to i64.array
+    # If left/right are double pointers (from alloca), load them first
+    if isinstance(left.type, ir.PointerType) and isinstance(left.type.pointee, ir.PointerType):
+        left = self.builder.load(left)
+    if isinstance(right.type, ir.PointerType) and isinstance(right.type.pointee, ir.PointerType):
+        right = self.builder.load(right)
+    
+    # Create a new array for the result
+    result = self.create_array(type_map[INT])
+    
+    # Get length functions
+    length_func = self.module.get_global('i64.array.length')
+    get_func = self.module.get_global('i64.array.get')
+    append_func = self.module.get_global('i64.array.append')
+    
+    # Get lengths
+    left_len = self.builder.call(length_func, [left], 'left_len')
+    right_len = self.builder.call(length_func, [right], 'right_len')
+    
+    # Create loop to copy left string
+    zero = ir.Constant(type_map[INT], 0)
+    one = ir.Constant(type_map[INT], 1)
+    
+    # Loop for left string
+    left_loop_cond = self.add_block('str_concat.left.cond')
+    left_loop_body = self.add_block('str_concat.left.body')
+    left_loop_end = self.add_block('str_concat.left.end')
+    
+    # Index variable for left
+    i_left = self.builder.alloca(type_map[INT], name='i_left')
+    self.builder.store(zero, i_left)
+    self.builder.branch(left_loop_cond)
+    
+    self.builder.position_at_end(left_loop_cond)
+    i_val = self.builder.load(i_left)
+    cond = self.builder.icmp_signed('<', i_val, left_len)
+    self.builder.cbranch(cond, left_loop_body, left_loop_end)
+    
+    self.builder.position_at_end(left_loop_body)
+    i_val = self.builder.load(i_left)
+    char = self.builder.call(get_func, [left, i_val], 'left_char')
+    self.builder.call(append_func, [result, char])
+    next_i = self.builder.add(i_val, one)
+    self.builder.store(next_i, i_left)
+    self.builder.branch(left_loop_cond)
+    
+    self.builder.position_at_end(left_loop_end)
+    
+    # Loop for right string
+    right_loop_cond = self.add_block('str_concat.right.cond')
+    right_loop_body = self.add_block('str_concat.right.body')
+    right_loop_end = self.add_block('str_concat.right.end')
+    
+    # Index variable for right
+    i_right = self.builder.alloca(type_map[INT], name='i_right')
+    self.builder.store(zero, i_right)
+    self.builder.branch(right_loop_cond)
+    
+    self.builder.position_at_end(right_loop_cond)
+    i_val = self.builder.load(i_right)
+    cond = self.builder.icmp_signed('<', i_val, right_len)
+    self.builder.cbranch(cond, right_loop_body, right_loop_end)
+    
+    self.builder.position_at_end(right_loop_body)
+    i_val = self.builder.load(i_right)
+    char = self.builder.call(get_func, [right, i_val], 'right_char')
+    self.builder.call(append_func, [result, char])
+    next_i = self.builder.add(i_val, one)
+    self.builder.store(next_i, i_right)
+    self.builder.branch(right_loop_cond)
+    
+    self.builder.position_at_end(right_loop_end)
+    
+    return result
+
+
+def string_equals(self, left, right, equal=True):
+    """Compare two Meteor strings for equality.
+    
+    Returns true if strings are equal (or not equal if equal=False).
+    """
+    # Ensure we have pointers to i64.array
+    if isinstance(left.type, ir.PointerType) and isinstance(left.type.pointee, ir.PointerType):
+        left = self.builder.load(left)
+    if isinstance(right.type, ir.PointerType) and isinstance(right.type.pointee, ir.PointerType):
+        right = self.builder.load(right)
+    
+    # Get functions
+    length_func = self.module.get_global('i64.array.length')
+    get_func = self.module.get_global('i64.array.get')
+    
+    # Get lengths
+    left_len = self.builder.call(length_func, [left], 'left_len')
+    right_len = self.builder.call(length_func, [right], 'right_len')
+    
+    # Result variable
+    result_ptr = self.builder.alloca(type_map[BOOL], name='str_eq_result')
+    
+    # First check: lengths must be equal
+    len_check_block = self.add_block('str_eq.len_check')
+    len_mismatch_block = self.add_block('str_eq.len_mismatch')
+    compare_block = self.add_block('str_eq.compare')
+    loop_cond = self.add_block('str_eq.loop_cond')
+    loop_body = self.add_block('str_eq.loop_body')
+    char_mismatch = self.add_block('str_eq.char_mismatch')
+    strings_equal = self.add_block('str_eq.strings_equal')
+    end_block = self.add_block('str_eq.end')
+    
+    self.builder.branch(len_check_block)
+    
+    self.builder.position_at_end(len_check_block)
+    len_eq = self.builder.icmp_signed('==', left_len, right_len)
+    self.builder.cbranch(len_eq, compare_block, len_mismatch_block)
+    
+    # Lengths don't match - strings are not equal
+    self.builder.position_at_end(len_mismatch_block)
+    self.builder.store(ir.Constant(type_map[BOOL], 0), result_ptr)
+    self.builder.branch(end_block)
+    
+    # Compare characters
+    self.builder.position_at_end(compare_block)
+    zero = ir.Constant(type_map[INT], 0)
+    one = ir.Constant(type_map[INT], 1)
+    i_ptr = self.builder.alloca(type_map[INT], name='i_cmp')
+    self.builder.store(zero, i_ptr)
+    self.builder.branch(loop_cond)
+    
+    self.builder.position_at_end(loop_cond)
+    i_val = self.builder.load(i_ptr)
+    cond = self.builder.icmp_signed('<', i_val, left_len)
+    self.builder.cbranch(cond, loop_body, strings_equal)
+    
+    self.builder.position_at_end(loop_body)
+    i_val = self.builder.load(i_ptr)
+    left_char = self.builder.call(get_func, [left, i_val], 'l_char')
+    right_char = self.builder.call(get_func, [right, i_val], 'r_char')
+    char_eq = self.builder.icmp_signed('==', left_char, right_char)
+    next_i = self.builder.add(i_val, one)
+    self.builder.store(next_i, i_ptr)
+    self.builder.cbranch(char_eq, loop_cond, char_mismatch)
+    
+    # Character mismatch - strings not equal
+    self.builder.position_at_end(char_mismatch)
+    self.builder.store(ir.Constant(type_map[BOOL], 0), result_ptr)
+    self.builder.branch(end_block)
+    
+    # All characters matched - strings are equal
+    self.builder.position_at_end(strings_equal)
+    self.builder.store(ir.Constant(type_map[BOOL], 1), result_ptr)
+    self.builder.branch(end_block)
+    
+    self.builder.position_at_end(end_block)
+    result = self.builder.load(result_ptr)
+    
+    # Invert if checking for inequality
+    if not equal:
+        result = self.builder.xor(result, ir.Constant(type_map[BOOL], 1))
+    
+    return result

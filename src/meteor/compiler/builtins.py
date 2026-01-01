@@ -305,14 +305,14 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
     size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
-    size_val = builder.add(size_val, one)
-    builder.store(size_val, size_ptr)
-
+    # Store element at current size index BEFORE incrementing size
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
-
     data_element_ptr = builder.gep(builder.load(data_ptr), [size_val], inbounds=True)
-
     builder.store(builder.load(value_ptr), data_element_ptr)
+
+    # Now increment size
+    new_size = builder.add(size_val, one)
+    builder.store(new_size, size_ptr)
 
     builder.branch(dyn_array_append_exit)
 
@@ -374,10 +374,7 @@ def dynamic_array_get(self, dyn_array_ptr, array_type):
 
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
-    # Load index (may have been modified for negative index)
-    index_val = builder.load(index_ptr)
-    add_1 = builder.add(one, index_val)
-    builder.store(add_1, index_ptr)
+    # Load index (may have been modified for negative index) - use directly without +1
     index_val = builder.load(index_ptr)
     data_element_ptr = builder.gep(builder.load(data_ptr), [index_val], inbounds=True)
 
@@ -441,10 +438,7 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
 
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
-    # Load index (may have been modified for negative index)
-    index_val = builder.load(index_ptr)
-    add_1 = builder.add(one, index_val)
-    builder.store(add_1, index_ptr)
+    # Load index (may have been modified for negative index) - use directly without +1
     index_val = builder.load(index_ptr)
 
     data_element_ptr = builder.gep(builder.load(data_ptr), [index_val], inbounds=True)

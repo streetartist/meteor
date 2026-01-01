@@ -572,6 +572,22 @@ class Parser(object):
             self.eat_value(FROZEN)
 
         token = self.current_token
+        
+        # Support for dotted type names like http.server.Request
+        if token.type == NAME:
+            type_name = token.value
+            self.eat_type(NAME)
+            # Check for dotted path
+            while self.current_token.value == DOT:
+                self.next_token()  # eat dot
+                if self.current_token.type == NAME:
+                    type_name += "." + self.current_token.value
+                    self.next_token()
+                else:
+                    break
+            result = Type(type_name, self.line_num, is_frozen=is_frozen)
+            return result
+        
         if token.value in self.user_types:
             self.eat_type(NAME)
             result = Type(token.value, self.line_num, is_frozen=is_frozen)
@@ -822,12 +838,13 @@ class Parser(object):
         raise NotImplementedError
 
     def dot_access(self, token):
-        """Parse dot access with support for chained access and method calls.
+        """Parse dot access with support for chained access, method calls, and subscript.
 
         Supports:
             a.b         -> DotAccess
             a.b.c       -> DotAccess(DotAccess, c)
             a.b.c()     -> MethodCall(DotAccess, c, args)
+            a.b[i]      -> CollectionAccess(DotAccess, i)
         """
         self.eat_value(DOT)
         field = self.current_token.value
@@ -851,6 +868,13 @@ class Parser(object):
         if self.current_token.value == LPAREN:
             # This shouldn't happen normally, but handle it
             return self.method_call_on_expr(node.obj, node.field)
+
+        # Handle subscript access: a.b[i]
+        if self.current_token.value == LSQUAREBRACKET:
+            self.next_token()  # consume '['
+            index = self.expr()
+            self.eat_value(RSQUAREBRACKET)
+            return CollectionAccess(node, index, self.line_num)
 
         return node
 
@@ -886,15 +910,56 @@ class Parser(object):
         return node
 
     def property_or_method(self, token):
+        """Parse property access or method call, including chains like a.b.c()"""
         self.eat_value(DOT)
         field = self.current_token.value
         self.next_token()
         left = DotAccess(token.value, field, self.line_num)
-        token = self.next_token()
-        if token.value in ASSIGNMENT_OP:
-            return self.field_assignment(token, left)
 
-        return self.method_call(token, left)
+        # Handle chained access: a.b.c or a.b.c()
+        while self.current_token.value == DOT:
+            self.next_token()  # consume '.'
+            next_field = self.current_token.value
+            self.next_token()  # consume field name
+            left = DotAccess(left, next_field, self.line_num)
+
+        # Handle subscript access: a.b[i]
+        while self.current_token.value == LSQUAREBRACKET:
+            self.next_token()  # consume '['
+            index = self.expr()
+            self.eat_value(RSQUAREBRACKET)
+            left = CollectionAccess(left, index, self.line_num)
+
+        # Check what follows
+        token = self.current_token
+        if token.value in ASSIGNMENT_OP:
+            self.next_token()  # consume assignment op
+            return self.field_assignment_expr(token, left)
+
+        if token.value == LPAREN:
+            # Method call: extract the last field as method name
+            if isinstance(left, DotAccess):
+                return self.method_call_on_expr(left.obj, left.field)
+            else:
+                # left is CollectionAccess or something else - shouldn't normally happen
+                return self.method_call(token, left)
+
+        # Just property access (no method call or assignment)
+        return left
+
+    def field_assignment_expr(self, token, left):
+        """Handle field assignment after the assignment operator has been consumed."""
+        if token.value == ASSIGN:
+            right = self.expr()
+            node = Assign(left, token.value, right, self.line_num)
+        elif token.value in ARITHMETIC_ASSIGNMENT_OP:
+            right = self.expr()
+            node = OpAssign(left, token.value, right, self.line_num)
+        elif token.value in INCREMENTAL_ASSIGNMENT_OP:
+            node = IncrementAssign(left, token.value, self.line_num)
+        else:
+            raise SyntaxError('Unknown assignment operator: {}'.format(token.value))
+        return node
 
     def method_call(self, _, left):
         args = []

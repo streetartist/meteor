@@ -1,0 +1,18 @@
+# 测试字符串拼接功能
+
+def test_string_concat()
+    a = "Hello"
+    b = " "
+    c = "World"
+    d = "!"
+    
+    # 多次拼接
+    result = a + b + c + d
+    print(result)
+    
+    # 另一个测试
+    name = "Meteor"
+    greeting = "Welcome to " + name + " language!"
+    print(greeting)
+
+test_string_concat()

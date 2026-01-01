@@ -1,0 +1,504 @@
+# Meteor JSON Library
+# 提供 JSON 解析和生成功能
+
+# ============================================================================
+# JSON 值类型枚举
+# ============================================================================
+pub enum JsonType
+    Null
+    Bool
+    Number
+    String
+    Array
+    Object
+
+# ============================================================================
+# JSON 值
+# ============================================================================
+pub class JsonValue
+    type: JsonType
+    bool_value: bool
+    number_value: float
+    string_value: str
+    array_value: list<JsonValue>
+    object_keys: list<str>
+    object_values: list<JsonValue>
+
+    def new()
+        self.type = JsonType.Null
+        self.bool_value = false
+        self.number_value = 0.0
+        self.string_value = ""
+        self.array_value = []
+        self.object_keys = []
+        self.object_values = []
+
+    # ========================================================================
+    # 类型检查方法
+    # ========================================================================
+    def is_null() -> bool
+        return self.type == JsonType.Null
+
+    def is_bool() -> bool
+        return self.type == JsonType.Bool
+
+    def is_number() -> bool
+        return self.type == JsonType.Number
+
+    def is_string() -> bool
+        return self.type == JsonType.String
+
+    def is_array() -> bool
+        return self.type == JsonType.Array
+
+    def is_object() -> bool
+        return self.type == JsonType.Object
+
+    # ========================================================================
+    # 值获取方法
+    # ========================================================================
+    def as_bool() -> bool
+        return self.bool_value
+
+    def as_number() -> float
+        return self.number_value
+
+    def as_int() -> int
+        return self.number_value as int
+
+    def as_string() -> str
+        return self.string_value
+
+    # ========================================================================
+    # 数组操作
+    # ========================================================================
+    def length() -> int
+        if self.type == JsonType.Array
+            return self.array_value.length()
+        if self.type == JsonType.Object
+            return self.object_keys.length()
+        return 0
+
+    def get(index: int) -> JsonValue
+        if self.type == JsonType.Array
+            if index >= 0 and index < self.array_value.length()
+                return self.array_value[index]
+        return JsonValue()
+
+    def push(value: JsonValue)
+        if self.type == JsonType.Array
+            self.array_value.append(value)
+
+    # ========================================================================
+    # 对象操作
+    # ========================================================================
+    def has(key: str) -> bool
+        if self.type != JsonType.Object
+            return false
+        i = 0
+        while i < self.object_keys.length()
+            if self.object_keys[i] == key
+                return true
+            i = i + 1
+        return false
+
+    def get_field(key: str) -> JsonValue
+        if self.type != JsonType.Object
+            return JsonValue()
+        i = 0
+        while i < self.object_keys.length()
+            if self.object_keys[i] == key
+                return self.object_values[i]
+            i = i + 1
+        return JsonValue()
+
+    def set_field(key: str, value: JsonValue)
+        if self.type != JsonType.Object
+            return
+        # Check if key exists
+        i = 0
+        while i < self.object_keys.length()
+            if self.object_keys[i] == key
+                self.object_values[i] = value
+                return
+            i = i + 1
+        # Add new key
+        self.object_keys.append(key)
+        self.object_values.append(value)
+
+    def keys() -> list<str>
+        return self.object_keys
+
+    # ========================================================================
+    # 序列化为字符串
+    # ========================================================================
+    def to_string() -> str
+        if self.type == JsonType.Null
+            return "null"
+        if self.type == JsonType.Bool
+            if self.bool_value
+                return "true"
+            return "false"
+        if self.type == JsonType.Number
+            return str(self.number_value)
+        if self.type == JsonType.String
+            return '"' + escape_string(self.string_value) + '"'
+        if self.type == JsonType.Array
+            result = "["
+            i = 0
+            while i < self.array_value.length()
+                if i > 0
+                    result = result + ","
+                result = result + self.array_value[i].to_string()
+                i = i + 1
+            return result + "]"
+        if self.type == JsonType.Object
+            result = "{"
+            i = 0
+            while i < self.object_keys.length()
+                if i > 0
+                    result = result + ","
+                result = result + '"' + escape_string(self.object_keys[i]) + '":'
+                result = result + self.object_values[i].to_string()
+                i = i + 1
+            return result + "}"
+        return "null"
+
+    # 格式化输出（带缩进）
+    def to_pretty_string(indent: int = 2) -> str
+        return pretty_print(self, 0, indent)
+
+# ============================================================================
+# 辅助函数
+# ============================================================================
+def escape_string(s: str) -> str
+    result = ""
+    i = 0
+    while i < s.length()
+        c = s[i]
+        if c == '"'
+            result = result + '\\"'
+        elif c == '\\'
+            result = result + '\\\\'
+        elif c == '\n'
+            result = result + '\\n'
+        elif c == '\r'
+            result = result + '\\r'
+        elif c == '\t'
+            result = result + '\\t'
+        else
+            result = result + c
+        i = i + 1
+    return result
+
+def make_indent(level: int, size: int) -> str
+    result = ""
+    total = level * size
+    i = 0
+    while i < total
+        result = result + " "
+        i = i + 1
+    return result
+
+def pretty_print(value: JsonValue, level: int, indent_size: int) -> str
+    if value.type == JsonType.Null
+        return "null"
+    if value.type == JsonType.Bool
+        if value.bool_value
+            return "true"
+        return "false"
+    if value.type == JsonType.Number
+        return str(value.number_value)
+    if value.type == JsonType.String
+        return '"' + escape_string(value.string_value) + '"'
+    if value.type == JsonType.Array
+        if value.array_value.length() == 0
+            return "[]"
+        result = "[\n"
+        i = 0
+        while i < value.array_value.length()
+            result = result + make_indent(level + 1, indent_size)
+            result = result + pretty_print(value.array_value[i], level + 1, indent_size)
+            if i < value.array_value.length() - 1
+                result = result + ","
+            result = result + "\n"
+            i = i + 1
+        result = result + make_indent(level, indent_size) + "]"
+        return result
+    if value.type == JsonType.Object
+        if value.object_keys.length() == 0
+            return "{}"
+        result = "{\n"
+        i = 0
+        while i < value.object_keys.length()
+            result = result + make_indent(level + 1, indent_size)
+            result = result + '"' + escape_string(value.object_keys[i]) + '": '
+            result = result + pretty_print(value.object_values[i], level + 1, indent_size)
+            if i < value.object_keys.length() - 1
+                result = result + ","
+            result = result + "\n"
+            i = i + 1
+        result = result + make_indent(level, indent_size) + "}"
+        return result
+    return "null"
+
+# ============================================================================
+# 构造函数
+# ============================================================================
+pub def json_null() -> JsonValue
+    return JsonValue()
+
+pub def json_bool(value: bool) -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.Bool
+    v.bool_value = value
+    return v
+
+pub def json_number(value: float) -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.Number
+    v.number_value = value
+    return v
+
+pub def json_int(value: int) -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.Number
+    v.number_value = value as float
+    return v
+
+pub def json_string(value: str) -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.String
+    v.string_value = value
+    return v
+
+pub def json_array() -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.Array
+    return v
+
+pub def json_object() -> JsonValue
+    v = JsonValue()
+    v.type = JsonType.Object
+    return v
+
+# ============================================================================
+# JSON 解析器
+# ============================================================================
+pub class JsonParser
+    source: str
+    position: int
+    length: int
+
+    def new(source: str)
+        self.source = source
+        self.position = 0
+        self.length = source.length()
+
+    def parse() -> JsonValue
+        self.skip_whitespace()
+        return self.parse_value()
+
+    def parse_value() -> JsonValue
+        self.skip_whitespace()
+        if self.position >= self.length
+            return JsonValue()
+
+        c = self.current()
+        if c == 'n'
+            return self.parse_null()
+        if c == 't' or c == 'f'
+            return self.parse_bool()
+        if c == '"'
+            return self.parse_string()
+        if c == '['
+            return self.parse_array()
+        if c == '{'
+            return self.parse_object()
+        if c == '-' or self.is_digit(c)
+            return self.parse_number()
+        return JsonValue()
+
+    def parse_null() -> JsonValue
+        if self.match("null")
+            return json_null()
+        return JsonValue()
+
+    def parse_bool() -> JsonValue
+        if self.match("true")
+            return json_bool(true)
+        if self.match("false")
+            return json_bool(false)
+        return JsonValue()
+
+    def parse_number() -> JsonValue
+        start = self.position
+        if self.current() == '-'
+            self.advance()
+        while self.position < self.length and self.is_digit(self.current())
+            self.advance()
+        if self.position < self.length and self.current() == '.'
+            self.advance()
+            while self.position < self.length and self.is_digit(self.current())
+                self.advance()
+        # Handle exponent
+        if self.position < self.length
+            c = self.current()
+            if c == 'e' or c == 'E'
+                self.advance()
+                if self.position < self.length
+                    c = self.current()
+                    if c == '+' or c == '-'
+                        self.advance()
+                while self.position < self.length and self.is_digit(self.current())
+                    self.advance()
+        num_str = self.source[start:self.position]
+        return json_number(float(num_str))
+
+    def parse_string() -> JsonValue
+        if self.current() != '"'
+            return JsonValue()
+        self.advance()  # Skip opening quote
+        
+        result = ""
+        while self.position < self.length and self.current() != '"'
+            c = self.current()
+            if c == '\\'
+                self.advance()
+                if self.position < self.length
+                    esc = self.current()
+                    if esc == 'n'
+                        result = result + '\n'
+                    elif esc == 'r'
+                        result = result + '\r'
+                    elif esc == 't'
+                        result = result + '\t'
+                    elif esc == '"'
+                        result = result + '"'
+                    elif esc == '\\'
+                        result = result + '\\'
+                    else
+                        result = result + esc
+            else
+                result = result + c
+            self.advance()
+        self.advance()  # Skip closing quote
+        return json_string(result)
+
+    def parse_array() -> JsonValue
+        if self.current() != '['
+            return JsonValue()
+        self.advance()  # Skip [
+        self.skip_whitespace()
+
+        arr = json_array()
+        while self.position < self.length and self.current() != ']'
+            value = self.parse_value()
+            arr.push(value)
+            self.skip_whitespace()
+            if self.current() == ','
+                self.advance()
+                self.skip_whitespace()
+        self.advance()  # Skip ]
+        return arr
+
+    def parse_object() -> JsonValue
+        if self.current() != '{'
+            return JsonValue()
+        self.advance()  # Skip {
+        self.skip_whitespace()
+
+        obj = json_object()
+        while self.position < self.length and self.current() != '}'
+            # Parse key
+            key_value = self.parse_string()
+            key = key_value.string_value
+            self.skip_whitespace()
+            if self.current() == ':'
+                self.advance()
+            self.skip_whitespace()
+            # Parse value
+            value = self.parse_value()
+            obj.set_field(key, value)
+            self.skip_whitespace()
+            if self.current() == ','
+                self.advance()
+                self.skip_whitespace()
+        self.advance()  # Skip }
+        return obj
+
+    def current() -> str
+        if self.position < self.length
+            return self.source[self.position]
+        return ""
+
+    def advance()
+        self.position = self.position + 1
+
+    def skip_whitespace()
+        while self.position < self.length
+            c = self.current()
+            if c == ' ' or c == '\t' or c == '\n' or c == '\r'
+                self.advance()
+            else
+                return
+
+    def match(expected: str) -> bool
+        end = self.position + expected.length()
+        if end > self.length
+            return false
+        if self.source[self.position:end] == expected
+            self.position = end
+            return true
+        return false
+
+    def is_digit(c: str) -> bool
+        return c >= '0' and c <= '9'
+
+# ============================================================================
+# 便捷函数
+# ============================================================================
+pub def parse(source: str) -> JsonValue
+    parser = JsonParser(source)
+    return parser.parse()
+
+pub def stringify(value: JsonValue) -> str
+    return value.to_string()
+
+pub def pretty(value: JsonValue, indent: int = 2) -> str
+    return value.to_pretty_string(indent)
+
+# 快速构建 JSON 对象
+pub class JsonBuilder
+    root: JsonValue
+
+    def new()
+        self.root = json_object()
+
+    def set(key: str, value: JsonValue) -> JsonBuilder
+        self.root.set_field(key, value)
+        return self
+
+    def set_string(key: str, value: str) -> JsonBuilder
+        return self.set(key, json_string(value))
+
+    def set_number(key: str, value: float) -> JsonBuilder
+        return self.set(key, json_number(value))
+
+    def set_int(key: str, value: int) -> JsonBuilder
+        return self.set(key, json_int(value))
+
+    def set_bool(key: str, value: bool) -> JsonBuilder
+        return self.set(key, json_bool(value))
+
+    def set_null(key: str) -> JsonBuilder
+        return self.set(key, json_null())
+
+    def build() -> JsonValue
+        return self.root
+
+    def to_string() -> str
+        return self.root.to_string()
+
+pub def builder() -> JsonBuilder
+    return JsonBuilder()

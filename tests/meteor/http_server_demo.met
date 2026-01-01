@@ -1,0 +1,69 @@
+# Meteor HTTP Server - Full Demo
+# 一个完整的HTTP服务器示例，可以接收请求并发送响应
+
+@include("std/http")
+@link("std/http/http_native")
+import c "http_native.h"
+
+def run_server()
+    print("====================================")
+    print("  Meteor HTTP Server")
+    print("====================================")
+    
+    # 创建服务器
+    server = http_native.meteor_http_server_create()
+    print("Server created")
+    
+    # 配置服务器
+    http_native.meteor_http_server_set_host(server, "127.0.0.1")
+    http_native.meteor_http_server_set_port(server, 9999)
+    
+    # 绑定并开始监听
+    result = http_native.meteor_http_server_bind(server)
+    print("Bind result:")
+    print(result)
+    
+    print("")
+    print("Open http://127.0.0.1:9999 in your browser!")
+    print("Waiting for connection...")
+    print("")
+    
+    # 接受连接
+    conn = http_native.meteor_http_server_accept(server)
+    print("Connection received!")
+    
+    # 读取请求
+    req = http_native.meteor_http_connection_read_request(conn)
+    print("Request received!")
+    
+    # 创建响应
+    res = http_native.meteor_http_response_create()
+    http_native.meteor_http_response_set_status(res, 200)
+    http_native.meteor_http_response_set_header(res, "Content-Type", "text/html; charset=utf-8")
+    
+    # HTML 响应内容
+    html = "<html><head><title>Meteor Server</title></head>"
+    html = html + "<body style='font-family:Arial;max-width:800px;margin:50px auto;padding:20px;'>"
+    html = html + "<h1 style='color:#6a5acd;'>Hello from Meteor HTTP Server!</h1>"
+    html = html + "<p>This page is served by a web server written in Meteor language.</p>"
+    html = html + "<p>Server time: 2026-01-01</p>"
+    html = html + "<hr>"
+    html = html + "<p><small>Powered by Meteor Language</small></p>"
+    html = html + "</body></html>"
+    
+    http_native.meteor_http_response_set_html(res, html)
+    
+    # 发送响应
+    http_native.meteor_http_connection_send_response(conn, res)
+    print("Response sent!")
+    
+    # 清理
+    http_native.meteor_http_response_free(res)
+    http_native.meteor_http_connection_close(conn)
+    http_native.meteor_http_server_stop(server)
+    http_native.meteor_http_server_destroy(server)
+    
+    print("")
+    print("Server stopped.")
+
+run_server()

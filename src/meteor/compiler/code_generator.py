@@ -193,7 +193,10 @@ class CodeGenerator(NodeVisitor):
                 self.store(val, RET_VAR)
 
         # Release scope variables before returning (exclude return value)
-        self.release_scope_variables(exclude=val if val.type != ir.VoidType() else None)
+        # Retain the return value first to prevent it from being freed
+        if val.type != ir.VoidType() and self.is_managed_type(val.type):
+            self.rc_retain(val)
+        self.release_scope_variables()
 
         self.branch(self.exit_blocks[-1])
         return True
@@ -1557,15 +1560,16 @@ class CodeGenerator(NodeVisitor):
                             self.call('i64.array.append', [u64_array_ptr, self.const(digit)])
                             temp_val //= BASE
 
-                    sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                    # BigInt: { header, sign, digits } - sign at index 1, digits at index 2
+                    sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                     self.builder.store(ir.Constant(type_map[BOOL], is_negative), sign_ptr)
-                    digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                    digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                     self.builder.store(u64_array_ptr, digits_ptr)
 
-                    # Store in decimal struct
-                    mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(0, width=INT32)])
+                    # Decimal: { header, mantissa, exponent } - mantissa at index 1, exponent at index 2
+                    mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
                     self.builder.store(bigint_ptr, mantissa_field_ptr)
-                    exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
+                    exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(2, width=INT32)])
                     self.builder.store(self.const(exponent), exponent_field_ptr)
                 else:
                     # Runtime value - convert to decimal
@@ -1604,14 +1608,16 @@ class CodeGenerator(NodeVisitor):
                         u64_array_ptr = self.create_array(type_map[UINT64])
                         self.call('i64.array.append', [u64_array_ptr, abs_val])
 
-                        sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                        # BigInt: { header, sign, digits } - sign at index 1, digits at index 2
+                        sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                         self.builder.store(is_negative, sign_ptr)
-                        digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                        digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                         self.builder.store(u64_array_ptr, digits_ptr)
 
-                        mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(0, width=INT32)])
+                        # Decimal: { header, mantissa, exponent } - mantissa at index 1, exponent at index 2
+                        mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
                         self.builder.store(bigint_ptr, mantissa_field_ptr)
-                        exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
+                        exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(2, width=INT32)])
                         self.builder.store(self.const(0), exponent_field_ptr)
 
                 self.define(var_name, decimal_ptr)
@@ -1913,10 +1919,11 @@ class CodeGenerator(NodeVisitor):
                                 u64_array_ptr = self.create_array(type_map[UINT64])
                                 self.call('i64.array.append', [u64_array_ptr, abs_val])
 
-                                sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                                # BigInt: { header, sign, digits } - sign at index 1, digits at index 2
+                                sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                                 self.builder.store(is_negative, sign_ptr)
 
-                                digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                                digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                                 self.builder.store(u64_array_ptr, digits_ptr)
 
                     elif var_value.type == type_map[DECIMAL].as_pointer():
@@ -1949,17 +1956,18 @@ class CodeGenerator(NodeVisitor):
                         u64_array_ptr = self.create_array(type_map[UINT64])
                         self.call('i64.array.append', [u64_array_ptr, abs_val])
                         
-                        sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(0, width=INT32)])
+                        # BigInt: { header, sign, digits } - sign at index 1, digits at index 2
+                        sign_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
                         self.builder.store(is_negative, sign_ptr)
-                        digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(1, width=INT32)])
+                        digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
                         self.builder.store(u64_array_ptr, digits_ptr)
                         
-                        # 3. Store Mantissa Pointer
-                        mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(0, width=INT32)])
+                        # 3. Store Mantissa Pointer (Decimal: { header, mantissa, exponent } - index 1)
+                        mantissa_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
                         self.builder.store(bigint_ptr, mantissa_field_ptr)
                         
-                        # 4. Store Exponent (0)
-                        exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
+                        # 4. Store Exponent (0) (Decimal: exponent at index 2)
+                        exponent_field_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(2, width=INT32)])
                         self.builder.store(self.const(0), exponent_field_ptr)
 
                     elif var_value.type == type_map[NUMBER].as_pointer():
@@ -2317,8 +2325,25 @@ class CodeGenerator(NodeVisitor):
     def visit_collectionaccess(self, node):
         key = self.visit(node.key)
         collection = self.search_scopes(node.collection.value)
+        
+        # Check if this is a dynamic array
+        # collection.type is %"X.array"** (AllocaInstr stores pointer to array struct)
+        # collection.type.pointee is %"X.array"* (pointer to array struct)
+        # collection.type.pointee.pointee is %"X.array" (the struct itself)
         for typ in array_types:
-            if collection.type.pointee == self.search_scopes('{}.array'.format(typ)):
+            array_struct = self.search_scopes('{}.array'.format(typ))
+            if array_struct is None:
+                continue
+            # Check if pointee.pointee matches (for alloca storing pointer)
+            if (hasattr(collection.type, 'pointee') and 
+                hasattr(collection.type.pointee, 'pointee') and
+                collection.type.pointee.pointee == array_struct):
+                # Load the pointer and call get
+                arr_ptr = self.load(collection)
+                return self.call('{}.array.get'.format(typ), [arr_ptr, key])
+            # Also check direct pointee match (for when collection is already a pointer)
+            elif (hasattr(collection.type, 'pointee') and
+                  collection.type.pointee == array_struct):
                 return self.call('{}.array.get'.format(typ), [collection, key])
 
         return self.builder.extract_value(self.load(collection.name), [key])
@@ -2473,6 +2498,12 @@ class CodeGenerator(NodeVisitor):
             param_name = param_names[idx] if idx < len(param_names) else None
             is_ref = param_modes.get(param_name) == 'ref'
 
+            # Handle untyped parameters (param.value is None or empty)
+            if param.value is None or param.value == '':
+                # Untyped parameter - use i8* (generic pointer/any type)
+                args.append(type_map[INT8].as_pointer())
+                continue
+
             if param.value == FUNC:
                 if param.func_ret_type.value in type_map:
                     func_ret_type = type_map[param.func_ret_type.value]
@@ -2485,7 +2516,13 @@ class CodeGenerator(NodeVisitor):
                 array_type = self.get_type(param.func_params['0'])
                 self.create_array(array_type)
                 typ = self.search_scopes('{}.array'.format(array_type))
-                args.append(typ)
+                # List types are always passed as pointers
+                args.append(typ.as_pointer())
+            elif param.value == STR:
+                # Strings are represented as i64.array pointers
+                self.create_array(type_map[INT])
+                typ = self.search_scopes('i64.array')
+                args.append(typ.as_pointer())
             else:
                 if param.value in type_map:
                     typ = type_map[param.value]
@@ -2507,7 +2544,10 @@ class CodeGenerator(NodeVisitor):
                     else:
                         args.append(typ)
                 else:
-                    error("Parameter type not recognized: {}".format(param.value))
+                    # Unknown type - default to i8* (generic pointer)
+                    from meteor.utils import warning
+                    warning("Parameter type not recognized: '{}', using generic pointer".format(param.value))
+                    args.append(type_map[INT8].as_pointer())
 
         return args
 
@@ -2536,11 +2576,12 @@ class CodeGenerator(NodeVisitor):
         elif param.value == LIST:
             array_type = self.get_type(param.func_params['0'])
             self.create_array(array_type)
-            typ = self.search_scopes('{}.array'.format(array_type))
+            # Return pointer type to match create_array return type
+            typ = self.search_scopes('{}.array'.format(array_type)).as_pointer()
         elif param.value == STR:
             # Strings are represented as i64.array pointers
             self.create_array(type_map[INT])
-            typ = self.search_scopes('i64.array')
+            typ = self.search_scopes('i64.array').as_pointer()
         else:
             if param.value in type_map:
                 typ = type_map[param.value]
@@ -2607,6 +2648,12 @@ class CodeGenerator(NodeVisitor):
         if returned is not True:
             self.branch(self.exit_blocks[-1])
         self.position_at_end(self.exit_blocks.pop())
+        
+        # Release managed variables BEFORE returning, while still in current function
+        # Only release if we didn't already release in visit_return
+        if returned is not True:
+            self.release_scope_variables()
+        
         if self.current_function.function_type.return_type != type_map[VOID]:
             retvar = self.load(self.search_scopes(RET_VAR))
             self.builder.ret(retvar)
@@ -2616,7 +2663,10 @@ class CodeGenerator(NodeVisitor):
         self.position_at_end(back_block)
         last_function = self.function_stack.pop()
         self.current_function = last_function
-        self.drop_top_scope()
+        # Pop managed vars without releasing (already released above)
+        if self.managed_vars_stack:
+            self.managed_vars_stack.pop()
+        super(CodeGenerator, self).drop_top_scope()
 
     def new_builder(self, block):
         self.builder = ir.IRBuilder(block)
@@ -2912,6 +2962,10 @@ class CodeGenerator(NodeVisitor):
     def alloc_and_define(self, name, typ):
         var_addr = self.builder.alloca(typ, name=name)
         self.define(name, var_addr)
+        # Initialize pointer types to null to avoid garbage in RC operations
+        if isinstance(typ, ir.PointerType):
+            null_val = ir.Constant(typ, None)
+            self.builder.store(null_val, var_addr)
         return var_addr
 
     def alloc_define_store_simple(self, val, name, typ):
@@ -3046,26 +3100,28 @@ class CodeGenerator(NodeVisitor):
         i_ptr = self.builder.alloca(type_map[INT])
         self.builder.store(self.const(0), i_ptr)
 
-        loop_block = self.current_function.append_basic_block('str_conv_loop')
+        loop_cond_block = self.current_function.append_basic_block('str_conv_cond')
+        loop_body_block = self.current_function.append_basic_block('str_conv_body')
         end_block = self.current_function.append_basic_block('str_conv_end')
 
-        self.builder.branch(loop_block)
-        self.builder.position_at_end(loop_block)
+        self.builder.branch(loop_cond_block)
+        self.builder.position_at_end(loop_cond_block)
 
         i = self.builder.load(i_ptr)
         cond = self.builder.icmp_signed('<', i, size)
+        self.builder.cbranch(cond, loop_body_block, end_block)
 
-        with self.builder.if_then(cond):
-            char_ptr = self.builder.gep(data_ptr, [i])
-            char_i64 = self.builder.load(char_ptr)
-            char_i8 = self.builder.trunc(char_i64, ir.IntType(8))
-            dst_ptr = self.builder.gep(cstr, [i])
-            self.builder.store(char_i8, dst_ptr)
-            next_i = self.builder.add(i, self.const(1))
-            self.builder.store(next_i, i_ptr)
-            self.builder.branch(loop_block)
+        self.builder.position_at_end(loop_body_block)
+        i = self.builder.load(i_ptr)
+        char_ptr = self.builder.gep(data_ptr, [i])
+        char_i64 = self.builder.load(char_ptr)
+        char_i8 = self.builder.trunc(char_i64, ir.IntType(8))
+        dst_ptr = self.builder.gep(cstr, [i])
+        self.builder.store(char_i8, dst_ptr)
+        next_i = self.builder.add(i, self.const(1))
+        self.builder.store(next_i, i_ptr)
+        self.builder.branch(loop_cond_block)
 
-        self.builder.branch(end_block)
         self.builder.position_at_end(end_block)
 
         # Add null terminator

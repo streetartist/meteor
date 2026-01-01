@@ -1,0 +1,29 @@
+# 最简单的 HTTP Server 测试
+# 只创建服务器和绑定
+
+@include("std/http")
+@link("std/http/http_native")
+import c "http_native.h"
+
+def mymain()
+    print("Creating HTTP server...")
+    
+    # 创建服务器
+    server = http_native.meteor_http_server_create()
+    print("Server created!")
+    
+    # 设置地址和端口
+    http_native.meteor_http_server_set_host(server, "127.0.0.1")
+    http_native.meteor_http_server_set_port(server, 9999)
+    print("Server configured for 127.0.0.1:9999")
+    
+    # 绑定
+    result = http_native.meteor_http_server_bind(server)
+    print("Bind result:")
+    print(result)
+    
+    print("Destroying server...")
+    http_native.meteor_http_server_destroy(server)
+    print("Done.")
+
+mymain()

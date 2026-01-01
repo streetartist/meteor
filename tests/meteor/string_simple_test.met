@@ -1,0 +1,6 @@
+# 简单字符串打印测试
+def mymain()
+    simple = "Normal string"
+    print(simple)
+
+mymain()

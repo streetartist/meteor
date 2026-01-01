@@ -1,0 +1,3 @@
+# 简单字符串打印测试 - 全局
+simple = "Normal string"
+print(simple)

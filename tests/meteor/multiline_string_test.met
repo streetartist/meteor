@@ -1,0 +1,12 @@
+# 测试三引号多行字符串
+
+def mymain()
+    text = """Hello
+World
+This is a multiline string!"""
+    print(text)
+    
+    simple = "Normal string"
+    print(simple)
+
+mymain()

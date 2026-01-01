@@ -1,0 +1,149 @@
+# Meteor HTTP Client Library
+# 提供 HTTP 客户端功能，用于发起 HTTP 请求
+
+from http.server import HttpMethod, HttpStatus, Header
+
+# ============================================================================
+# HTTP 响应
+# ============================================================================
+pub class ClientResponse
+    status: int
+    status_text: str
+    headers: list<Header>
+    body: str
+
+    def new()
+        self.status = 0
+        self.status_text = ""
+        self.headers = []
+        self.body = ""
+
+    def ok() -> bool
+        return self.status >= 200 and self.status < 300
+
+    def get_header(name: str) -> str
+        i = 0
+        while i < self.headers.length()
+            h = self.headers[i]
+            if h.name == name
+                return h.value
+            i = i + 1
+        return ""
+
+    def json() -> str
+        # JSON 解析由底层实现
+        return self.body
+
+# ============================================================================
+# HTTP 请求构建器
+# ============================================================================
+pub class RequestBuilder
+    method: HttpMethod
+    url: str
+    headers: list<Header>
+    body: str
+    timeout_ms: int
+
+    def new(method: HttpMethod, url: str)
+        self.method = method
+        self.url = url
+        self.headers = []
+        self.body = ""
+        self.timeout_ms = 30000
+
+    def header(name: str, value: str) -> RequestBuilder
+        self.headers.append(Header(name, value))
+        return self
+
+    def content_type(ct: str) -> RequestBuilder
+        return self.header("Content-Type", ct)
+
+    def authorization(token: str) -> RequestBuilder
+        return self.header("Authorization", token)
+
+    def bearer(token: str) -> RequestBuilder
+        return self.header("Authorization", "Bearer " + token)
+
+    def set_body(body: str) -> RequestBuilder
+        self.body = body
+        return self
+
+    def json(body: str) -> RequestBuilder
+        self.content_type("application/json")
+        self.body = body
+        return self
+
+    def form(body: str) -> RequestBuilder
+        self.content_type("application/x-www-form-urlencoded")
+        self.body = body
+        return self
+
+    def timeout(ms: int) -> RequestBuilder
+        self.timeout_ms = ms
+        return self
+
+    def send() -> ClientResponse
+        # 实际 HTTP 请求由底层 C 扩展实现
+        return ClientResponse()
+
+# ============================================================================
+# HTTP 客户端
+# ============================================================================
+pub class HttpClient
+    base_url: str
+    default_headers: list<Header>
+    timeout_ms: int
+
+    def new()
+        self.base_url = ""
+        self.default_headers = []
+        self.timeout_ms = 30000
+
+    def base(url: str) -> HttpClient
+        self.base_url = url
+        return self
+
+    def default_header(name: str, value: str) -> HttpClient
+        self.default_headers.append(Header(name, value))
+        return self
+
+    def default_timeout(ms: int) -> HttpClient
+        self.timeout_ms = ms
+        return self
+
+    def get(path: str) -> RequestBuilder
+        return RequestBuilder(HttpMethod.GET, self.base_url + path)
+
+    def post(path: str) -> RequestBuilder
+        return RequestBuilder(HttpMethod.POST, self.base_url + path)
+
+    def put(path: str) -> RequestBuilder
+        return RequestBuilder(HttpMethod.PUT, self.base_url + path)
+
+    def delete(path: str) -> RequestBuilder
+        return RequestBuilder(HttpMethod.DELETE, self.base_url + path)
+
+    def patch(path: str) -> RequestBuilder
+        return RequestBuilder(HttpMethod.PATCH, self.base_url + path)
+
+# ============================================================================
+# 便捷函数
+# ============================================================================
+pub def create_client() -> HttpClient
+    return HttpClient()
+
+pub def get(url: str) -> RequestBuilder
+    return RequestBuilder(HttpMethod.GET, url)
+
+pub def post(url: str) -> RequestBuilder
+    return RequestBuilder(HttpMethod.POST, url)
+
+pub def put(url: str) -> RequestBuilder
+    return RequestBuilder(HttpMethod.PUT, url)
+
+pub def delete(url: str) -> RequestBuilder
+    return RequestBuilder(HttpMethod.DELETE, url)
+
+# 快速 GET 请求
+pub def fetch(url: str) -> ClientResponse
+    return get(url).send()

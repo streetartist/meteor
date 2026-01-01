@@ -1,0 +1,29 @@
+# 简单 HTTP Server 示例程序
+# 测试基本编译功能
+
+def home_handler(req: str, res: str) -> str
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <body>
+        <h1>Hello from Meteor!</h1>
+    </body>
+    </html>
+    """
+    return html
+
+def hello_handler(req: str, res: str) -> str
+    return "Hello World!"
+
+def mymain()
+    print("========================================")
+    print("   Meteor HTTP Server Demo")
+    print("========================================")
+    
+    msg = home_handler("test", "test")
+    print(msg)
+    
+    msg2 = hello_handler("test", "test")
+    print(msg2)
+
+mymain()

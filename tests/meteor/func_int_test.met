@@ -1,0 +1,6 @@
+# 函数内的整数测试
+def mymain()
+    x = 42
+    print(x)
+
+mymain()

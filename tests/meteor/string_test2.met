@@ -1,0 +1,6 @@
+# This is a test comment
+def mymain()
+    simple = "Normal string"
+    print(simple)
+
+mymain()

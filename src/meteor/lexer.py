@@ -97,13 +97,19 @@ class Lexer(object):
             shouldIndent = True
 
         spaces = 0
-        while self.current_char is not None and self.current_char.isspace():
+        while self.current_char is not None and self.current_char in ' \t':
             self.next_char()
             self.reset_word()
             spaces += 1
             if spaces == 4 and shouldIndent:
                 spaces = 0
                 self.increment_indent_level()
+
+        # Handle blank lines (lines with only spaces/tabs)
+        # If we hit a newline after counting indentation, this is an empty line - skip it
+        if self.current_char == '\n' and shouldIndent:
+            # This is an empty line, reset and don't check indentation
+            return
 
         if spaces != 0 and shouldIndent:
             error('file={} line={}: Indentation is locked to 4 spaces, found {} instead'.format(
@@ -114,10 +120,8 @@ class Lexer(object):
             self.next_char()
             if self.current_char is None:
                 return self.eof()
-        self.eat_newline()
-        if self.current_char == '#':
-            self.skip_comment()
-
+        # Don't consume the newline - let it be returned as a token
+        # This ensures proper NEWLINE tokens after inline comments like "OK  # 200"
         return None
 
     def increment_line_num(self) -> None:
@@ -185,22 +189,48 @@ class Lexer(object):
         elif self.current_char == '\t':
             self.skip_indent()
 
-        if self.current_char.isspace():
+        if self.current_char in ' \t':
             self.skip_whitespace()
+
+        # After skipping whitespace, check if we're now at a newline (blank line case)
+        if self.current_char == '\n':
+            return self.eat_newline()
 
         if self.current_char == '#':
             self.skip_comment()
             return self.get_next_token()
 
         if self.current_char == '"':
-            self.next_char()
-            while self.current_char != '"':
-                if self.current_char == '\\' and self.peek(1) == '"':
+            # Check for triple-quoted string """..."""
+            if self.peek(1) == '"' and self.peek(2) == '"':
+                self.next_char()  # skip first "
+                self.next_char()  # skip second "
+                self.next_char()  # skip third "
+                # Read until closing """
+                while True:
+                    if self.current_char == '"' and self.peek(1) == '"' and self.peek(2) == '"':
+                        self.next_char()  # skip first "
+                        self.next_char()  # skip second "
+                        self.next_char()  # skip third "
+                        break
+                    if self.current_char == '\n':
+                        self.increment_line_num()
+                        self.reset_indent_level()
+                    self.word += self.current_char
                     self.next_char()
-                self.word += self.current_char
+                # After closing """, skip any remaining whitespace on this line (but not newline)
+                while self.current_char is not None and self.current_char in ' \t':
+                    self.next_char()
+                return Token(STRING, self.reset_word(), self.line_num, self.indent_level)
+            else:
                 self.next_char()
-            self.next_char()
-            return Token(STRING, self.reset_word(), self.line_num, self.indent_level)
+                while self.current_char != '"':
+                    if self.current_char == '\\' and self.peek(1) == '"':
+                        self.next_char()
+                    self.word += self.current_char
+                    self.next_char()
+                self.next_char()
+                return Token(STRING, self.reset_word(), self.line_num, self.indent_level)
 
         if self.current_char == "'":
             self.next_char()
@@ -296,7 +326,7 @@ class Lexer(object):
             self.next_char()
             return Token(ESCAPE, '\\', line_num, self.indent_level)
 
-        raise SyntaxError('Unknown character')
+        raise SyntaxError(f'Unknown character: {repr(self.current_char)} at line {self.line_num}')
 
     def analyze(self) -> Iterator[Token]:
         token = self.get_next_token()

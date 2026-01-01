@@ -1,0 +1,65 @@
+# 简化的 HTTP Server 测试
+# 测试基础 C FFI 调用
+
+@include("std/http")
+@link("std/http/http_native")
+import c "http_native.h"
+
+def mymain()
+    print("Creating HTTP server...")
+    
+    # 创建服务器
+    server = http_native.meteor_http_server_create()
+    print("Server created!")
+    
+    # 设置地址和端口
+    http_native.meteor_http_server_set_host(server, "127.0.0.1")
+    http_native.meteor_http_server_set_port(server, 8080)
+    print("Server configured for 127.0.0.1:8080")
+    
+    # 绑定
+    result = http_native.meteor_http_server_bind(server)
+    print("Bind result:")
+    print(result)
+    
+    if result == 0
+        print("Server is now listening on http://127.0.0.1:8080")
+        print("Press Ctrl+C to stop")
+        
+        # 简单地接受一个连接并返回响应
+        print("Waiting for connection...")
+        conn = http_native.meteor_http_server_accept(server)
+        
+        if conn != 0
+            print("Got connection!")
+            
+            # 读取请求
+            req = http_native.meteor_http_connection_read_request(conn)
+            if req != 0
+                path = http_native.meteor_request_get_path(req)
+                print("Request path:")
+                print(path)
+                
+                # 创建响应
+                res = http_native.meteor_http_response_create()
+                http_native.meteor_http_response_set_status(res, 200)
+                http_native.meteor_http_response_set_header(res, "Content-Type", "text/html")
+                
+                body = "<html><body><h1>Hello from Meteor!</h1></body></html>"
+                http_native.meteor_http_response_set_body(res, body, 53)
+                
+                # 发送响应
+                http_native.meteor_http_connection_send_response(conn, res)
+                http_native.meteor_http_response_free(res)
+                print("Response sent!")
+            
+            http_native.meteor_http_connection_close(conn)
+        
+        http_native.meteor_http_server_stop(server)
+    else
+        print("Failed to bind server!")
+    
+    http_native.meteor_http_server_destroy(server)
+    print("Done.")
+
+mymain()

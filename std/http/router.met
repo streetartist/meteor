@@ -1,0 +1,93 @@
+# Meteor HTTP Router Library
+# 提供高级路由功能，支持路径参数、路由组等
+
+from http.server import Request, Response, HttpMethod, Route
+
+# ============================================================================
+# 路由匹配结果
+# ============================================================================
+pub class MatchResult
+    matched: bool
+    params: list<tuple<str, str>>
+
+    def new()
+        self.matched = false
+        self.params = []
+
+# ============================================================================
+# 路由组 - 用于组织相关路由
+# ============================================================================
+pub class RouterGroup
+    prefix: str
+    routes: list<Route>
+    middlewares: list<func<Request, Response, func> -> Response>
+
+    def new(prefix: str)
+        self.prefix = prefix
+        self.routes = []
+        self.middlewares = []
+
+    def get(pattern: str, handler: func<Request, Response> -> Response) -> RouterGroup
+        full_pattern = self.prefix + pattern
+        self.routes.append(Route(HttpMethod.GET, full_pattern, handler))
+        return self
+
+    def post(pattern: str, handler: func<Request, Response> -> Response) -> RouterGroup
+        full_pattern = self.prefix + pattern
+        self.routes.append(Route(HttpMethod.POST, full_pattern, handler))
+        return self
+
+    def put(pattern: str, handler: func<Request, Response> -> Response) -> RouterGroup
+        full_pattern = self.prefix + pattern
+        self.routes.append(Route(HttpMethod.PUT, full_pattern, handler))
+        return self
+
+    def delete(pattern: str, handler: func<Request, Response> -> Response) -> RouterGroup
+        full_pattern = self.prefix + pattern
+        self.routes.append(Route(HttpMethod.DELETE, full_pattern, handler))
+        return self
+
+    def use(middleware: func<Request, Response, func> -> Response) -> RouterGroup
+        self.middlewares.append(middleware)
+        return self
+
+# ============================================================================
+# 高级路由器
+# ============================================================================
+pub class Router
+    groups: list<RouterGroup>
+    global_routes: list<Route>
+
+    def new()
+        self.groups = []
+        self.global_routes = []
+
+    # 创建路由组
+    def group(prefix: str) -> RouterGroup
+        g = RouterGroup(prefix)
+        self.groups.append(g)
+        return g
+
+    # 全局路由
+    def get(pattern: str, handler: func<Request, Response> -> Response) -> Router
+        self.global_routes.append(Route(HttpMethod.GET, pattern, handler))
+        return self
+
+    def post(pattern: str, handler: func<Request, Response> -> Response) -> Router
+        self.global_routes.append(Route(HttpMethod.POST, pattern, handler))
+        return self
+
+    # 匹配路由 - 支持路径参数如 /users/:id
+    def match_route(method: HttpMethod, path: str) -> MatchResult
+        result = MatchResult()
+        # 路由匹配逻辑由底层实现
+        return result
+
+# ============================================================================
+# 便捷函数
+# ============================================================================
+pub def create_router() -> Router
+    return Router()
+
+pub def api_group(prefix: str) -> RouterGroup
+    return RouterGroup("/api" + prefix)

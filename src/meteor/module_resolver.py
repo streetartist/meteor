@@ -37,9 +37,13 @@ class ModuleResolver:
         self.project_root = os.path.abspath(project_root)
         self.search_paths = [self.project_root]
 
-        # Add standard library path (parent of std/)
+        # Add standard library path (std/ directory)
         meteor_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         meteor_base = os.path.join(meteor_root, '..')
+        std_path = os.path.join(meteor_base, 'std')
+        if os.path.isdir(std_path):
+            self.search_paths.append(os.path.abspath(std_path))
+        # Also add the base for other searches
         if os.path.isdir(os.path.join(meteor_base, 'std')):
             self.search_paths.append(os.path.abspath(meteor_base))
 

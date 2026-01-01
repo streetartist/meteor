@@ -1,0 +1,3 @@
+# 简单字符串测试 - 无函数调用
+s = "Hello World"
+print(s)

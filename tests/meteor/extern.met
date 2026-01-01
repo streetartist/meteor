@@ -1,0 +1,2 @@
+extern abs(x: int) -> int # from C's stdlib
+print(abs(-5.0 as int))

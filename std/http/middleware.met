@@ -1,0 +1,158 @@
+# Meteor HTTP Middleware Library
+# 提供常用的中间件实现
+
+from http.server import Request, Response, HttpStatus, Header
+
+# ============================================================================
+# 日志中间件
+# ============================================================================
+pub class LoggerMiddleware
+    enabled: bool
+
+    def new()
+        self.enabled = true
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        if self.enabled
+            print("[LOG] " + req.path)
+        return next()
+
+pub def logger() -> LoggerMiddleware
+    return LoggerMiddleware()
+
+# ============================================================================
+# CORS 中间件 - 跨域资源共享
+# ============================================================================
+pub class CorsMiddleware
+    allow_origin: str
+    allow_methods: str
+    allow_headers: str
+    max_age: int
+
+    def new()
+        self.allow_origin = "*"
+        self.allow_methods = "GET, POST, PUT, DELETE, OPTIONS"
+        self.allow_headers = "Content-Type, Authorization"
+        self.max_age = 86400
+
+    def origin(origin: str) -> CorsMiddleware
+        self.allow_origin = origin
+        return self
+
+    def methods(methods: str) -> CorsMiddleware
+        self.allow_methods = methods
+        return self
+
+    def headers(headers: str) -> CorsMiddleware
+        self.allow_headers = headers
+        return self
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        res.set_header("Access-Control-Allow-Origin", self.allow_origin)
+        res.set_header("Access-Control-Allow-Methods", self.allow_methods)
+        res.set_header("Access-Control-Allow-Headers", self.allow_headers)
+        return next()
+
+pub def cors() -> CorsMiddleware
+    return CorsMiddleware()
+
+# ============================================================================
+# 认证中间件
+# ============================================================================
+pub class AuthMiddleware
+    token_header: str
+    validate_func: func<str> -> bool
+
+    def new(validate: func<str> -> bool)
+        self.token_header = "Authorization"
+        self.validate_func = validate
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        token = req.get_header(self.token_header)
+        if token == ""
+            res.status = HttpStatus.Unauthorized
+            res.json('{"error": "Missing authorization token"}')
+            return res
+        if not self.validate_func(token)
+            res.status = HttpStatus.Forbidden
+            res.json('{"error": "Invalid token"}')
+            return res
+        return next()
+
+pub def auth(validate: func<str> -> bool) -> AuthMiddleware
+    return AuthMiddleware(validate)
+
+# ============================================================================
+# 速率限制中间件
+# ============================================================================
+pub class RateLimitMiddleware
+    max_requests: int
+    window_seconds: int
+
+    def new(max_req: int, window: int)
+        self.max_requests = max_req
+        self.window_seconds = window
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        # 实际速率限制逻辑需要存储层支持
+        return next()
+
+pub def rate_limit(max_req: int, window: int) -> RateLimitMiddleware
+    return RateLimitMiddleware(max_req, window)
+
+# ============================================================================
+# 压缩中间件
+# ============================================================================
+pub class CompressionMiddleware
+    min_size: int  # 最小压缩大小（字节）
+
+    def new()
+        self.min_size = 1024
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        result = next()
+        # 压缩逻辑由底层实现
+        return result
+
+pub def compression() -> CompressionMiddleware
+    return CompressionMiddleware()
+
+# ============================================================================
+# 错误处理中间件
+# ============================================================================
+pub class ErrorHandlerMiddleware
+    debug: bool
+
+    def new()
+        self.debug = false
+
+    def enable_debug() -> ErrorHandlerMiddleware
+        self.debug = true
+        return self
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        # 错误处理由 try-catch 实现
+        return next()
+
+pub def error_handler() -> ErrorHandlerMiddleware
+    return ErrorHandlerMiddleware()
+
+# ============================================================================
+# 请求体解析中间件
+# ============================================================================
+pub class BodyParserMiddleware
+    max_size: int  # 最大请求体大小
+
+    def new()
+        self.max_size = 1048576  # 1MB
+
+    def limit(size: int) -> BodyParserMiddleware
+        self.max_size = size
+        return self
+
+    def handle(req: Request, res: Response, next: func) -> Response
+        # 请求体解析由底层实现
+        return next()
+
+pub def body_parser() -> BodyParserMiddleware
+    return BodyParserMiddleware()

@@ -1,0 +1,339 @@
+# Meteor HTTP Server Library
+# 提供 HTTP 服务器功能，用于构建 Web 应用
+
+@include("std/http")
+@link("std/http/http_native")
+import c "http_native.h"
+
+# ============================================================================
+# HTTP 方法枚举
+# ============================================================================
+pub enum HttpMethod
+    GET
+    POST
+    PUT
+    DELETE
+    PATCH
+    HEAD
+    OPTIONS
+
+# ============================================================================
+# HTTP 状态码枚举
+# ============================================================================
+pub enum HttpStatus
+    OK                  # 200
+    Created             # 201
+    NoContent           # 204
+    MovedPermanently    # 301
+    Found               # 302
+    NotModified         # 304
+    BadRequest          # 400
+    Unauthorized        # 401
+    Forbidden           # 403
+    NotFound            # 404
+    MethodNotAllowed    # 405
+    InternalError       # 500
+    NotImplemented      # 501
+    BadGateway          # 502
+    ServiceUnavailable  # 503
+
+# ============================================================================
+# 请求头
+# ============================================================================
+pub class Header
+    name: str
+    value: str
+
+    def new(name: str, value: str)
+        self.name = name
+        self.value = value
+
+# ============================================================================
+# HTTP 请求
+# ============================================================================
+pub class Request
+    method: HttpMethod
+    path: str
+    query: str
+    body: str
+    headers: list<Header>
+    params: list<Header>  # 路由参数，复用 Header 结构
+
+    def new()
+        self.method = HttpMethod.GET
+        self.path = "/"
+        self.query = ""
+        self.body = ""
+        self.headers = []
+        self.params = []
+
+    def get_header(name: str) -> str
+        i = 0
+        while i < self.headers.length()
+            h = self.headers[i]
+            if h.name == name
+                return h.value
+            i = i + 1
+        return ""
+
+    def get_param(name: str) -> str
+        i = 0
+        while i < self.params.length()
+            p = self.params[i]
+            if p.name == name
+                return p.value
+            i = i + 1
+        return ""
+
+    def content_type() -> str
+        return self.get_header("Content-Type")
+
+    def is_json() -> bool
+        ct = self.content_type()
+        return ct == "application/json"
+
+# ============================================================================
+# HTTP 响应
+# ============================================================================
+pub class Response
+    status: HttpStatus
+    headers: list<Header>
+    body: str
+
+    def new()
+        self.status = HttpStatus.OK
+        self.headers = []
+        self.body = ""
+
+    def set_status(status: HttpStatus) -> Response
+        self.status = status
+        return self
+
+    def set_header(name: str, value: str) -> Response
+        self.headers.append(Header(name, value))
+        return self
+
+    def set_body(body: str) -> Response
+        self.body = body
+        return self
+
+    def content_type(ct: str) -> Response
+        return self.set_header("Content-Type", ct)
+
+    # 便捷方法：发送 HTML
+    def html(content: str) -> Response
+        self.content_type("text/html; charset=utf-8")
+        self.body = content
+        return self
+
+    # 便捷方法：发送纯文本
+    def text(content: str) -> Response
+        self.content_type("text/plain; charset=utf-8")
+        self.body = content
+        return self
+
+    # 便捷方法：发送 JSON
+    def json(content: str) -> Response
+        self.content_type("application/json")
+        self.body = content
+        return self
+
+    # 便捷方法：重定向
+    def redirect(url: str) -> Response
+        self.status = HttpStatus.Found
+        self.set_header("Location", url)
+        return self
+
+    # 便捷方法：404 错误
+    def not_found() -> Response
+        self.status = HttpStatus.NotFound
+        self.html("<h1>404 Not Found</h1>")
+        return self
+
+    # 便捷方法：500 错误
+    def internal_error(message: str) -> Response
+        self.status = HttpStatus.InternalError
+        self.html("<h1>500 Internal Server Error</h1><p>" + message + "</p>")
+        return self
+
+# ============================================================================
+# 路由处理器类型
+# ============================================================================
+pub class Route
+    method: HttpMethod
+    pattern: str
+    handler: func<Request, Response> -> Response
+
+    def new(method: HttpMethod, pattern: str, handler: func<Request, Response> -> Response)
+        self.method = method
+        self.pattern = pattern
+        self.handler = handler
+
+# ============================================================================
+# 中间件类型
+# ============================================================================
+pub class Middleware
+    handler: func<Request, Response, func> -> Response
+
+    def new(handler: func<Request, Response, func> -> Response)
+        self.handler = handler
+
+# ============================================================================
+# HTTP 服务器
+# ============================================================================
+pub class Server
+    native_handle: c.MeteorHttpServer
+    host: str
+    port: int
+    routes: list<Route>
+    middlewares: list<Middleware>
+    static_dir: str
+
+    def new()
+        self.native_handle = c.meteor_http_server_create()
+        self.host = "127.0.0.1"
+        self.port = 8080
+        self.routes = []
+        self.middlewares = []
+        self.static_dir = ""
+
+    # 设置监听地址
+    def bind(host: str, port: int) -> Server
+        self.host = host
+        self.port = port
+        c.meteor_http_server_set_host(self.native_handle, host)
+        c.meteor_http_server_set_port(self.native_handle, port)
+        return self
+
+    # 注册 GET 路由
+    def get(pattern: str, handler: func<Request, Response> -> Response) -> Server
+        self.routes.append(Route(HttpMethod.GET, pattern, handler))
+        return self
+
+    # 注册 POST 路由
+    def post(pattern: str, handler: func<Request, Response> -> Response) -> Server
+        self.routes.append(Route(HttpMethod.POST, pattern, handler))
+        return self
+
+    # 注册 PUT 路由
+    def put(pattern: str, handler: func<Request, Response> -> Response) -> Server
+        self.routes.append(Route(HttpMethod.PUT, pattern, handler))
+        return self
+
+    # 注册 DELETE 路由
+    def delete(pattern: str, handler: func<Request, Response> -> Response) -> Server
+        self.routes.append(Route(HttpMethod.DELETE, pattern, handler))
+        return self
+
+    # 注册任意方法的路由
+    def route(method: HttpMethod, pattern: str, handler: func<Request, Response> -> Response) -> Server
+        self.routes.append(Route(method, pattern, handler))
+        return self
+
+    # 添加中间件
+    def use(middleware: Middleware) -> Server
+        self.middlewares.append(middleware)
+        return self
+
+    # 设置静态文件目录
+    def static(dir: str) -> Server
+        self.static_dir = dir
+        c.meteor_http_server_set_static_dir(self.native_handle, dir)
+        return self
+
+    # 启动服务器
+    def listen() -> int
+        c.meteor_http_server_bind(self.native_handle)
+        
+        while true
+            conn = c.meteor_http_server_accept(self.native_handle)
+            if conn == null
+                continue
+                
+            req_ptr = c.meteor_http_connection_read_request(conn)
+            if req_ptr != null
+                # Convert to Meteor Request
+                req = Request()
+                
+                # Method
+                m_int = c.meteor_request_get_method(req_ptr)
+                if m_int == 0; req.method = HttpMethod.GET
+                else if m_int == 1; req.method = HttpMethod.POST
+                else if m_int == 2; req.method = HttpMethod.PUT
+                else if m_int == 3; req.method = HttpMethod.DELETE
+                
+                req.path = c.meteor_request_get_path(req_ptr)
+                req.query = c.meteor_request_get_query(req_ptr)
+                req.body = c.meteor_request_get_body(req_ptr)
+                
+                # Headers
+                count = c.meteor_request_get_header_count(req_ptr)
+                i = 0
+                while i < count
+                    name = c.meteor_request_get_header_name_at(req_ptr, i)
+                    val = c.meteor_request_get_header_value_at(req_ptr, i)
+                    req.headers.append(Header(name, val))
+                    i = i + 1
+                
+                res = Response()
+                
+                # Dispatch
+                handled = false
+                i = 0
+                while i < self.routes.length()
+                    route = self.routes[i]
+                    # Simple match (TODO: regex/params)
+                    if route.pattern == req.path
+                        # TODO: Check method
+                        route.handler(req, res)
+                        handled = true
+                        break
+                    i = i + 1
+                
+                if not handled
+                    res.not_found()
+                
+                # Send response
+                res_ptr = c.meteor_http_response_create()
+                
+                # Status
+                status_code = 200
+                if res.status == HttpStatus.OK; status_code = 200
+                else if res.status == HttpStatus.NotFound; status_code = 404
+                else if res.status == HttpStatus.InternalError; status_code = 500
+                # ... others ...
+                
+                c.meteor_http_response_set_status(res_ptr, status_code)
+                
+                # Headers
+                i = 0
+                while i < res.headers.length()
+                    h = res.headers[i]
+                    c.meteor_http_response_set_header(res_ptr, h.name, h.value)
+                    i = i + 1
+                
+                # Body
+                c.meteor_http_response_set_body(res_ptr, res.body, res.body.length())
+                
+                c.meteor_http_connection_send_response(conn, res_ptr)
+                c.meteor_http_response_free(res_ptr)
+            
+            c.meteor_http_connection_close(conn)
+        return 0
+
+    # 停止服务器
+    def stop()
+        c.meteor_http_server_stop(self.native_handle)
+        print("🛑 Server stopped")
+
+# ============================================================================
+# 便捷工厂函数
+# ============================================================================
+pub def create_server() -> Server
+    return Server()
+
+pub def create_request() -> Request
+    return Request()
+
+pub def create_response() -> Response
+    return Response()

@@ -1,0 +1,6 @@
+def mymain()
+    server = 123
+    server.bind()
+    server.get("/", home)
+
+mymain()

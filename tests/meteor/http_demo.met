@@ -1,0 +1,85 @@
+# HTTP Server 示例程序
+# 演示 Meteor HTTP 库的基本用法
+
+@include("std/http")
+@link("std/http/http_native")
+import http.server
+
+# 首页处理器
+def home_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Meteor HTTP Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+            h1 { color: #6a5acd; }
+            .links { margin-top: 20px; }
+            .links a { margin-right: 15px; color: #4169e1; }
+            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 Welcome to Meteor HTTP Server!</h1>
+        <p>This is a demo page served by Meteor's HTTP library.</p>
+        <div class="links">
+            <h3>Try these endpoints:</h3>
+            <ul>
+                <li><a href="/hello">GET /hello</a> - Simple text response</li>
+                <li><a href="/api/info">GET /api/info</a> - JSON API response</li>
+                <li><a href="/api/time">GET /api/time</a> - Current time (JSON)</li>
+            </ul>
+        </div>
+        <p><code>Powered by Meteor Language</code></p>
+    </body>
+    </html>
+    """
+    return res.html(html)
+
+# Hello 处理器
+def hello_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    return res.text("Hello from Meteor! 🌟")
+
+# API Info 处理器
+def api_info_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    json_data = '{"name": "Meteor HTTP Server", "version": "1.0.0", "status": "running"}'
+    return res.json(json_data)
+
+# API Time 处理器
+def api_time_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    # 注意：实际时间需要调用系统函数，这里用占位符
+    json_data = '{"timestamp": "2026-01-01T12:00:00Z", "message": "Current server time"}'
+    return res.json(json_data)
+
+# 主函数
+def mymain()
+    print("========================================")
+    print("   Meteor HTTP Server Demo")
+    print("========================================")
+    
+    # 创建服务器
+    server = http.server.create_server()
+    
+    # 配置服务器
+    server.bind("127.0.0.1", 8080)
+    
+    # 注册路由
+    server.get("/", home_handler)
+    server.get("/hello", hello_handler)
+    server.get("/api/info", api_info_handler)
+    server.get("/api/time", api_time_handler)
+    
+    print("")
+    print("Routes registered:")
+    print("  GET /         -> Home page")
+    print("  GET /hello    -> Text greeting")
+    print("  GET /api/info -> Server info JSON")
+    print("  GET /api/time -> Time JSON")
+    print("")
+    
+    # 启动服务器
+    server.listen()
+
+# 运行
+mymain()

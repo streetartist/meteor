@@ -147,6 +147,7 @@ class ModuleSymbol(Symbol):
         self.is_loaded = False          # Whether module has been loaded
         self.accessed = False
         self.val_assigned = False
+        self.read_only = True           # Modules are read-only
 
     def __str__(self) -> str:
         return '<module {}>'.format(self.name)

@@ -1,0 +1,10 @@
+# 测试字符串作为函数参数和返回值
+
+def echo(s: str) -> str
+    return s
+
+def mymain()
+    result = echo("Hello World")
+    print(result)
+
+mymain()

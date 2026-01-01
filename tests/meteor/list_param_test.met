@@ -1,0 +1,6 @@
+# Test list as parameter
+def list_demo(x: list<int>) -> int
+    return 4
+
+basic_list = [1,2,3]
+print(list_demo(basic_list))

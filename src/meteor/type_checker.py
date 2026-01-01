@@ -496,6 +496,15 @@ class Preprocessor(NodeVisitor):
             return func.type
 
     def visit_methodcall(self, node):  # TODO: Finish this, make Symbols for Classes and Methods
+        # Check if this is a C namespace call (e.g., c.meteor_http_server_create)
+        obj_sym = self.search_scopes(node.obj)
+        if obj_sym is not None and hasattr(obj_sym, 'is_c_namespace') and obj_sym.is_c_namespace:
+            # This is a C function call - return any type since we don't know the exact return type
+            # Type checking will be done at code generation time
+            for arg in node.arguments:
+                self.visit(arg)
+            return self.search_scopes(ANY)
+        
         # TODO: hardcoded error for tuple methods, thing of a better way to do it
         if isinstance(self.search_scopes(node.obj), CollectionSymbol) and self.search_scopes(node.obj).type.name == TUPLE:
             if node.name in ('set', 'append'):
@@ -586,8 +595,17 @@ class Preprocessor(NodeVisitor):
         pass  # TODO: implement module import
 
     def visit_cimport(self, node):
-        """Handle C header import - functions registered at code generation."""
-        pass  # C functions are registered during code generation
+        """Handle C header import - register the C namespace for type checking."""
+        # Register the C namespace so visit_methodcall can identify C function calls
+        import os
+        namespace = node.namespace
+        if namespace is None:
+            namespace = os.path.splitext(os.path.basename(node.header_file))[0]
+        # Create a special marker for C namespace
+        c_namespace_marker = VarSymbol(namespace, self.search_scopes(ANY))
+        c_namespace_marker.val_assigned = True
+        c_namespace_marker.is_c_namespace = True  # Special marker
+        self.define(namespace, c_namespace_marker)
 
     def visit_enumdeclaration(self, node):
         sym = EnumSymbol(node.name, node.fields)
@@ -795,11 +813,18 @@ class Preprocessor(NodeVisitor):
         """Type check an import statement.
 
         Creates a ModuleSymbol for the imported module.
+        Uses the full module path as the symbol name to avoid conflicts with local variables.
+        For 'import http.server', we register 'http' as the top-level module symbol.
         """
-        # Use alias if provided, otherwise use module name
-        name = node.alias if node.alias else node.module_name.split('.')[-1]
-        sym = ModuleSymbol(name, file_path=None)
-        self.define(name, sym)
+        # For 'import http.server', register 'http' as the top-level namespace
+        # This way 'server' won't conflict with local variable names
+        parts = node.module_name.split('.')
+        top_level_name = node.alias if node.alias else parts[0]
+
+        # Only define if not already defined (avoid redefinition)
+        if not self.search_scopes(top_level_name):
+            sym = ModuleSymbol(top_level_name, file_path=None)
+            self.define(top_level_name, sym)
 
     def visit_fromimport(self, node):
         """Type check a from...import statement.
