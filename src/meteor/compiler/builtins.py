@@ -238,11 +238,19 @@ def dynamic_array_init(self, dyn_array_ptr, array_type):
     mem_alloc = builder.bitcast(mem_alloc, array_type.as_pointer())
     builder.store(mem_alloc, data_ptr)
 
-    # Initialize header strong_rc to 1
-    from meteor.compiler.base import HEADER_STRONG_RC
+    # Initialize header strong_rc to 1 and type_tag
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_TYPE_TAG, TYPE_TAG_STR, TYPE_TAG_LIST
     header_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_HEADER], inbounds=True)
     rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)], inbounds=True)
     builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+
+    # Set type_tag: TYPE_TAG_STR for i64.array (strings), TYPE_TAG_LIST for other arrays
+    type_tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)], inbounds=True)
+    # Check if this is a string array (i64.array) or other array type
+    if type_name == 'i64':
+        builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_STR), type_tag_ptr)
+    else:
+        builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_LIST), type_tag_ptr)
 
     builder.branch(dyn_array_init_exit)
 
