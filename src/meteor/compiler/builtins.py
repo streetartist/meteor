@@ -167,6 +167,7 @@ def create_dynamic_array_methods(self, array_type):
     dynamic_array_get(self, array_ptr, array_type)
     dynamic_array_set(self, array_ptr, array_type)
     dynamic_array_length(self, array_ptr, array_type)
+    dynamic_array_destroy(self, array_ptr, array_type, type_name)
 
     array_types.append(array_type)
 
@@ -503,6 +504,127 @@ def dynamic_array_length(self, dyn_array_ptr, array_type):
 # count(item)
 # sort(key=None, reverse=False)
 # reverse()
+
+
+def dynamic_array_destroy(self, dyn_array_ptr, array_type, type_name):
+    """Generate destructor for array that releases elements if they are managed types."""
+    from meteor.compiler.base import OBJECT_HEADER
+
+    # Create destroy function: void TypeName.array.destroy(TypeName.array* self)
+    func_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr])
+    func_name = '{}.array.destroy'.format(type_name)
+    func = ir.Function(self.module, func_type, func_name)
+    func.linkage = 'internal'
+    func.args[0].name = 'self'
+
+    entry = func.append_basic_block('entry')
+    builder = ir.IRBuilder(entry)
+    self.builder = builder
+
+    array_ptr = builder.alloca(dyn_array_ptr)
+    builder.store(func.args[0], array_ptr)
+
+    # Check if element type is a managed type (pointer to class or array)
+    is_managed_element = False
+    if isinstance(array_type, ir.PointerType):
+        pointee = array_type.pointee
+        if hasattr(pointee, 'name'):
+            # Check for class types or nested arrays
+            if hasattr(pointee, 'methods') or pointee.name.endswith('.array'):
+                is_managed_element = True
+            # Also check if we can find the class definition
+            class_def = self.search_scopes(pointee.name)
+            if class_def is not None and hasattr(class_def, 'methods'):
+                is_managed_element = True
+
+    exit_block = func.append_basic_block('exit')
+
+    if is_managed_element:
+        # Need to release each element before freeing data
+        loop_cond = func.append_basic_block('loop_cond')
+        loop_body = func.append_basic_block('loop_body')
+        free_data = func.append_basic_block('free_data')
+
+        # Get size and data pointer
+        arr = builder.load(array_ptr)
+        size_ptr = builder.gep(arr, [zero_32, ARRAY_SIZE], inbounds=True)
+        size = builder.load(size_ptr)
+        data_ptr_ptr = builder.gep(arr, [zero_32, ARRAY_DATA], inbounds=True)
+        data_ptr = builder.load(data_ptr_ptr)
+
+        # Loop index
+        i_ptr = builder.alloca(type_map[INT])
+        builder.store(zero, i_ptr)
+        builder.branch(loop_cond)
+
+        # Loop condition: i < size
+        builder.position_at_end(loop_cond)
+        i = builder.load(i_ptr)
+        cond = builder.icmp_signed('<', i, size)
+        builder.cbranch(cond, loop_body, free_data)
+
+        # Loop body: release element[i]
+        builder.position_at_end(loop_body)
+        i = builder.load(i_ptr)
+        elem_ptr = builder.gep(data_ptr, [i], inbounds=True)
+        elem = builder.load(elem_ptr)
+
+        # Null check before release
+        null_ptr = ir.Constant(array_type, None)
+        is_not_null = builder.icmp_unsigned('!=', elem, null_ptr)
+
+        release_block = func.append_basic_block('release_elem')
+        next_block = func.append_basic_block('next_iter')
+
+        builder.cbranch(is_not_null, release_block, next_block)
+
+        builder.position_at_end(release_block)
+        # Call meteor_release on element
+        release_func = self.module.get_global('meteor_release')
+        if release_func:
+            header_struct = self.search_scopes(OBJECT_HEADER)
+            if header_struct:
+                pointee = array_type.pointee
+                # For class types, header is 16 bytes before data
+                if hasattr(pointee, 'methods') or (hasattr(pointee, 'name') and
+                    self.search_scopes(pointee.name) is not None and
+                    hasattr(self.search_scopes(pointee.name), 'methods')):
+                    i8_ptr = builder.bitcast(elem, ir.IntType(8).as_pointer())
+                    header_ptr = builder.gep(i8_ptr, [ir.Constant(type_map[INT], -16)])
+                    header_ptr = builder.bitcast(header_ptr, header_struct.as_pointer())
+                else:
+                    # For arrays, header is at offset 0
+                    header_ptr = builder.bitcast(elem, header_struct.as_pointer())
+                builder.call(release_func, [header_ptr])
+        builder.branch(next_block)
+
+        builder.position_at_end(next_block)
+        next_i = builder.add(i, one)
+        builder.store(next_i, i_ptr)
+        builder.branch(loop_cond)
+
+        # Free data pointer
+        builder.position_at_end(free_data)
+        free_func = self.module.get_global('free')
+        if free_func:
+            data_i8 = builder.bitcast(data_ptr, type_map[INT8].as_pointer())
+            builder.call(free_func, [data_i8])
+        builder.branch(exit_block)
+    else:
+        # No managed elements, just free data
+        arr = builder.load(array_ptr)
+        data_ptr_ptr = builder.gep(arr, [zero_32, ARRAY_DATA], inbounds=True)
+        data_ptr = builder.load(data_ptr_ptr)
+        free_func = self.module.get_global('free')
+        if free_func:
+            data_i8 = builder.bitcast(data_ptr, type_map[INT8].as_pointer())
+            builder.call(free_func, [data_i8])
+        builder.branch(exit_block)
+
+    builder.position_at_end(exit_block)
+    builder.ret_void()
+
+    self.define(func_name, func)
 
 
 def define_print(self, dyn_array_ptr):

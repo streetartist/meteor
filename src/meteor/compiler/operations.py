@@ -413,6 +413,14 @@ def binary_op(self, node):
         # Handle string operations
         if op == PLUS:
             # String concatenation
+            # Retain variable references before concat (they will be released in string_concat)
+            # Check if left/right are from variable loads (not temporaries)
+            left_is_var = hasattr(left, 'opname') and left.opname == 'load'
+            right_is_var = hasattr(right, 'opname') and right.opname == 'load'
+            if left_is_var:
+                self.rc_retain(left)
+            if right_is_var:
+                self.rc_retain(right)
             return string_concat(self, left, right)
         elif op == EQUALS:
             # String equality comparison
@@ -787,7 +795,11 @@ def string_concat(self, left, right):
     self.builder.branch(right_loop_cond)
     
     self.builder.position_at_end(right_loop_end)
-    
+
+    # Release input strings (temporaries will be freed, variables were retained before)
+    self.rc_release(left)
+    self.rc_release(right)
+
     return result
 
 

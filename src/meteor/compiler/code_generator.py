@@ -2126,10 +2126,21 @@ class CodeGenerator(NodeVisitor):
                 is_weak_field = hasattr(obj_type, 'weak_fields') and node.left.field in obj_type.weak_fields
                 if is_weak_field and self.is_managed_type(elem.type.pointee):
                     # Weak field: use weak_retain instead of retain
+                    # Release old value first
+                    old_val = self.builder.load(elem)
+                    null_ptr = ir.Constant(old_val.type, None)
+                    is_not_null = self.builder.icmp_unsigned('!=', old_val, null_ptr)
+                    with self.builder.if_then(is_not_null):
+                        self.rc_weak_release(old_val)
                     self.rc_weak_retain(val)
                     self.builder.store(val, elem)
                 elif self.is_managed_type(elem.type.pointee):
-                    # Strong field: use normal RC
+                    # Strong field: release old value, retain new, then store
+                    old_val = self.builder.load(elem)
+                    null_ptr = ir.Constant(old_val.type, None)
+                    is_not_null = self.builder.icmp_unsigned('!=', old_val, null_ptr)
+                    with self.builder.if_then(is_not_null):
+                        self.rc_release(old_val)
                     self.rc_retain(val)
                     self.builder.store(val, elem)
                 else:
@@ -3650,10 +3661,67 @@ class CodeGenerator(NodeVisitor):
                         self.builder.call(release_func, [header])
                         self.builder.branch(continue_block)
                 else:
-                    # No destructor, just release
-                    header = self.get_object_header(obj_ptr)
-                    self.builder.call(release_func, [header])
-                    self.builder.branch(continue_block)
+                    # Check if this is an array type with elements that need releasing
+                    if hasattr(pointee, 'name') and pointee.name.endswith('.array'):
+                        # Get the element type name from array type name (e.g., "Header.array" -> "Header")
+                        array_type_name = pointee.name
+                        elem_type_name = array_type_name.rsplit('.array', 1)[0]
+
+                        # Check if element type is a managed type (class or nested array)
+                        # Primitive types like i64, i32, etc. don't need element release
+                        elem_is_managed = False
+                        if elem_type_name not in ('i64', 'i32', 'i8', 'u64', 'u32', 'u8', 'f64', 'f32', 'bool'):
+                            elem_type_def = self.search_scopes(elem_type_name)
+                            if elem_type_def is not None and hasattr(elem_type_def, 'methods'):
+                                elem_is_managed = True
+                            elif elem_type_name.endswith('.array'):
+                                elem_is_managed = True
+
+                        if elem_is_managed:
+                            # Get the array destroy function
+                            destroy_func_name = f'{array_type_name}.destroy'
+                            destroy_func = self.module.get_global(destroy_func_name) if destroy_func_name in self.module.globals else None
+
+                            if destroy_func:
+                                # Check RC before calling destructor
+                                header = self.get_object_header(obj_ptr)
+                                rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
+                                rc = self.builder.load(rc_ptr)
+
+                                is_one = self.builder.icmp_unsigned('==', rc, ir.Constant(type_map[UINT32], 1))
+
+                                destroy_block = self.add_block('rc_array_destroy')
+                                release_only_block = self.add_block('rc_array_release_only')
+
+                                self.builder.cbranch(is_one, destroy_block, release_only_block)
+
+                                # Call array destructor before release
+                                self.builder.position_at_end(destroy_block)
+                                self.builder.call(destroy_func, [obj_ptr])
+                                header2 = self.get_object_header(obj_ptr)
+                                self.builder.call(release_func, [header2])
+                                self.builder.branch(continue_block)
+
+                                # Just release without destructor
+                                self.builder.position_at_end(release_only_block)
+                                header3 = self.get_object_header(obj_ptr)
+                                self.builder.call(release_func, [header3])
+                                self.builder.branch(continue_block)
+                            else:
+                                # No destroy function, just release
+                                header = self.get_object_header(obj_ptr)
+                                self.builder.call(release_func, [header])
+                                self.builder.branch(continue_block)
+                        else:
+                            # Primitive element type (like i64 for strings), just release
+                            header = self.get_object_header(obj_ptr)
+                            self.builder.call(release_func, [header])
+                            self.builder.branch(continue_block)
+                    else:
+                        # Not a class or array, just release
+                        header = self.get_object_header(obj_ptr)
+                        self.builder.call(release_func, [header])
+                        self.builder.branch(continue_block)
             else:
                 header = self.get_object_header(obj_ptr)
                 self.builder.call(release_func, [header])
