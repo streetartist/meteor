@@ -27,11 +27,11 @@ echo Please install Visual Studio or MinGW.
 exit /b 1
 
 :msvc
-REM MSVC 编译
-cl /LD /O2 /Fe:http_native.dll http_native.c /link ws2_32.lib
+REM MSVC 编译 - 自动生成 .lib 导入库
+cl /LD /O2 /Fe:http_native.dll http_native.c /link ws2_32.lib /IMPLIB:http_native.lib
 if %ERRORLEVEL% == 0 (
     echo.
-    echo SUCCESS: http_native.dll created!
+    echo SUCCESS: http_native.dll and http_native.lib created!
 ) else (
     echo ERROR: Compilation failed!
     exit /b 1

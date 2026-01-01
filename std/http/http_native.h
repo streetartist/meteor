@@ -156,6 +156,8 @@ EXPORT MeteorHttpResponse* meteor_http_client_request(
 
 // Free response
 EXPORT void meteor_http_response_free(MeteorHttpResponse* response);
+// Free request
+EXPORT void meteor_http_request_free(MeteorHttpRequest* request);
 
 // Destroy client
 EXPORT void meteor_http_client_destroy(MeteorHttpClient client);

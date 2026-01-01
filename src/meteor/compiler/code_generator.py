@@ -11,7 +11,7 @@ import llvmlite.binding as llvm
 from llvmlite import ir
 
 import meteor.compiler.llvmlite_custom
-from meteor.ast import CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation
+from meteor.ast import Collection, CollectionAccess, DotAccess, Input, Str, Var, VarDecl, UnionType, Raise, ErrorPropagation
 from meteor.compiler.base import RET_VAR, type_map
 from meteor.compiler.builtins import (array_types, create_dynamic_array_methods,
                                      define_builtins)
@@ -130,7 +130,9 @@ class CodeGenerator(NodeVisitor):
             mode = param_modes.get(arg.name, 'borrow')
 
             if arg.name == SELF and isinstance(arg.type, ir.PointerType):
-                self.define(arg.name, arg)
+                # Allocate and store self like other parameters
+                # This ensures load(self) returns Response*, not Response
+                self.alloc_define_store_simple(arg, arg.name, arg.type)
             elif mode == 'escape':
                 # Escape mode: retain the argument (it may be stored in heap)
                 self.alloc_define_store(arg, arg.name, arg.type)
@@ -212,50 +214,166 @@ class CodeGenerator(NodeVisitor):
             error("No method as described")
 
     def visit_methodcall(self, node):
+        """Handle method calls, C function calls, and module function calls.
+
+        Cases handled:
+        1. C namespace calls: c.meteor_http_server_create()
+        2. Module function calls: http.server.create_server()
+        3. Method calls on variables: server.listen()
+        4. Method calls on field results: self.headers.length()
+        5. Chain calls: server.bind().get()
+        """
         from meteor.ast import DotAccess
 
-        # Check if this is a module namespace call (e.g., math.vector.add_floats)
-        if isinstance(node.obj, DotAccess):
-            func_name = node.name
-            if func_name in self.module.globals:
-                args = [self.visit(arg) for arg in node.arguments]
-                return self.call(func_name, args)
-            else:
-                error("Unknown function in module: {}".format(func_name))
+        # Case 1: C namespace call (e.g., c.meteor_http_server_create())
+        if node.obj == 'c':
+            return self._call_c_function(node)
 
-        # Check if this is a C namespace call (e.g., math.cos) or module alias call
+        # Case 2: DotAccess object (e.g., http.server.create_server() or self.headers.length())
+        if isinstance(node.obj, DotAccess):
+            return self._handle_dotaccess_methodcall(node)
+
+        # Case 3: Simple variable method call (e.g., server.listen())
         obj = self.search_scopes(node.obj)
         if obj is None:
-            func_name = node.name
-            if func_name in self.module.globals:
+            # Try as direct function call
+            if node.name in self.module.globals:
                 args = [self.visit(arg) for arg in node.arguments]
-                return self.call(func_name, args)
-            else:
-                error("Unknown namespace or variable: {}".format(node.obj))
+                return self.call(node.name, args)
+            error(f"Unknown variable or namespace: {node.obj}")
 
-        # Handle module alias (e.g., mu.abs where mu is imported module)
+        # Case 4: Module alias call (e.g., mu.abs where mu is imported module)
         if isinstance(obj, dict) and '__module__' in obj:
-            func_name = node.name
-            if func_name in self.module.globals:
-                args = [self.visit(arg) for arg in node.arguments]
-                return self.call(func_name, args)
-            else:
-                error("Unknown function '{}' in module".format(func_name))
+            return self._call_module_function(node, obj)
 
-        # Handle _TypedPointerType which doesn't have 'name' attribute
-        pointee = obj.type.pointee
-        if hasattr(pointee, 'name'):
-            type_name = pointee.name
-        else:
-            # Extract type name from string representation
-            type_str = str(pointee)
-            if type_str.startswith('%"'):
-                type_name = type_str.split('"')[1]
-            elif type_str.startswith('%'):
-                type_name = type_str[1:]
-            else:
-                type_name = type_str
-        method = self.search_scopes(type_name + '.' + node.name)
+        # Case 5: Method call on object
+        return self._call_method_on_object(node, obj)
+
+    def _call_c_function(self, node):
+        """Call a C function (e.g., c.meteor_http_server_create())."""
+        func_name = node.name
+        func = self.module.get_global(func_name)
+        if func is None:
+            error(f"C function not found: {func_name}")
+
+        # Convert arguments with type coercion for C interop
+        args = []
+        func_arg_types = func.function_type.args
+        for i, arg_node in enumerate(node.arguments):
+            arg = self.visit(arg_node)
+            # Get expected type if available
+            expected_type = func_arg_types[i] if i < len(func_arg_types) else None
+            if expected_type is not None:
+                arg = self._coerce_c_arg(arg, expected_type)
+            args.append(arg)
+
+        return self.builder.call(func, args)
+
+    def _coerce_c_arg(self, arg, expected_type):
+        """Coerce an argument to match the expected C type."""
+        expected_str = str(expected_type)
+        arg_type_str = str(arg.type)
+
+        # Convert Meteor string to C string if needed
+        if expected_str == 'i8*':
+            if hasattr(arg.type, 'pointee') and hasattr(arg.type.pointee, 'name'):
+                if arg.type.pointee.name == 'i64.array':
+                    return self._convert_meteor_string_to_cstr(arg)
+
+        # Convert integer types
+        if isinstance(expected_type, ir.IntType) and isinstance(arg.type, ir.IntType):
+            if expected_type.width != arg.type.width:
+                if expected_type.width < arg.type.width:
+                    return self.builder.trunc(arg, expected_type)
+                else:
+                    return self.builder.sext(arg, expected_type)
+
+        return arg
+
+    def _handle_dotaccess_methodcall(self, node):
+        """Handle method call on DotAccess result."""
+        from meteor.ast import DotAccess
+
+        # Build full path to check for module function
+        def build_path(n):
+            if isinstance(n, DotAccess):
+                return f"{build_path(n.obj)}.{n.field}"
+            return n
+
+        full_path = build_path(node.obj)
+
+        # Check if it's a C namespace call (e.g., c.something.func())
+        if full_path.startswith('c.'):
+            func_name = node.name
+            func = self.module.get_global(func_name)
+            if func is not None:
+                args = [self.visit(arg) for arg in node.arguments]
+                return self.builder.call(func, args)
+
+        # Check if full path + method is a module function
+        full_func_path = f"{full_path}.{node.name}"
+        func = self.search_scopes(full_func_path)
+        if func is not None and isinstance(func, ir.Function):
+            args = [self.visit(arg) for arg in node.arguments]
+            return self.builder.call(func, args)
+
+        # Check if method exists in module globals
+        if node.name in self.module.globals:
+            func = self.module.get_global(node.name)
+            if isinstance(func, ir.Function):
+                args = [self.visit(arg) for arg in node.arguments]
+                return self.builder.call(func, args)
+
+        # Try to evaluate DotAccess as field access
+        obj = self.visit(node.obj)
+
+        # Handle C namespace marker
+        if isinstance(obj, dict) and obj.get('__c_namespace__'):
+            c_func_name = obj['__name__']
+            func = self.module.get_global(c_func_name)
+            if func is None:
+                error(f"C function not found: {c_func_name}")
+            args = [self.visit(arg) for arg in node.arguments]
+            return self.builder.call(func, args)
+
+        # Handle module dict
+        if isinstance(obj, dict) and '__module__' in obj:
+            return self._call_module_function(node, obj)
+
+        # Handle function reference
+        if isinstance(obj, ir.Function):
+            args = [self.visit(arg) for arg in node.arguments]
+            return self.builder.call(obj, args)
+
+        # It's a field access result - call method on it
+        if obj is not None and hasattr(obj, 'type'):
+            return self._call_method_on_value(node, obj)
+
+        error(f"Cannot call method on: {full_path}")
+
+    def _call_module_function(self, node, module_dict):
+        """Call a function from an imported module."""
+        func_name = node.name
+        # Try direct lookup
+        func = self.module.get_global(func_name)
+        if func is not None:
+            args = [self.visit(arg) for arg in node.arguments]
+            return self.builder.call(func, args)
+        # Try with module prefix
+        module_info = module_dict['__module__']
+        module_name = module_info.name if hasattr(module_info, 'name') else str(module_info)
+        func = self.search_scopes(f"{module_name}.{func_name}")
+        if func is not None:
+            args = [self.visit(arg) for arg in node.arguments]
+            if isinstance(func, ir.Function):
+                return self.builder.call(func, args)
+        error(f"Function '{func_name}' not found in module")
+
+    def _call_method_on_object(self, node, obj):
+        """Call a method on an object variable."""
+        type_name = self._get_type_name(obj)
+        method = self.search_scopes(f"{type_name}.{node.name}")
+
         # Check for base class method
         if method is None:
             obj_type = self.search_scopes(type_name.split('.')[-1])
@@ -263,22 +381,95 @@ class CodeGenerator(NodeVisitor):
                 parent = self.search_scopes(obj_type.base.value)
                 return self.super_method(node, obj, parent)
 
-        # Load obj if it's a pointer-to-pointer (alloca'd class variable)
+        # Check if it's a function field
+        if method is None:
+            obj_type = self.search_scopes(type_name.split('.')[-1])
+            if obj_type is not None and hasattr(obj_type, 'fields') and node.name in obj_type.fields:
+                return self._call_function_field(node, obj, obj_type)
+
+        if method is None:
+            error(f"Method '{node.name}' not found on type '{type_name}'")
+
+        # Load obj if it's a pointer-to-pointer
         if hasattr(obj.type, 'pointee') and hasattr(obj.type.pointee, 'pointee'):
             obj = self.builder.load(obj)
 
         result = self.methodcall(node, method, obj)
 
-        # Move semantics for channel.send - null out the sent variable
+        # Move semantics for channel.send
         if type_name == 'meteor.channel' and node.name == 'send':
-            for arg_node in node.arguments:
-                if hasattr(arg_node, 'value'):
-                    var_ptr = self.search_scopes(arg_node.value)
-                    if var_ptr and hasattr(var_ptr, 'type') and hasattr(var_ptr.type, 'pointee'):
-                        null_val = ir.Constant(var_ptr.type.pointee, None)
-                        self.builder.store(null_val, var_ptr)
+            self._handle_channel_send_move(node)
 
         return result
+
+    def _call_method_on_value(self, node, obj):
+        """Call a method on a value (result of expression)."""
+        type_name = self._get_type_name_from_value(obj)
+        method = self.search_scopes(f"{type_name}.{node.name}")
+
+        if method is None:
+            # Try without module prefix
+            simple_name = type_name.split('.')[-1]
+            method = self.search_scopes(f"{simple_name}.{node.name}")
+
+        if method is None:
+            error(f"Method '{node.name}' not found on type '{type_name}'")
+
+        # Load if needed
+        if hasattr(obj.type, 'pointee') and hasattr(obj.type.pointee, 'pointee'):
+            obj = self.builder.load(obj)
+
+        return self.methodcall(node, method, obj)
+
+    def _get_type_name(self, obj):
+        """Get type name from an object pointer."""
+        if not hasattr(obj, 'type') or not hasattr(obj.type, 'pointee'):
+            return str(obj.type) if hasattr(obj, 'type') else 'unknown'
+
+        pointee = obj.type.pointee
+        if hasattr(pointee, 'name'):
+            return pointee.name
+        type_str = str(pointee)
+        if type_str.startswith('%"'):
+            return type_str.split('"')[1]
+        elif type_str.startswith('%'):
+            return type_str[1:]
+        return type_str
+
+    def _get_type_name_from_value(self, obj):
+        """Get type name from a value."""
+        if hasattr(obj.type, 'pointee'):
+            pointee = obj.type.pointee
+        else:
+            pointee = obj.type
+
+        if hasattr(pointee, 'name'):
+            return pointee.name
+        type_str = str(pointee)
+        if type_str.startswith('%"'):
+            return type_str.split('"')[1]
+        elif type_str.startswith('%'):
+            return type_str[1:]
+        return type_str
+
+    def _call_function_field(self, node, obj, obj_type):
+        """Call a function stored in a field."""
+        field_idx = obj_type.fields.index(node.name)
+        if hasattr(obj.type, 'pointee') and hasattr(obj.type.pointee, 'pointee'):
+            obj = self.builder.load(obj)
+        field_ptr = self.builder.gep(obj, [self.const(0, width=INT32), self.const(field_idx, width=INT32)])
+        func_ptr = self.builder.load(field_ptr)
+        args = [self.visit(arg) for arg in node.arguments]
+        return self.builder.call(func_ptr, args)
+
+    def _handle_channel_send_move(self, node):
+        """Handle move semantics for channel.send."""
+        for arg_node in node.arguments:
+            if hasattr(arg_node, 'value'):
+                var_ptr = self.search_scopes(arg_node.value)
+                if var_ptr and hasattr(var_ptr, 'type') and hasattr(var_ptr.type, 'pointee'):
+                    null_val = ir.Constant(var_ptr.type.pointee, None)
+                    self.builder.store(null_val, var_ptr)
 
     def methodcall(self, node, func, obj):
         func_type = func.function_type
@@ -317,7 +508,9 @@ class CodeGenerator(NodeVisitor):
         else:
             args = []
             for i, arg in enumerate(node.arguments):
-                args.append(self.comp_cast(self.visit(arg), func_type.args[i], node))
+                # func_type.args includes 'self' at index 0, so use i+1 for user arguments
+                target_type = func_type.args[i+1] if i+1 < len(func_type.args) else func_type.args[i]
+                args.append(self.comp_cast(self.visit(arg), target_type, node))
 
         args.insert(0, obj)
         return self.builder.call(func, args)
@@ -444,7 +637,16 @@ class CodeGenerator(NodeVisitor):
         Loads and compiles the imported module, making its exports available.
         """
         from meteor.module_resolver import ModuleResolver, ModuleLoader
-        from meteor.ast import PublicDecl, FuncDecl, ExternFuncDecl
+        from meteor.ast import (
+            PublicDecl,
+            FuncDecl,
+            ExternFuncDecl,
+            ClassDeclaration,
+            EnumDeclaration,
+            TraitDeclaration,
+            ErrorDeclaration,
+            CImport,
+        )
 
         # Initialize resolver if not already done
         if not hasattr(self, '_module_resolver'):
@@ -467,7 +669,24 @@ class CodeGenerator(NodeVisitor):
             self._loaded_modules[module_name] = info
 
             if module_ast is not None:
-                # Compile all public functions from module
+                # Pass 1: bring in any C imports needed by the module
+                for child in module_ast.block.children:
+                    if isinstance(child, CImport):
+                        self.visit(child)
+
+                # Pass 2: register/export public types (classes/enums/traits/errors)
+                for child in module_ast.block.children:
+                    if isinstance(child, PublicDecl):
+                        decl = child.declaration
+                        if isinstance(decl, (ClassDeclaration, EnumDeclaration, TraitDeclaration, ErrorDeclaration)):
+                            self.visit(child)
+                            # Also register with full module path (e.g., http.server.Request)
+                            type_obj = self.search_scopes(decl.name)
+                            if type_obj is not None:
+                                full_name = f"{module_name}.{decl.name}"
+                                self.define(full_name, type_obj)
+
+                # Pass 3: compile all public functions from module
                 for child in module_ast.block.children:
                     if isinstance(child, PublicDecl):
                         decl = child.declaration
@@ -487,7 +706,16 @@ class CodeGenerator(NodeVisitor):
         Imports specific symbols from a module into current namespace.
         """
         from meteor.module_resolver import ModuleResolver, ModuleLoader
-        from meteor.ast import PublicDecl, FuncDecl, ExternFuncDecl
+        from meteor.ast import (
+            PublicDecl,
+            FuncDecl,
+            ExternFuncDecl,
+            ClassDeclaration,
+            EnumDeclaration,
+            TraitDeclaration,
+            ErrorDeclaration,
+            CImport,
+        )
 
         # Initialize resolver if not already done
         if not hasattr(self, '_module_resolver'):
@@ -513,12 +741,19 @@ class CodeGenerator(NodeVisitor):
             else:
                 symbols_to_import = [item.name for item in node.imports]
 
-            # First pass: compile all extern declarations
+            # First pass: compile all extern declarations and C imports
             for child in module_ast.block.children:
-                if isinstance(child, ExternFuncDecl):
+                if isinstance(child, (ExternFuncDecl, CImport)):
                     self.visit(child)
 
-            # Second pass: compile pub functions
+            # Second pass: compile exported types that are requested
+            for child in module_ast.block.children:
+                if isinstance(child, PublicDecl):
+                    decl = child.declaration
+                    if isinstance(decl, (ClassDeclaration, EnumDeclaration, TraitDeclaration, ErrorDeclaration)) and decl.name in symbols_to_import:
+                        self.visit(child)
+
+            # Third pass: compile pub functions
             for child in module_ast.block.children:
                 if isinstance(child, PublicDecl):
                     decl = child.declaration
@@ -663,6 +898,13 @@ class CodeGenerator(NodeVisitor):
         self.builder.call(join_func, [handle])
 
     def comp_cast(self, arg, typ, node):
+        # Auto-convert C string (i8*) to Meteor string (i64.array*)
+        if arg.type == type_map[INT8].as_pointer():
+            # Check if target type expects a Meteor string
+            typ_str = str(typ)
+            if 'i64.array' in typ_str:
+                return self._convert_cstr_to_meteor_string(arg)
+
         if types_compatible(str(arg.type), typ):
             return cast_ops(self, arg, typ, node)
 
@@ -719,8 +961,9 @@ class CodeGenerator(NodeVisitor):
 
     def visit_classdeclaration(self, node):
         fields = []
-        for field in node.fields.values():
-            fields.append(self.get_type(field))
+        for field_name, field in node.fields.items():
+            field_type = self.get_type(field)
+            fields.append(field_type)
 
         classdecl = self.module.context.get_identified_type(node.name)
         classdecl.base = node.base
@@ -739,6 +982,9 @@ class CodeGenerator(NodeVisitor):
         for method in node.methods:
             self.funcdef(method.name, method, func_exists=True)
         classdecl.methods = [self.search_scopes(method.name) for method in node.methods]
+
+        # Generate destructor function for this class
+        self._generate_class_destructor(node.name, classdecl)
 
         self.define(node.name, classdecl)
 
@@ -1112,12 +1358,16 @@ class CodeGenerator(NodeVisitor):
             cond_val = self.visit(comp)
             self.cbranch(cond_val, if_true_block, if_false_block)
             self.position_at_end(if_true_block)
+            # Push a new managed vars list for this block (but NOT a new variable scope)
+            self.managed_vars_stack.append([])
             ret = self.visit(node.blocks[x])
-            # Check if the block is not terminated (no return/break/branch already added)
-            # Using is_terminated is more reliable than checking 'ret' because void function
-            # calls return a truthy LLVM instruction object, not None/False
-            if not self.builder.block.is_terminated and not self.is_break:
-                self.branch(end_block)
+            # Release managed variables created in this block
+            if not self.builder.block.is_terminated:
+                self.release_scope_variables()
+                if not self.is_break:
+                    self.branch(end_block)
+            # Pop the managed vars list
+            self.managed_vars_stack.pop()
             self.position_at_end(if_false_block)
 
         if not self.is_break:
@@ -1139,10 +1389,18 @@ class CodeGenerator(NodeVisitor):
         cond = self.visit(node.comp)
         self.cbranch(cond, body_block, end_block)
         self.position_at_end(body_block)
+        # Note: We do NOT push a new managed_vars_stack for loop iterations.
+        # Class variables declared in loops use entry block allocas with NULL init.
+        # The alloc_define_store function handles releasing old values before storing new ones.
+        # At function exit, release_scope_variables will clean up all managed vars.
         self.visit(node.block)
-        if not self.is_break:
-            self.branch(cond_block)
-        else:
+        # Branch back to condition or to end (for break)
+        if not self.builder.block.is_terminated:
+            if not self.is_break:
+                self.branch(cond_block)
+            else:
+                self.branch(end_block)
+        if self.is_break:
             self.is_break = False
         self.position_at_end(end_block)
         self.loop_test_blocks.pop()
@@ -1193,12 +1451,19 @@ class CodeGenerator(NodeVisitor):
         self.cbranch(cond, body_block, end_block)
 
         self.position_at_end(body_block)
+        # Note: We do NOT push a new managed_vars_stack for loop iterations.
+        # Class variables declared in loops use entry block allocas with NULL init.
+        # The alloc_define_store function handles releasing old values before storing new ones.
         self.store(self.call('{}.array.get'.format(array_type), [iterator, self.load(position)]), varname)
         self.store(self.builder.add(one, self.load(position)), position)
         self.visit(node.block)
-        if not self.is_break:
-            self.branch(cond_block)
-        else:
+        # Branch back to condition or to end (for break)
+        if not self.builder.block.is_terminated:
+            if not self.is_break:
+                self.branch(cond_block)
+            else:
+                self.branch(end_block)
+        if self.is_break:
             self.is_break = False
 
         self.position_at_end(end_block)
@@ -1249,10 +1514,14 @@ class CodeGenerator(NodeVisitor):
     def visit_break(self, node):
         if len(self.loop_end_blocks) == 0:  # TODO: Move this to typechecker
             error('file={} line={} Syntax Error: break keyword cannot be used outside of control flow statements'.format(self.file_name, node.line_num))
+        # Release managed variables in current scope before breaking
+        self.release_scope_variables()
         self.is_break = True
         return self.branch(self.loop_end_blocks[-1])
 
     def visit_continue(self, _):
+        # Release managed variables in current scope before continuing
+        self.release_scope_variables()
         self.is_break = True
         return self.branch(self.loop_test_blocks[-1])
 
@@ -1399,11 +1668,11 @@ class CodeGenerator(NodeVisitor):
                     # Split into base-2^64 digits (little-endian order)
                     BASE = 2**64
                     if abs_val == 0:
-                        self.call('i64.array.append', [u64_array_ptr, self.const(0)])
+                        self.call('i64.array.append', [u64_array_ptr, ir.Constant(type_map[UINT64], 0)])
                     else:
                         while abs_val > 0:
                             digit = abs_val % BASE
-                            self.call('i64.array.append', [u64_array_ptr, self.const(digit)])
+                            self.call('i64.array.append', [u64_array_ptr, ir.Constant(type_map[UINT64], digit)])
                             abs_val //= BASE
                     
                     # Store sign (BigInt: { header, sign, digits } - sign at index 1)
@@ -1723,7 +1992,42 @@ class CodeGenerator(NodeVisitor):
                         break
 
                 elem = self.builder.gep(loaded_obj, [self.const(0, width=INT32), self.const(idx, width=INT32)], inbounds=True)
-                val = self.visit(node.right)
+
+                # Handle empty list assignment with type inference from field type
+                is_empty_list = isinstance(node.right, Collection) and len(node.right.items) == 0 and node.right.type == LIST
+                if is_empty_list:
+                    # Get expected type from field (elem.type is T**, elem.type.pointee is T*)
+                    expected_ptr_type = elem.type.pointee
+                    # For array fields, the type is like %"Header.array"*
+                    if hasattr(expected_ptr_type, 'pointee'):
+                        expected_struct = expected_ptr_type.pointee
+                        if hasattr(expected_struct, 'name') and '.array' in expected_struct.name:
+                            # Extract element type name (e.g., '%"Header".array' -> 'Header')
+                            elem_type_name = expected_struct.name.replace('.array', '')
+                            # Remove LLVM type prefix and quotes
+                            elem_type_name = elem_type_name.lstrip('%').strip('"')
+                            elem_type = self.search_scopes(elem_type_name)
+                            if elem_type is not None:
+                                # Create array with the struct type (not pointer)
+                                val = self.define_array(node.right, [], explicit_type=elem_type)
+                            else:
+                                val = self.visit(node.right)
+                        else:
+                            val = self.visit(node.right)
+                    else:
+                        val = self.visit(node.right)
+                else:
+                    val = self.visit(node.right)
+
+                # Auto-convert C string (i8*) to Meteor string (i64.array*) for string fields
+                if val.type == type_map[INT8].as_pointer():
+                    # Check if target field expects a Meteor string (i64.array*)
+                    expected_type = elem.type.pointee
+                    if hasattr(expected_type, 'pointee'):
+                        inner_type = expected_type.pointee
+                        if hasattr(inner_type, 'name') and inner_type.name == 'i64.array':
+                            val = self._convert_cstr_to_meteor_string(val)
+
                 # If val is a pointer to a struct and elem expects the struct value, load it
                 if isinstance(val.type, ir.PointerType) and not isinstance(elem.type.pointee, ir.PointerType):
                     if hasattr(val.type.pointee, 'name') and hasattr(elem.type.pointee, 'name'):
@@ -2009,7 +2313,15 @@ class CodeGenerator(NodeVisitor):
                         node.right.value = float(node.right.value)
                         self.store(var, var_name)
                     else:
-                        self.store(var, var_name)
+                        # For managed types (classes, arrays), use rc_assign for proper RC handling
+                        if hasattr(var_value, 'type') and hasattr(var_value.type, 'pointee'):
+                            if self.is_managed_type(var_value.type.pointee):
+                                # rc_assign handles: null check on old, release old, retain new (if needed), store new
+                                self.rc_assign(var_value, var)
+                            else:
+                                self.store(var, var_name)
+                        else:
+                            self.store(var, var_name)
                 elif isinstance(var, ir.Function):
                     self.define(var_name, var)
                 else:
@@ -2021,10 +2333,26 @@ class CodeGenerator(NodeVisitor):
         return self.builder.extract_value(self.load(node.obj), obj_type.fields.index(node.field))
 
     def class_assign(self, node):
-        """Create a class instance with heap allocation and object header."""
+        """Create a class instance with heap allocation and object header.
+        
+        Memory layout: [Object Header (16 bytes)][Class Fields]
+        Object Header contains:
+            - strong_rc (u32): Strong reference count, starts at 1
+            - weak_rc (u32): Weak reference count
+            - flags (u8): Object flags (frozen, zombie, etc.)
+            - type_tag (u8): Type tag for runtime type info
+            - reserved (u16 + u32): Padding for alignment
+        
+        The returned pointer points to the class data (after header).
+        Reference counting is managed through meteor_retain/meteor_release.
+        """
         from meteor.compiler.base import OBJECT_HEADER, TYPE_TAG_CLASS
 
         class_type = self.search_scopes(node.name)
+
+        # Ensure destructor is generated for this class type
+        if not hasattr(class_type, 'destructor'):
+            self._generate_class_destructor(node.name, class_type)
 
         # Calculate size: object header (16 bytes) + class fields
         header_size = 16  # 4 + 4 + 1 + 1 + 2 + padding
@@ -2039,7 +2367,7 @@ class CodeGenerator(NodeVisitor):
         header_struct = self.search_scopes(OBJECT_HEADER)
         if header_struct:
             header_ptr = self.builder.bitcast(raw_mem, header_struct.as_pointer())
-            # strong_rc = 1
+            # strong_rc = 1 (object starts with 1 owner)
             rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(0, width=INT32)])
             self.builder.store(self.const(1, width=UINT32), rc_ptr)
             # weak_rc = 0
@@ -2055,6 +2383,14 @@ class CodeGenerator(NodeVisitor):
         # Get pointer to class data (after header)
         data_ptr = self.builder.gep(raw_mem, [self.const(header_size)])
         _class = self.builder.bitcast(data_ptr, class_type.as_pointer())
+
+        # Initialize all pointer fields to NULL to prevent garbage pointers
+        for i, field_name in enumerate(class_type.fields):
+            field_type = class_type.elements[i]
+            if isinstance(field_type, ir.PointerType):
+                elem = self.builder.gep(_class, [self.const(0, width=INT32), self.const(i, width=INT32)], inbounds=True)
+                null_val = ir.Constant(field_type, None)
+                self.builder.store(null_val, elem)
 
         found = False
 
@@ -2102,15 +2438,92 @@ class CodeGenerator(NodeVisitor):
         return _class
 
     def visit_dotaccess(self, node):
-        obj = self.search_scopes(node.obj)
-        if obj.type == ENUM:
-            enum = self.builder.alloca(obj)
-            idx = obj.fields.index(node.field)
-            val = self.builder.gep(enum, [self.const(0, width=INT32), self.const(0, width=INT32)], inbounds=True)
-            self.builder.store(self.const(idx, width=INT8), val)
-            return enum
+        """Handle dot access for field access, enum variants, and module namespaces.
+
+        Cases handled:
+        1. Module namespace access: http.server.Request
+        2. C namespace access: c.MeteorHttpServer (returns marker for C type)
+        3. Enum variant access: HttpMethod.GET
+        4. Field access: self.headers, req.path
+        """
+        from meteor.ast import DotAccess as DotAccessAST
+
+        # Helper to build full path from nested DotAccess
+        def build_path(n):
+            if isinstance(n, DotAccessAST):
+                return f"{build_path(n.obj)}.{n.field}"
+            return n  # It's a string (variable name)
+
+        full_path = f"{build_path(node.obj)}.{node.field}"
+        base_name = build_path(node.obj) if isinstance(node.obj, DotAccessAST) else node.obj
+
+        # Case 1: C namespace access (e.g., c.MeteorHttpServer)
+        if base_name == 'c':
+            # Return a marker dict for C namespace reference
+            return {'__c_namespace__': True, '__name__': node.field}
+
+        # Case 2: Try to find full path as type/function (e.g., http.server.Request)
+        typ = self.search_scopes(full_path)
+        if typ is not None:
+            # Check if it's an enum type - return the type itself
+            if hasattr(typ, 'type') and typ.type == ENUM:
+                return typ
+            # Check if it's a function
+            if isinstance(typ, ir.Function):
+                return typ
+            # It's a type reference
+            return typ
+
+        # Case 3: Try to find base as enum and field as variant
+        base_obj = self.search_scopes(base_name)
+        if base_obj is not None:
+            # Check if it's an enum type
+            if hasattr(base_obj, 'type') and base_obj.type == ENUM:
+                enum = self.builder.alloca(base_obj)
+                idx = base_obj.fields.index(node.field)
+                val = self.builder.gep(enum, [self.const(0, width=INT32), self.const(0, width=INT32)], inbounds=True)
+                self.builder.store(self.const(idx, width=INT8), val)
+                return enum
+            # Check if it's a module dict
+            if isinstance(base_obj, dict) and '__module__' in base_obj:
+                # Module function/type access
+                func = self.module.get_global(node.field)
+                if func is not None:
+                    return func
+                # Try with module prefix
+                module_name = base_obj['__module__'].name if hasattr(base_obj['__module__'], 'name') else str(base_obj['__module__'])
+                func = self.search_scopes(f"{module_name}.{node.field}")
+                if func is not None:
+                    return func
+
+        # Case 4: Field access on object
+        # First, try to get the object value
+        if isinstance(node.obj, str):
+            obj = self.search_scopes(node.obj)
+        elif isinstance(node.obj, DotAccessAST):
+            obj = self.visit(node.obj)
+        else:
+            obj = None
+
+        if obj is None:
+            error(f"Unknown identifier: {base_name}")
+
+        # Handle dict markers (shouldn't reach here normally)
+        if isinstance(obj, dict):
+            error(f"Cannot access field '{node.field}' on module namespace")
 
         # Get the actual struct type (may need to dereference pointer)
+        if not hasattr(obj, 'type'):
+            error(f"Cannot access field on non-object: {base_name}")
+
+        return self._access_field(obj, node.obj, node.field)
+
+    def _access_field(self, obj, obj_node, field_name):
+        """Helper to access a field on an object."""
+        # Get the actual struct type (may need to dereference pointer)
+        if not hasattr(obj.type, 'pointee'):
+            error(f"Cannot access field on non-pointer type: {obj.type}")
+
         pointee = obj.type.pointee
         # If pointee is also a pointer, get its pointee
         if hasattr(pointee, 'pointee'):
@@ -2119,35 +2532,49 @@ class CodeGenerator(NodeVisitor):
             actual_type = pointee
 
         # Get type from scope
-        if hasattr(actual_type, 'name') and actual_type.name:
-            type_name = actual_type.name
-            obj_type = self.search_scopes(type_name)
-        elif hasattr(actual_type, 'fields'):
-            obj_type = actual_type
-        else:
-            type_str = str(actual_type)
-            if type_str.startswith('%"') and type_str.endswith('"'):
-                type_name = type_str[2:-1]
-            elif type_str.startswith('%'):
-                type_name = type_str[1:]
-            else:
-                type_name = type_str
-            obj_type = self.search_scopes(type_name)
+        obj_type = self._get_obj_type(actual_type)
+        if obj_type is None:
+            error(f"Cannot find type for field access")
 
         # Load the object - may need double load for pointer-to-pointer
-        loaded = self.load(node.obj)
+        if isinstance(obj_node, str):
+            loaded = self.load(obj_node)
+        else:
+            loaded = obj
         if hasattr(loaded.type, 'pointee'):
             loaded = self.builder.load(loaded)
 
-        field_idx = obj_type.fields.index(node.field)
+        if not hasattr(obj_type, 'fields') or field_name not in obj_type.fields:
+            error(f"Field '{field_name}' not found on type")
+
+        field_idx = obj_type.fields.index(field_name)
         result = self.builder.extract_value(loaded, field_idx)
 
         # Check if accessing a weak field - need to upgrade
-        is_weak = hasattr(obj_type, 'weak_fields') and node.field in obj_type.weak_fields
+        is_weak = hasattr(obj_type, 'weak_fields') and field_name in obj_type.weak_fields
         if is_weak and hasattr(result.type, 'pointee'):
             result = self.rc_weak_upgrade(result)
 
         return result
+
+    def _get_obj_type(self, actual_type):
+        """Get the type object from scope for a given LLVM type."""
+        if hasattr(actual_type, 'name') and actual_type.name:
+            type_name = actual_type.name
+            return self.search_scopes(type_name)
+        elif hasattr(actual_type, 'fields'):
+            return actual_type
+        else:
+            type_str = str(actual_type)
+            if type_str.startswith('%"') and type_str.endswith('"'):
+                type_name = type_str[2:-1]
+            elif type_str.startswith('%"'):
+                type_name = type_str.split('"')[1]
+            elif type_str.startswith('%'):
+                type_name = type_str[1:]
+            else:
+                type_name = type_str
+            return self.search_scopes(type_name)
 
     def visit_opassign(self, node):
         right = self.visit(node.right)
@@ -2255,6 +2682,9 @@ class CodeGenerator(NodeVisitor):
             return self.const(0, BOOL)
         elif node.value == INF:
             return self.const(inf, DOUBLE)
+        elif node.value == NULL:
+            # Return a null pointer (i8*)
+            return ir.Constant(type_map[INT8].as_pointer(), None)
         else:
             raise NotImplementedError('file={} line={}'.format(self.file_name, node.line_num))
 
@@ -2269,6 +2699,18 @@ class CodeGenerator(NodeVisitor):
         else:
             raise NotImplementedError
 
+    def _normalize_type_name(self, array_type):
+        """Normalize type name for class types (e.g., '%"Header"' -> 'Header')"""
+        type_str = str(array_type)
+        # Strip pointer symbols to get the underlying type name
+        while type_str.endswith('*'):
+            type_str = type_str[:-1].strip()
+        if type_str.startswith('%"') and type_str.endswith('"'):
+            return type_str[2:-1]
+        elif type_str.startswith('%'):
+            return type_str[1:]
+        return type_str
+
     def define_array(self, node, elements, explicit_type=None):
         if explicit_type:
             array_type = explicit_type
@@ -2281,12 +2723,20 @@ class CodeGenerator(NodeVisitor):
             # Default to INT for empty list without explicit type
             array_type = type_map[INT]
         array_ptr = self.create_array(array_type)
+        type_name = self._normalize_type_name(array_type)
         for element in elements:
-            self.call('{}.array.append'.format(str(array_type)), [array_ptr, element])
+            self.call('{}.array.append'.format(type_name), [array_ptr, element])
         return array_ptr
 
     def create_array(self, array_type):
-        array_type_name = '{}.array'.format(str(array_type))
+        from meteor.compiler.base import OBJECT_HEADER
+        # Normalize type name for class types
+        type_str = self._normalize_type_name(array_type)
+        element_type = array_type
+        # Store heap-allocated class instances by pointer inside dynamic arrays
+        if hasattr(array_type, 'type') and array_type.type == CLASS:
+            element_type = array_type.as_pointer()
+        array_type_name = '{}.array'.format(type_str)
         existing_type = self.search_scopes(array_type_name)
         if existing_type is not None:
             dyn_array_type = existing_type
@@ -2296,7 +2746,7 @@ class CodeGenerator(NodeVisitor):
             dyn_array_type.type = CLASS
             # 0: header, 1: size, 2: capacity, 3: data pointer
             header_struct = self.search_scopes(OBJECT_HEADER)
-            dyn_array_type.set_body(header_struct, type_map[INT], type_map[INT], array_type.as_pointer())
+            dyn_array_type.set_body(header_struct, type_map[INT], type_map[INT], element_type.as_pointer())
             self.define(array_type_name, dyn_array_type)
 
         # Use malloc instead of alloca for proper memory management
@@ -2305,8 +2755,8 @@ class CodeGenerator(NodeVisitor):
         array_mem = self.builder.call(malloc_func, [self.const(40)])
         array = self.builder.bitcast(array_mem, dyn_array_type.as_pointer())
 
-        create_dynamic_array_methods(self, array_type)
-        self.call('{}.array.init'.format(str(array_type)), [array])
+        create_dynamic_array_methods(self, element_type)
+        self.call('{}.init'.format(array_type_name), [array])
         return array
 
     def define_tuple(self, node, elements):
@@ -2315,8 +2765,9 @@ class CodeGenerator(NodeVisitor):
         else:
             array_type = self.visit(node.items[0]).type
         array_ptr = self.create_array(array_type)
+        type_name = self._normalize_type_name(array_type)
         for element in elements:
-            self.call('{}.array.append'.format(str(array_type)), [array_ptr, element])
+            self.call('{}.array.append'.format(type_name), [array_ptr, element])
         return array_ptr
 
     def visit_hashmap(self, node):
@@ -2324,14 +2775,20 @@ class CodeGenerator(NodeVisitor):
 
     def visit_collectionaccess(self, node):
         key = self.visit(node.key)
-        collection = self.search_scopes(node.collection.value)
-        
+
+        # Handle DotAccess (e.g., self.headers[i])
+        if isinstance(node.collection, DotAccess):
+            collection = self.visit(node.collection)
+        else:
+            collection = self.search_scopes(node.collection.value)
+
         # Check if this is a dynamic array
         # collection.type is %"X.array"** (AllocaInstr stores pointer to array struct)
         # collection.type.pointee is %"X.array"* (pointer to array struct)
         # collection.type.pointee.pointee is %"X.array" (the struct itself)
         for typ in array_types:
-            array_struct = self.search_scopes('{}.array'.format(typ))
+            type_name = self._normalize_type_name(typ)
+            array_struct = self.search_scopes('{}.array'.format(type_name))
             if array_struct is None:
                 continue
             # Check if pointee.pointee matches (for alloca storing pointer)
@@ -2340,11 +2797,11 @@ class CodeGenerator(NodeVisitor):
                 collection.type.pointee.pointee == array_struct):
                 # Load the pointer and call get
                 arr_ptr = self.load(collection)
-                return self.call('{}.array.get'.format(typ), [arr_ptr, key])
+                return self.call('{}.array.get'.format(type_name), [arr_ptr, key])
             # Also check direct pointee match (for when collection is already a pointer)
             elif (hasattr(collection.type, 'pointee') and
                   collection.type.pointee == array_struct):
-                return self.call('{}.array.get'.format(typ), [collection, key])
+                return self.call('{}.array.get'.format(type_name), [collection, key])
 
         return self.builder.extract_value(self.load(collection.name), [key])
 
@@ -2488,6 +2945,7 @@ class CodeGenerator(NodeVisitor):
         return result
 
     def get_args(self, parameters, param_modes=None):
+        from meteor.ast import DotAccess as DotAccessAST
         args = []
         if parameters is None:
             return args
@@ -2500,15 +2958,41 @@ class CodeGenerator(NodeVisitor):
 
             # Handle untyped parameters (param.value is None or empty)
             if param.value is None or param.value == '':
-                # Untyped parameter - use i8* (generic pointer/any type)
                 args.append(type_map[INT8].as_pointer())
                 continue
 
+            # Handle DotAccess type (e.g., http.server.Request)
+            if isinstance(param.value, DotAccessAST):
+                def build_path(n):
+                    if isinstance(n, DotAccessAST):
+                        return f"{build_path(n.obj)}.{n.field}"
+                    return n
+                full_path = build_path(param.value)
+                typ = self.search_scopes(full_path)
+                if typ is None:
+                    # Try simple name
+                    simple_name = param.value.field
+                    typ = self.search_scopes(simple_name)
+                if typ is not None:
+                    if hasattr(typ, 'type') and typ.type in (CLASS, ENUM):
+                        args.append(typ.as_pointer())
+                    else:
+                        args.append(typ)
+                else:
+                    from meteor.utils import warning
+                    warning(f"Type not recognized: '{full_path}', using generic pointer")
+                    args.append(type_map[INT8].as_pointer())
+                continue
+
             if param.value == FUNC:
-                if param.func_ret_type.value in type_map:
+                if param.func_ret_type is None:
+                    func_ret_type = type_map[VOID]
+                elif param.func_ret_type.value in type_map:
                     func_ret_type = type_map[param.func_ret_type.value]
                 elif self.search_scopes(param.func_ret_type.value) is not None:
                     func_ret_type = self.search_scopes(param.func_ret_type.value).as_pointer()
+                else:
+                    func_ret_type = type_map[VOID]
                 func_parameters = self.get_args(param.func_params)
                 func_ty = ir.FunctionType(func_ret_type, func_parameters, None).as_pointer()
                 args.append(func_ty)
@@ -2551,8 +3035,56 @@ class CodeGenerator(NodeVisitor):
 
         return args
 
+    def _resolve_dotaccess_type(self, dot_access):
+        """Resolve a DotAccess node to a type."""
+        from meteor.ast import DotAccess as DotAccessAST
+
+        def build_path(n):
+            if isinstance(n, DotAccessAST):
+                return f"{build_path(n.obj)}.{n.field}"
+            return n
+
+        full_path = build_path(dot_access)
+
+        # Try full path first
+        typ = self.search_scopes(full_path)
+        if typ is not None:
+            return self._ensure_class_pointer(typ)
+
+        # Try simple name as fallback
+        simple_name = dot_access.field if hasattr(dot_access, 'field') else full_path.split('.')[-1]
+        typ = self.search_scopes(simple_name)
+        if typ is not None:
+            return self._ensure_class_pointer(typ)
+
+        return None
+
+    def _ensure_class_pointer(self, typ):
+        """Ensure class types are returned as pointers."""
+        # Check if it's a class definition object
+        if hasattr(typ, 'type') and typ.type == CLASS:
+            return typ.as_pointer()
+        # Check if it's an LLVM IdentifiedStructType (class struct)
+        if isinstance(typ, ir.IdentifiedStructType):
+            return typ.as_pointer()
+        return typ
+
     def get_type(self, param):
+        from meteor.ast import DotAccess as DotAccessAST
         typ = None
+
+        # Handle DotAccess type (e.g., http.server.Request)
+        if hasattr(param, 'value') and isinstance(param.value, DotAccessAST):
+            typ = self._resolve_dotaccess_type(param.value)
+            if typ is not None:
+                return typ
+            # Build path for error message
+            def build_path(n):
+                if isinstance(n, DotAccessAST):
+                    return f"{build_path(n.obj)}.{n.field}"
+                return n
+            error(f"Type not recognized: {build_path(param.value)}")
+
         if isinstance(param, UnionType):
             # Tagged union { i8 tag, T success, E error }
             # tag: 0 = success, 1 = error
@@ -2564,10 +3096,19 @@ class CodeGenerator(NodeVisitor):
         if param.value == FUNC:
             if param.func_ret_type is None:
                 func_ret_type = type_map[VOID]
+            elif hasattr(param.func_ret_type, 'value') and isinstance(param.func_ret_type.value, DotAccessAST):
+                # Handle DotAccess return type (e.g., http.server.Response)
+                func_ret_type = self._resolve_dotaccess_type(param.func_ret_type.value)
+                if func_ret_type is None:
+                    func_ret_type = type_map[VOID]
             elif param.func_ret_type.value in type_map:
                 func_ret_type = type_map[param.func_ret_type.value]
             elif self.search_scopes(param.func_ret_type.value) is not None:
-                func_ret_type = self.search_scopes(param.func_ret_type.value).as_pointer()
+                typ_found = self.search_scopes(param.func_ret_type.value)
+                if hasattr(typ_found, 'type') and typ_found.type == CLASS:
+                    func_ret_type = typ_found.as_pointer()
+                else:
+                    func_ret_type = typ_found
             else:
                 func_ret_type = type_map[VOID]
             func_parameters = self.get_args(param.func_params)
@@ -2577,7 +3118,8 @@ class CodeGenerator(NodeVisitor):
             array_type = self.get_type(param.func_params['0'])
             self.create_array(array_type)
             # Return pointer type to match create_array return type
-            typ = self.search_scopes('{}.array'.format(array_type)).as_pointer()
+            type_name = self._normalize_type_name(array_type)
+            typ = self.search_scopes('{}.array'.format(type_name)).as_pointer()
         elif param.value == STR:
             # Strings are represented as i64.array pointers
             self.create_array(type_map[INT])
@@ -2586,7 +3128,18 @@ class CodeGenerator(NodeVisitor):
             if param.value in type_map:
                 typ = type_map[param.value]
             elif self.search_scopes(param.value) is not None:
-                typ = self.search_scopes(param.value)
+                typ = self._ensure_class_pointer(self.search_scopes(param.value))
+            elif param.value.startswith('c.'):
+                # C imported types (e.g., c.MeteorHttpServer) are opaque pointers
+                typ = type_map[INT8].as_pointer()
+            elif '.' in param.value:
+                # Try to find the type by its simple name (last part after dot)
+                # e.g., http.server.Response -> Response
+                simple_name = param.value.split('.')[-1]
+                if self.search_scopes(simple_name) is not None:
+                    typ = self._ensure_class_pointer(self.search_scopes(simple_name))
+                else:
+                    error("Type not recognized: {}".format(param.value))
             else:
                 error("Type not recognized: {}".format(param.value))
 
@@ -2728,21 +3281,129 @@ class CodeGenerator(NodeVisitor):
         else:
             return 8  # Default to 8 bytes
 
+    def _generate_class_destructor(self, class_name, class_type):
+        """Generate a destructor function for a class that releases all managed fields.
+        
+        The destructor is called when the object's RC reaches 0, before freeing memory.
+        It iterates through all fields and calls rc_release on managed types.
+        """
+        from meteor.compiler.base import OBJECT_HEADER
+        
+        # Save current builder state
+        saved_function = self.current_function
+        saved_block = self.builder.block if hasattr(self.builder, 'block') and self.builder.block else None
+        
+        # Create destructor function: void __destroy_ClassName__(ClassName* obj)
+        destructor_name = f'__destroy_{class_name}__'
+        class_ptr_type = class_type.as_pointer()
+        func_type = ir.FunctionType(type_map[VOID], [class_ptr_type])
+        destructor = ir.Function(self.module, func_type, destructor_name)
+        destructor.linkage = 'internal'
+        
+        entry_block = destructor.append_basic_block('entry')
+        exit_block = destructor.append_basic_block('exit')
+        
+        builder = ir.IRBuilder(entry_block)
+        obj_ptr = destructor.args[0]
+        
+        # Null check
+        null_ptr = ir.Constant(class_ptr_type, None)
+        is_null = builder.icmp_unsigned('==', obj_ptr, null_ptr)
+        not_null_block = destructor.append_basic_block('not_null')
+        builder.cbranch(is_null, exit_block, not_null_block)
+        
+        builder.position_at_end(not_null_block)
+        
+        # Iterate through all fields and release managed ones
+        for i, field_name in enumerate(class_type.fields):
+            field_type = class_type.elements[i]
+            
+            # Check if this is a managed type (pointer to class, array, string, etc.)
+            if isinstance(field_type, ir.PointerType):
+                pointee = field_type.pointee
+                is_managed = False
+                
+                # Check for arrays
+                if hasattr(pointee, 'name') and pointee.name.endswith('.array'):
+                    is_managed = True
+                # Check for class types
+                elif isinstance(pointee, ir.IdentifiedStructType) and hasattr(pointee, 'methods'):
+                    is_managed = True
+                
+                if is_managed:
+                    # Get field pointer
+                    field_ptr = builder.gep(obj_ptr, [ir.Constant(type_map[INT32], 0), 
+                                                       ir.Constant(type_map[INT32], i)], inbounds=True)
+                    field_val = builder.load(field_ptr)
+                    
+                    # Null check for field
+                    field_null = ir.Constant(field_type, None)
+                    field_is_null = builder.icmp_unsigned('==', field_val, field_null)
+                    
+                    release_block = destructor.append_basic_block(f'release_{field_name}')
+                    continue_block = destructor.append_basic_block(f'continue_{field_name}')
+                    
+                    builder.cbranch(field_is_null, continue_block, release_block)
+                    
+                    builder.position_at_end(release_block)
+                    
+                    # Get header and call meteor_release
+                    header_struct = self.search_scopes(OBJECT_HEADER)
+                    if header_struct:
+                        release_func = self.module.get_global('meteor_release')
+                        if release_func:
+                            # For class fields, header is 16 bytes before data
+                            if isinstance(pointee, ir.IdentifiedStructType) and hasattr(pointee, 'methods'):
+                                i8_ptr = builder.bitcast(field_val, ir.IntType(8).as_pointer())
+                                header_ptr = builder.gep(i8_ptr, [ir.Constant(type_map[INT], -16)])
+                                header_ptr = builder.bitcast(header_ptr, header_struct.as_pointer())
+                            else:
+                                # For arrays, header is at offset 0
+                                header_ptr = builder.bitcast(field_val, header_struct.as_pointer())
+                            builder.call(release_func, [header_ptr])
+                    
+                    builder.branch(continue_block)
+                    builder.position_at_end(continue_block)
+        
+        builder.branch(exit_block)
+        
+        builder.position_at_end(exit_block)
+        builder.ret_void()
+        
+        # Store destructor reference in class type
+        class_type.destructor = destructor
+        self.define(destructor_name, destructor)
+        
+        # Restore builder state
+        self.current_function = saved_function
+        if saved_block:
+            self.builder.position_at_end(saved_block)
+
     def is_managed_type(self, llvm_type):
         """Check if a type requires reference counting.
-        Types with object headers are managed: bigint, decimal, arrays, and classes.
+        Types with object headers are managed: arrays and classes.
+        Note: bigint and decimal have their own special handling in visit_assign.
         """
         if not isinstance(llvm_type, ir.PointerType):
             return False
         pointee = llvm_type.pointee
         if hasattr(pointee, 'name'):
-            # Types that have object headers
-            managed_names = ('bigint', 'decimal')
-            if pointee.name in managed_names:
-                return True
+            # Arrays have object headers
             if pointee.name.endswith('.array'):
                 return True
         # Check if it's a class type (IdentifiedStructType with methods)
+        if isinstance(pointee, ir.IdentifiedStructType):
+            if hasattr(pointee, 'methods'):
+                return True
+        return False
+
+    def is_class_type(self, llvm_type):
+        """Check if a type is a class type (has object header at -16 bytes offset).
+        This is distinct from is_managed_type because class headers are at negative offset.
+        """
+        if not isinstance(llvm_type, ir.PointerType):
+            return False
+        pointee = llvm_type.pointee
         if isinstance(pointee, ir.IdentifiedStructType):
             if hasattr(pointee, 'methods'):
                 return True
@@ -2780,11 +3441,84 @@ class CodeGenerator(NodeVisitor):
             self.builder.call(retain_func, [header])
 
     def rc_release(self, obj_ptr):
-        """Call meteor_release on an object."""
+        """Call meteor_release on an object with null check.
+        For class types, calls destructor before release if RC will become 0.
+        
+        Memory management flow:
+        1. Null check - skip if pointer is NULL
+        2. For class types with destructors:
+           a. Check if RC == 1 (will become 0)
+           b. If so, call destructor first to release managed fields
+           c. Then call meteor_release (which frees header+data)
+        3. For other managed types: just call meteor_release
+        """
+        from meteor.compiler.base import HEADER_STRONG_RC
+        
         release_func = self.module.get_global('meteor_release')
         if release_func and obj_ptr:
-            header = self.get_object_header(obj_ptr)
-            self.builder.call(release_func, [header])
+            # Add null check before getting header
+            null_ptr = ir.Constant(obj_ptr.type, None)
+            is_null = self.builder.icmp_unsigned('==', obj_ptr, null_ptr)
+
+            release_block = self.add_block('rc_release')
+            continue_block = self.add_block('rc_release_continue')
+
+            self.builder.cbranch(is_null, continue_block, release_block)
+
+            self.builder.position_at_end(release_block)
+            
+            # Check if this is a class type with a destructor
+            obj_type = obj_ptr.type
+            if hasattr(obj_type, 'pointee'):
+                pointee = obj_type.pointee
+                if isinstance(pointee, ir.IdentifiedStructType) and hasattr(pointee, 'methods'):
+                    # Ensure destructor is generated
+                    if not hasattr(pointee, 'destructor'):
+                        class_name = pointee.name if hasattr(pointee, 'name') else str(pointee)
+                        self._generate_class_destructor(class_name, pointee)
+                    
+                    if hasattr(pointee, 'destructor'):
+                        # Get header to check RC
+                        header = self.get_object_header(obj_ptr)
+                        rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
+                        rc = self.builder.load(rc_ptr)
+                        
+                        # If RC == 1, it will become 0 after release, so call destructor first
+                        is_one = self.builder.icmp_unsigned('==', rc, ir.Constant(type_map[UINT32], 1))
+                        
+                        destroy_block = self.add_block('rc_destroy')
+                        release_only_block = self.add_block('rc_release_only')
+                        
+                        self.builder.cbranch(is_one, destroy_block, release_only_block)
+                        
+                        # Call destructor before release
+                        self.builder.position_at_end(destroy_block)
+                        self.builder.call(pointee.destructor, [obj_ptr])
+                        header2 = self.get_object_header(obj_ptr)
+                        self.builder.call(release_func, [header2])
+                        self.builder.branch(continue_block)
+                        
+                        # Just release without destructor
+                        self.builder.position_at_end(release_only_block)
+                        header3 = self.get_object_header(obj_ptr)
+                        self.builder.call(release_func, [header3])
+                        self.builder.branch(continue_block)
+                    else:
+                        # No destructor generated (should not happen), just release
+                        header = self.get_object_header(obj_ptr)
+                        self.builder.call(release_func, [header])
+                        self.builder.branch(continue_block)
+                else:
+                    # No destructor, just release
+                    header = self.get_object_header(obj_ptr)
+                    self.builder.call(release_func, [header])
+                    self.builder.branch(continue_block)
+            else:
+                header = self.get_object_header(obj_ptr)
+                self.builder.call(release_func, [header])
+                self.builder.branch(continue_block)
+
+            self.builder.position_at_end(continue_block)
 
     def rc_weak_retain(self, obj_ptr):
         """Call meteor_weak_retain on an object."""
@@ -2850,30 +3584,37 @@ class CodeGenerator(NodeVisitor):
         self.builder.position_at_end(continue_block)
 
     def rc_assign(self, target_ptr, new_value):
-        """RC-safe assignment: release old, retain new, store."""
+        """RC-safe assignment: release old, store new (no retain for new allocations).
+        
+        This is used for reassigning managed type variables.
+        The new value is assumed to already have RC=1 from allocation.
+        We only release the old value before storing the new one.
+        
+        For copying from another variable (where we want to share ownership),
+        the caller should call rc_retain on new_value first.
+        """
         if not self.is_managed_type(target_ptr.type.pointee):
             self.builder.store(new_value, target_ptr)
             return
 
-        # Get retain/release functions
-        retain_func = self.module.get_global('meteor_retain')
         release_func = self.module.get_global('meteor_release')
 
-        if not retain_func or not release_func:
+        if not release_func:
             # Fallback to simple store if RC functions not available
             self.builder.store(new_value, target_ptr)
             return
 
-        # Load old value
+        # Load old value and release it (with null check)
         old_value = self.builder.load(target_ptr)
+        
+        # Null check for old value before release
+        null_ptr = ir.Constant(old_value.type, None)
+        is_not_null = self.builder.icmp_unsigned('!=', old_value, null_ptr)
+        
+        with self.builder.if_then(is_not_null):
+            self.rc_release(old_value)
 
-        # Retain new value (unconditionally for simplicity)
-        self.rc_retain(new_value)
-
-        # Release old value (unconditionally for simplicity)
-        self.rc_release(old_value)
-
-        # Store new value
+        # Store new value (new allocations already have RC=1)
         self.builder.store(new_value, target_ptr)
 
     def register_managed_var(self, name, var_ptr):
@@ -2966,6 +3707,9 @@ class CodeGenerator(NodeVisitor):
         if isinstance(typ, ir.PointerType):
             null_val = ir.Constant(typ, None)
             self.builder.store(null_val, var_addr)
+            # Register managed types for scope cleanup
+            if self.is_managed_type(typ):
+                self.register_managed_var(name, var_addr)
         return var_addr
 
     def alloc_define_store_simple(self, val, name, typ):
@@ -2978,11 +3722,64 @@ class CodeGenerator(NodeVisitor):
         return var_addr
 
     def alloc_define_store(self, val, name, typ):
-        # Create alloca in entry block for proper LLVM optimization
+        """Allocate, define and store a value with proper RC management.
+        
+        For managed types (classes, arrays), this method:
+        1. Uses entry block alloca to avoid stack overflow in loops
+        2. Initializes pointer to NULL on first use
+        3. Releases old value before storing new one (for loop iterations)
+        4. Registers variable for scope cleanup
+        
+        This is the primary method for declaring class variables in loops.
+        """
+        # Check if variable already exists (loop re-iteration case)
+        existing_var = self.search_scopes(name)
+        
+        if existing_var is not None and self.is_managed_type(typ):
+            # Variable already declared - this is a loop re-iteration
+            # Release old value and store new one
+            old_val = self.builder.load(existing_var)
+            
+            # Null check before release
+            null_ptr = ir.Constant(old_val.type, None)
+            is_not_null = self.builder.icmp_unsigned('!=', old_val, null_ptr)
+            
+            with self.builder.if_then(is_not_null):
+                self.rc_release(old_val)
+            
+            self.builder.store(val, existing_var)
+            return existing_var
+        
+        # For managed types, use entry block alloca to handle loops properly
+        if self.is_managed_type(typ):
+            # Create alloca in entry block
+            entry_block = self.current_function.entry_basic_block
+            saved_block = self.builder.block
+            
+            if entry_block.instructions:
+                self.builder.position_before(entry_block.instructions[0])
+            else:
+                self.builder.position_at_end(entry_block)
+            
+            var_addr = self.builder.alloca(typ, name=name)
+            # Initialize to NULL for safe first-time check
+            null_val = ir.Constant(typ, None)
+            self.builder.store(null_val, var_addr)
+            
+            self.builder.position_at_end(saved_block)
+            self.define(name, var_addr)
+            
+            # Register for scope cleanup
+            self.register_managed_var(name, var_addr)
+            
+            # Store the value (new objects from class_assign already have RC=1)
+            self.builder.store(val, var_addr)
+            return var_addr
+        
+        # Non-managed types: simple alloca in entry block
         entry_block = self.current_function.entry_basic_block
         saved_block = self.builder.block
 
-        # Position at start of entry block to insert alloca
         if entry_block.instructions:
             self.builder.position_before(entry_block.instructions[0])
         else:
@@ -2991,13 +3788,7 @@ class CodeGenerator(NodeVisitor):
         var_addr = self.builder.alloca(typ, name=name)
         self.define(name, var_addr)
 
-        # Return to original position
         self.builder.position_at_end(saved_block)
-
-        # For managed types, retain the new value before storing
-        if self.is_managed_type(typ):
-            self.rc_retain(val)
-            self.register_managed_var(name, var_addr)
 
         self.builder.store(val, var_addr)
         return var_addr
@@ -3130,6 +3921,56 @@ class CodeGenerator(NodeVisitor):
 
         return cstr
 
+    def _convert_cstr_to_meteor_string(self, cstr):
+        """Convert C string (i8*) to Meteor string (i64.array*)."""
+        i32 = ir.IntType(32)
+
+        # Ensure strlen is declared
+        if 'strlen' not in self.module.globals:
+            strlen_ty = ir.FunctionType(type_map[INT], [type_map[INT8].as_pointer()])
+            ir.Function(self.module, strlen_ty, 'strlen')
+
+        # Get string length using strlen
+        strlen_func = self.module.get_global('strlen')
+        length = self.builder.call(strlen_func, [cstr])
+
+        # Create new Meteor string array
+        str_array = self.create_array(type_map[INT])
+
+        # Copy characters from C string to Meteor string
+        i_ptr = self.builder.alloca(type_map[INT])
+        self.builder.store(self.const(0), i_ptr)
+
+        loop_cond_block = self.current_function.append_basic_block('cstr_conv_cond')
+        loop_body_block = self.current_function.append_basic_block('cstr_conv_body')
+        end_block = self.current_function.append_basic_block('cstr_conv_end')
+
+        self.builder.branch(loop_cond_block)
+        self.builder.position_at_end(loop_cond_block)
+
+        i = self.builder.load(i_ptr)
+        cond = self.builder.icmp_signed('<', i, length)
+        self.builder.cbranch(cond, loop_body_block, end_block)
+
+        self.builder.position_at_end(loop_body_block)
+        i = self.builder.load(i_ptr)
+        # Get char from C string (i8)
+        char_ptr = self.builder.gep(cstr, [i])
+        char_i8 = self.builder.load(char_ptr)
+        # Extend to i64 for Meteor string
+        char_i64 = self.builder.zext(char_i8, type_map[INT])
+        # Append to Meteor string
+        append_func = self.module.get_global('i64.array.append')
+        self.builder.call(append_func, [str_array, char_i64])
+        # Increment counter
+        next_i = self.builder.add(i, self.const(1))
+        self.builder.store(next_i, i_ptr)
+        self.builder.branch(loop_cond_block)
+
+        self.builder.position_at_end(end_block)
+
+        return str_array
+
     def gep(self, ptr, indices, inbounds=False, name=''):
         return self.builder.gep(ptr, indices, inbounds, name)
 
@@ -3249,6 +4090,12 @@ class CodeGenerator(NodeVisitor):
         from clang.cindex import TypeKind
 
         kind = clang_type.kind
+
+        # Handle typedef and elaborated types by getting the canonical (underlying) type
+        if kind in (TypeKind.TYPEDEF, TypeKind.ELABORATED):
+            canonical = clang_type.get_canonical()
+            return self._clang_type_to_llvm(canonical)
+
         if kind == TypeKind.VOID:
             return type_map[VOID]
         elif kind == TypeKind.INT:
@@ -3465,8 +4312,13 @@ class CodeGenerator(NodeVisitor):
             # Link with mimalloc DLL for better memory allocation performance
             mimalloc_dir = 'D:/Project/mimalloc/out/shared/Release'
             mimalloc_lib = f'{mimalloc_dir}/mimalloc.dll.lib'
+
+            # Build command with all libraries
+            cmd = ['clang', f'{output}.ll', '-O3', '-o', output]
+
+            # Add mimalloc if available
             if os.path.exists(mimalloc_lib):
-                cmd = ['clang', f'{output}.ll', '-O3', '-o', output, mimalloc_lib]
+                cmd.append(mimalloc_lib)
                 # Copy DLLs to output directory
                 output_dir = os.path.dirname(os.path.abspath(output)) or '.'
                 import shutil
@@ -3475,9 +4327,26 @@ class CodeGenerator(NodeVisitor):
                     dst = f'{output_dir}/{dll}'
                     if os.path.exists(src) and not os.path.exists(dst):
                         shutil.copy2(src, dst)
-            else:
-                cmd = ['clang', f'{output}.ll', '-O3', '-o', output]
-            subprocess.call(cmd, stdout=tmpout, stderr=tmpout)
+
+            # Add custom C libraries from @link directives
+            output_dir = os.path.dirname(os.path.abspath(output)) or '.'
+            import shutil
+            for lib_path in self.link_libs:
+                # Try to find the library (.lib for linking, .dll for runtime)
+                lib_file = lib_path + '.lib'
+                dll_file = lib_path + '.dll'
+                if os.path.exists(lib_file):
+                    cmd.append(lib_file)
+                    # Copy DLL to output directory for runtime
+                    if os.path.exists(dll_file):
+                        dll_name = os.path.basename(dll_file)
+                        dst = os.path.join(output_dir, dll_name)
+                        if not os.path.exists(dst):
+                            shutil.copy2(dll_file, dst)
+                elif os.path.exists(lib_path):
+                    cmd.append(lib_path)
+
+            result = subprocess.call(cmd, stdout=tmpout, stderr=subprocess.PIPE)
             successful("compilation done in: %.3f seconds" % (time() - compile_time))
             successful("binary file wrote to " + output)
 

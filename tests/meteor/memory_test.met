@@ -1,0 +1,18 @@
+# 简单内存测试 - 循环创建对象
+
+class Item
+    value: int
+
+    def new(value: int)
+        self.value = value
+
+def test_loop()
+    print("Starting memory test...")
+    i = 0
+    while i < 10000000
+        item = Item(i)
+        print("Created item")
+        i = i + 1
+    print("Done!")
+
+test_loop()

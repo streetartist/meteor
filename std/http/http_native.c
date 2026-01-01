@@ -172,6 +172,10 @@ EXPORT int meteor_parse_query_string(const char* query, MeteorHttpHeader* params
 // Response Helpers
 // ============================================================================
 
+// Forward declaration for shared cleanup logic
+static void meteor_http_response_cleanup(MeteorHttpResponse* response);
+static void meteor_http_request_cleanup(MeteorHttpRequest* req, int free_remote_addr);
+
 EXPORT void meteor_http_response_init(MeteorHttpResponse* res) {
     if (!res) return;
     memset(res, 0, sizeof(MeteorHttpResponse));
@@ -472,10 +476,10 @@ EXPORT int meteor_http_server_listen(MeteorHttpServer handle) {
         req.remote_port = ntohs(client_addr.sin_port);
         
         if (parse_request(buffer, received, &req) < 0) {
+            meteor_http_request_cleanup(&req, 0); // remote_addr is stack storage
             close(client_fd);
             continue;
         }
-        
         // Find matching route
         MeteorHttpResponse res;
         meteor_http_response_init(&res);
@@ -498,9 +502,10 @@ EXPORT int meteor_http_server_listen(MeteorHttpServer handle) {
         // Send response
         send_response(client_fd, &res);
         
-        // Cleanup
+        // Cleanup allocated header/value strings and body buffers
+        meteor_http_request_cleanup(&req, 0);
+        meteor_http_response_cleanup(&res);
         close(client_fd);
-        if (res.body) free(res.body);
     }
     
     return 0;
@@ -713,13 +718,65 @@ EXPORT MeteorHttpResponse* meteor_http_client_request(
     return res;
 }
 
+// Internal helper to free duplicated header strings and body buffers
+static void meteor_http_response_cleanup(MeteorHttpResponse* response) {
+    if (!response) return;
+
+    if (response->body) {
+        free(response->body);
+        response->body = NULL;
+        response->body_length = 0;
+    }
+
+    for (int i = 0; i < response->header_count; i++) {
+        if (response->headers[i].name) {
+            free((void*)response->headers[i].name);
+            response->headers[i].name = NULL;
+        }
+        if (response->headers[i].value) {
+            free((void*)response->headers[i].value);
+            response->headers[i].value = NULL;
+        }
+    }
+    response->header_count = 0;
+}
+
 EXPORT void meteor_http_response_free(MeteorHttpResponse* response) {
     if (!response) return;
-    if (response->body) free(response->body);
-    for (int i = 0; i < response->header_count; i++) {
-        // Note: Headers use strdup, need to free
-    }
+    meteor_http_response_cleanup(response);
     free(response);
+}
+
+// Free duplicated strings inside a request; optionally free remote_addr when heap-allocated
+static void meteor_http_request_cleanup(MeteorHttpRequest* req, int free_remote_addr) {
+    if (!req) return;
+
+    if (req->path) {
+        free((void*)req->path);
+        req->path = NULL;
+    }
+
+    if (req->query && req->query[0] != '\0') {
+        free((void*)req->query);
+        req->query = NULL;
+    }
+
+    for (int i = 0; i < req->header_count; i++) {
+        if (req->headers[i].name) {
+            free((void*)req->headers[i].name);
+            req->headers[i].name = NULL;
+        }
+        if (req->headers[i].value) {
+            free((void*)req->headers[i].value);
+            req->headers[i].value = NULL;
+        }
+    }
+    req->header_count = 0;
+
+    if (free_remote_addr && req->remote_addr) {
+        free((void*)req->remote_addr);
+        req->remote_addr = NULL;
+    }
 }
 
 EXPORT void meteor_http_client_destroy(MeteorHttpClient handle) {
@@ -800,6 +857,11 @@ EXPORT MeteorHttpResponse* meteor_http_response_create() {
     return res;
 }
 
+EXPORT void meteor_http_request_free(MeteorHttpRequest* request) {
+    if (!request) return;
+    meteor_http_request_cleanup(request, 1);
+    free(request);
+}
 
 // ============================================================================
 // Low-level Server Primitives
@@ -900,6 +962,7 @@ EXPORT MeteorHttpRequest* meteor_http_connection_read_request(MeteorHttpConnecti
     req->remote_port = ntohs(conn->addr.sin_port);
     
     if (parse_request(buffer, received, req) < 0) {
+        meteor_http_request_cleanup(req, 1);
         free(req);
         return NULL;
     }

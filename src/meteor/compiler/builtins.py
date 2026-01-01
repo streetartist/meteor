@@ -139,10 +139,24 @@ def define_builtins(self):
     define_number_func(self)
 
 
+def _normalize_type_name(array_type):
+    """Normalize type name for class types (e.g., '%"Header"' -> 'Header')"""
+    type_str = str(array_type)
+    # Strip pointer symbols to get the underlying type name
+    while type_str.endswith('*'):
+        type_str = type_str[:-1].strip()
+    if type_str.startswith('%"') and type_str.endswith('"'):
+        return type_str[2:-1]
+    elif type_str.startswith('%'):
+        return type_str[1:]
+    return type_str
+
+
 def create_dynamic_array_methods(self, array_type):
     if array_type in array_types:
         return
-    array = self.search_scopes('{}.array'.format(str(array_type)))
+    type_name = _normalize_type_name(array_type)
+    array = self.search_scopes('{}.array'.format(type_name))
     array_ptr = array.as_pointer()
 
     current_block = self.builder.block
@@ -186,7 +200,7 @@ def define_create_range(self, dyn_array_ptr, array_type):
     builder.cbranch(cond, create_range_body, create_range_exit)
 
     builder.position_at_end(create_range_body)
-    builder.call(self.module.get_global('{}.array.append'.format(str(array_type))), [builder.load(array_ptr), builder.load(num_ptr)])
+    builder.call(self.module.get_global('{}.array.append'.format(_normalize_type_name(array_type))), [builder.load(array_ptr), builder.load(num_ptr)])
     builder.store(builder.add(one, builder.load(num_ptr)), num_ptr)
 
     builder.branch(create_range_test)
@@ -197,8 +211,9 @@ def define_create_range(self, dyn_array_ptr, array_type):
 
 def dynamic_array_init(self, dyn_array_ptr, array_type):
     # START
+    type_name = _normalize_type_name(array_type)
     dyn_array_init_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr])
-    dyn_array_init = ir.Function(self.module, dyn_array_init_type, '{}.array.init'.format(str(array_type)))
+    dyn_array_init = ir.Function(self.module, dyn_array_init_type, '{}.array.init'.format(type_name))
     dyn_array_init.args[0].name = 'self'
     dyn_array_init_entry = dyn_array_init.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_init_entry)
@@ -239,7 +254,7 @@ def dynamic_array_init(self, dyn_array_ptr, array_type):
 def dynamic_array_double_if_full(self, dyn_array_ptr, array_type):
     # START
     dyn_array_double_capacity_if_full_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr])
-    dyn_array_double_capacity_if_full = ir.Function(self.module, dyn_array_double_capacity_if_full_type, '{}.array.double_capacity_if_full'.format(str(array_type)))
+    dyn_array_double_capacity_if_full = ir.Function(self.module, dyn_array_double_capacity_if_full_type, '{}.array.double_capacity_if_full'.format(_normalize_type_name(array_type)))
     dyn_array_double_capacity_if_full.args[0].name = 'self'
     dyn_array_double_capacity_if_full_entry = dyn_array_double_capacity_if_full.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_double_capacity_if_full_entry)
@@ -287,7 +302,7 @@ def dynamic_array_double_if_full(self, dyn_array_ptr, array_type):
 def dynamic_array_append(self, dyn_array_ptr, array_type):
     # START
     dyn_array_append_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr, array_type])
-    dyn_array_append = ir.Function(self.module, dyn_array_append_type, '{}.array.append'.format(str(array_type)))
+    dyn_array_append = ir.Function(self.module, dyn_array_append_type, '{}.array.append'.format(_normalize_type_name(array_type)))
     dyn_array_append.args[0].name = 'self'
     dyn_array_append_entry = dyn_array_append.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_append_entry)
@@ -300,24 +315,24 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
     builder.store(dyn_array_append.args[1], value_ptr)
 
     # BODY
-    builder.call(self.module.get_global('{}.array.double_capacity_if_full'.format(str(array_type))), [builder.load(array_ptr)])
+    builder.call(self.module.get_global('{}.array.double_capacity_if_full'.format(_normalize_type_name(array_type))), [builder.load(array_ptr)])
 
     size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
     size_val = builder.load(size_ptr)
 
-    # Store element at current size index BEFORE incrementing size
+    # Store element at current size index (0-based: element goes at index size)
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
     data_element_ptr = builder.gep(builder.load(data_ptr), [size_val], inbounds=True)
     builder.store(builder.load(value_ptr), data_element_ptr)
 
-    # Now increment size
+    # Then increment size
     new_size = builder.add(size_val, one)
     builder.store(new_size, size_ptr)
 
     builder.branch(dyn_array_append_exit)
 
     # CLOSE
-    self.define('{}.array.append'.format(str(array_type)), dyn_array_append)
+    self.define('{}.array.append'.format(_normalize_type_name(array_type)), dyn_array_append)
     builder.position_at_end(dyn_array_append_exit)
     builder.ret_void()
 
@@ -325,7 +340,7 @@ def dynamic_array_append(self, dyn_array_ptr, array_type):
 def dynamic_array_get(self, dyn_array_ptr, array_type):
     # START
     dyn_array_get_type = ir.FunctionType(array_type, [dyn_array_ptr, type_map[INT]])
-    dyn_array_get = ir.Function(self.module, dyn_array_get_type, '{}.array.get'.format(str(array_type)))
+    dyn_array_get = ir.Function(self.module, dyn_array_get_type, '{}.array.get'.format(_normalize_type_name(array_type)))
     dyn_array_get.args[0].name = 'self'
     dyn_array_get_entry = dyn_array_get.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_get_entry)
@@ -374,14 +389,14 @@ def dynamic_array_get(self, dyn_array_ptr, array_type):
 
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
-    # Load index (may have been modified for negative index) - use directly without +1
+    # Load index (may have been modified for negative index) - 0-based storage
     index_val = builder.load(index_ptr)
     data_element_ptr = builder.gep(builder.load(data_ptr), [index_val], inbounds=True)
 
     builder.branch(dyn_array_get_exit)
 
     # CLOSE
-    self.define('{}.array.get'.format(str(array_type)), dyn_array_get)
+    self.define('{}.array.get'.format(_normalize_type_name(array_type)), dyn_array_get)
     builder.position_at_end(dyn_array_get_exit)
     builder.ret(builder.load(data_element_ptr))
 
@@ -389,7 +404,7 @@ def dynamic_array_get(self, dyn_array_ptr, array_type):
 def dynamic_array_set(self, dyn_array_ptr, array_type):
     # START
     dyn_array_set_type = ir.FunctionType(type_map[VOID], [dyn_array_ptr, type_map[INT], array_type])
-    dyn_array_set = ir.Function(self.module, dyn_array_set_type, '{}.array.set'.format(str(array_type)))
+    dyn_array_set = ir.Function(self.module, dyn_array_set_type, '{}.array.set'.format(_normalize_type_name(array_type)))
     dyn_array_set.args[0].name = 'self'
     dyn_array_set_entry = dyn_array_set.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_set_entry)
@@ -438,9 +453,8 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
 
     data_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_DATA], inbounds=True)
 
-    # Load index (may have been modified for negative index) - use directly without +1
+    # Load index (may have been modified for negative index) - 0-based storage
     index_val = builder.load(index_ptr)
-
     data_element_ptr = builder.gep(builder.load(data_ptr), [index_val], inbounds=True)
 
     builder.store(builder.load(value_ptr), data_element_ptr)
@@ -448,7 +462,7 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
     builder.branch(dyn_array_set_exit)
 
     # CLOSE
-    self.define('{}.array.set'.format(str(array_type)), dyn_array_set)
+    self.define('{}.array.set'.format(_normalize_type_name(array_type)), dyn_array_set)
     builder.position_at_end(dyn_array_set_exit)
     builder.ret_void()
 
@@ -456,7 +470,7 @@ def dynamic_array_set(self, dyn_array_ptr, array_type):
 def dynamic_array_length(self, dyn_array_ptr, array_type):
     # START
     dyn_array_length_type = ir.FunctionType(type_map[INT], [dyn_array_ptr])
-    dyn_array_length = ir.Function(self.module, dyn_array_length_type, '{}.array.length'.format(str(array_type)))
+    dyn_array_length = ir.Function(self.module, dyn_array_length_type, '{}.array.length'.format(_normalize_type_name(array_type)))
     dyn_array_length.args[0].name = 'self'
     dyn_array_length_entry = dyn_array_length.append_basic_block('entry')
     builder = ir.IRBuilder(dyn_array_length_entry)
@@ -468,7 +482,7 @@ def dynamic_array_length(self, dyn_array_ptr, array_type):
     size_ptr = builder.gep(builder.load(array_ptr), [zero_32, ARRAY_SIZE], inbounds=True)
 
     # CLOSE
-    self.define('{}.array.length'.format(str(array_type)), dyn_array_length)
+    self.define('{}.array.length'.format(_normalize_type_name(array_type)), dyn_array_length)
     builder.ret(builder.load(size_ptr))
 
 # TODO: add the following functions for dynamic array
@@ -625,7 +639,7 @@ def define_print_bigint(self):
     src_data_ptr_ptr = builder.gep(digits_array, [zero_32, ARRAY_DATA])
     src_data_ptr = builder.load(src_data_ptr_ptr)
 
-    # If single digit, print as decimal number (1-based: first element at index 1)
+    # If single digit, print as decimal number (0-based: first element at index 0)
     is_single = builder.icmp_signed('==', num_digits, one)
 
     single_block = func.append_basic_block('single_digit')
@@ -634,9 +648,9 @@ def define_print_bigint(self):
 
     builder.cbranch(is_single, single_block, multi_block)
 
-    # Single digit: print as decimal (1-based: first element at index 1)
+    # Single digit: print as decimal (0-based: first element at index 0)
     builder.position_at_end(single_block)
-    first_digit_ptr = builder.gep(src_data_ptr, [one])  # 1-based index
+    first_digit_ptr = builder.gep(src_data_ptr, [zero])  # 0-based index
     first_digit = builder.load(first_digit_ptr)
     fmt_str = ir.GlobalVariable(self.module, ir.ArrayType(type_map[INT8], 6), name="fmt_bigint")
     if not fmt_str.initializer:
@@ -667,22 +681,22 @@ def define_print_bigint(self):
     decimal_digits = self.create_array(type_map[INT64])
     work_array = self.create_array(type_map[INT64])
 
-    # Copy loop using 1-based access (index 1 to num_digits)
+    # Copy loop using 0-based access (index 0 to num_digits-1)
     copy_cond = func.append_basic_block('copy_cond')
     copy_body = func.append_basic_block('copy_body')
     copy_end = func.append_basic_block('copy_end')
 
     copy_idx = builder.alloca(type_map[INT])
-    builder.store(one, copy_idx)  # Start from 1 (1-based)
+    builder.store(zero, copy_idx)  # Start from 0 (0-based)
     builder.branch(copy_cond)
 
     builder.position_at_end(copy_cond)
     idx_val = builder.load(copy_idx)
-    copy_cont = builder.icmp_signed('<=', idx_val, num_digits)  # <= num_digits
+    copy_cont = builder.icmp_signed('<', idx_val, num_digits)  # < num_digits
     builder.cbranch(copy_cont, copy_body, copy_end)
 
     builder.position_at_end(copy_body)
-    # 1-based access to source array
+    # 0-based access to source array
     src_elem_ptr = builder.gep(src_data_ptr, [idx_val])
     digit_val = builder.load(src_elem_ptr)
     builder.call(append_func, [work_array, digit_val])
@@ -714,12 +728,13 @@ def define_print_bigint(self):
     builder.cbranch(is_empty, div_end, div_check_zero)
 
     builder.position_at_end(div_check_zero)
-    # Get work_array data pointer for 1-based access
+    # Get work_array data pointer for 0-based access
     work_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr = builder.load(work_data_ptr_ptr)
 
-    # Check if highest digit is zero (1-based: highest at index work_len)
-    high_digit_ptr = builder.gep(work_data_ptr, [work_len])
+    # Check if highest digit is zero (0-based: highest at index work_len-1)
+    high_idx = builder.sub(work_len, one)
+    high_digit_ptr = builder.gep(work_data_ptr, [high_idx])
     high_digit = builder.load(high_digit_ptr)
     is_all_zero = builder.icmp_unsigned('==', high_digit, ir.Constant(type_map[INT64], 0))
 
@@ -732,9 +747,10 @@ def define_print_bigint(self):
     # Initialize carry to 0
     builder.store(ir.Constant(type_map[INT64], 0), carry)
 
-    # Get current length and initialize div_idx to len (1-based: from len down to 1)
+    # Get current length and initialize div_idx to len-1 (0-based: from len-1 down to 0)
     cur_len = builder.load(work_len_slot)
-    builder.store(cur_len, div_idx)
+    last_idx = builder.sub(cur_len, one)
+    builder.store(last_idx, div_idx)
 
     div_inner_cond = func.append_basic_block('div_inner_cond')
     div_inner_body = func.append_basic_block('div_inner_body')
@@ -744,7 +760,7 @@ def define_print_bigint(self):
 
     builder.position_at_end(div_inner_cond)
     i_val = builder.load(div_idx)
-    inner_cont = builder.icmp_signed('>=', i_val, one)  # 1-based: >= 1
+    inner_cont = builder.icmp_signed('>=', i_val, zero)  # 0-based: >= 0
     builder.cbranch(inner_cont, div_inner_body, div_inner_end)
 
     builder.position_at_end(div_inner_body)
@@ -752,7 +768,7 @@ def define_print_bigint(self):
     work_data_ptr_ptr2 = builder.gep(work_array, [zero_32, ARRAY_DATA])
     work_data_ptr2 = builder.load(work_data_ptr_ptr2)
 
-    # Get current digit using 1-based access
+    # Get current digit using 0-based access
     cur_digit_ptr = builder.gep(work_data_ptr2, [i_val])
     cur_digit = builder.load(cur_digit_ptr)
     carry_val = builder.load(carry)
@@ -818,10 +834,11 @@ def define_print_bigint(self):
     builder.cbranch(has_elements, trim_body, trim_end)
 
     builder.position_at_end(trim_body)
-    # Get top element using 1-based access (top at index cur_work_len)
+    # Get top element using 0-based access (top at index cur_work_len-1)
     trim_data_ptr_ptr = builder.gep(work_array, [zero_32, ARRAY_DATA])
     trim_data_ptr = builder.load(trim_data_ptr_ptr)
-    top_val_ptr = builder.gep(trim_data_ptr, [cur_work_len])  # 1-based
+    top_idx = builder.sub(cur_work_len, one)
+    top_val_ptr = builder.gep(trim_data_ptr, [top_idx])  # 0-based
     top_val = builder.load(top_val_ptr)
 
     is_zero_top = builder.icmp_unsigned('==', top_val, ir.Constant(type_map[INT64], 0))
@@ -875,7 +892,8 @@ def define_print_bigint(self):
         dec_fmt_pad.global_constant = True
 
     print_idx = builder.alloca(type_map[INT])
-    builder.store(dec_len, print_idx)  # 1-based: start from dec_len
+    last_dec_idx = builder.sub(dec_len, one)
+    builder.store(last_dec_idx, print_idx)  # 0-based: start from dec_len-1
 
     print_dec_cond = func.append_basic_block('print_dec_cond')
     print_dec_body = func.append_basic_block('print_dec_body')
@@ -885,19 +903,19 @@ def define_print_bigint(self):
 
     builder.position_at_end(print_dec_cond)
     p_idx = builder.load(print_idx)
-    p_cont = builder.icmp_signed('>=', p_idx, one)  # 1-based: >= 1
+    p_cont = builder.icmp_signed('>=', p_idx, zero)  # 0-based: >= 0
     builder.cbranch(p_cont, print_dec_body, print_dec_finish)
 
     builder.position_at_end(print_dec_body)
-    # Get decimal digit using 1-based access
+    # Get decimal digit using 0-based access
     dec_data_ptr_ptr = builder.gep(decimal_digits, [zero_32, ARRAY_DATA])
     dec_data_ptr = builder.load(dec_data_ptr_ptr)
     
     d_val_ptr = builder.gep(dec_data_ptr, [p_idx])
     d_val = builder.load(d_val_ptr)
     
-    # Check if this is the first block (MSB) -> p_idx == dec_len
-    is_first_block = builder.icmp_signed('==', p_idx, dec_len)
+    # Check if this is the first block (MSB) -> p_idx == dec_len-1
+    is_first_block = builder.icmp_signed('==', p_idx, last_dec_idx)
     
     print_first_blk = func.append_basic_block('print_first_blk')
     print_pad_blk = func.append_basic_block('print_pad_blk')
@@ -5117,10 +5135,19 @@ def define_meteor_weak_upgrade(self):
 
 
 def define_meteor_destroy(self):
-    """Type-specific destructor dispatch based on type_tag."""
-    from meteor.compiler.base import (OBJECT_HEADER, HEADER_TYPE_TAG,
-                                       TYPE_TAG_STR, TYPE_TAG_BIGINT,
-                                       TYPE_TAG_LIST, TYPE_TAG_CLASS)
+    """Type-specific destructor - releases internal data based on type_tag.
+    
+    For arrays (type_tag == TYPE_TAG_LIST): free the data pointer.
+    For classes (type_tag == TYPE_TAG_CLASS): do nothing (class destructors handle this).
+    For other types: type-specific handling.
+    
+    Array layout: { header(16), size(8), capacity(8), data(ptr) }
+    - Data is at offset 32 bytes from start
+    
+    Class layout: { header(16), [class fields] }
+    - No internal data pointer to free (destructor handles field cleanup)
+    """
+    from meteor.compiler.base import OBJECT_HEADER, HEADER_TYPE_TAG, TYPE_TAG_CLASS, TYPE_TAG_LIST
 
     header_struct = self.search_scopes(OBJECT_HEADER)
     header_ptr = header_struct.as_pointer()
@@ -5130,17 +5157,61 @@ def define_meteor_destroy(self):
     func.linkage = 'internal'
 
     entry = func.append_basic_block('entry')
+    check_array = func.append_basic_block('check_array')
+    free_array_data = func.append_basic_block('free_array_data')
     exit_block = func.append_basic_block('exit')
 
     builder = ir.IRBuilder(entry)
     obj_ptr = func.args[0]
 
-    # Get type tag
+    # Null check
+    null_ptr = ir.Constant(header_ptr, None)
+    is_null = builder.icmp_unsigned('==', obj_ptr, null_ptr)
+    not_null_block = func.append_basic_block('not_null')
+    builder.cbranch(is_null, exit_block, not_null_block)
+    
+    builder.position_at_end(not_null_block)
+    
+    # Load type_tag from header
     type_tag_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
     type_tag = builder.load(type_tag_ptr)
-
-    # For now, just return - type-specific cleanup will be added later
-    # when we migrate existing types to use the new header
+    
+    # For CLASS types, skip destruction (class destructors handle this separately)
+    is_class = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], TYPE_TAG_CLASS))
+    builder.cbranch(is_class, exit_block, check_array)
+    
+    # Check if it's an array type (LIST, STR, etc.)
+    builder.position_at_end(check_array)
+    is_array = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], TYPE_TAG_LIST))
+    # Also check for STR (which uses TYPE_TAG_STR = 4)
+    is_str = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], 4))  # TYPE_TAG_STR
+    is_array_or_str = builder.or_(is_array, is_str)
+    builder.cbranch(is_array_or_str, free_array_data, exit_block)
+    
+    # Free array data pointer
+    builder.position_at_end(free_array_data)
+    
+    # Cast header* to i8*
+    i8_ptr = builder.bitcast(obj_ptr, type_map[INT8].as_pointer())
+    
+    # Data is at offset 16 (header) + 8 (size) + 8 (capacity) = 32 bytes
+    data_offset = ir.Constant(type_map[INT], 32)
+    data_ptr_ptr = builder.gep(i8_ptr, [data_offset])
+    data_ptr_ptr = builder.bitcast(data_ptr_ptr, type_map[INT8].as_pointer().as_pointer())
+    
+    # Load the data pointer
+    data_ptr = builder.load(data_ptr_ptr)
+    
+    # Free the data if not null
+    data_null = ir.Constant(type_map[INT8].as_pointer(), None)
+    data_is_null = builder.icmp_unsigned('==', data_ptr, data_null)
+    
+    do_free = func.append_basic_block('do_free')
+    builder.cbranch(data_is_null, exit_block, do_free)
+    
+    builder.position_at_end(do_free)
+    free_func = self.module.get_global('free')
+    builder.call(free_func, [data_ptr])
     builder.branch(exit_block)
 
     builder.position_at_end(exit_block)

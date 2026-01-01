@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(build.bat)",
+      "Bash(cmd /c \"cd /d D:\\\\Project\\\\meteor\\\\std\\\\http && build.bat\")",
+      "Bash(dlltool:*)"
+    ]
+  }
+}

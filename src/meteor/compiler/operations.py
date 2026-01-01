@@ -415,6 +415,22 @@ def binary_op(self, node):
         else:
             error('file={} line={}: Unsupported operator {} for string'.format(
                 self.file_name, node.line_num, op))
+    elif isinstance(left.type, ir.PointerType) and isinstance(right.type, ir.PointerType):
+        # Pointer comparison (e.g., ptr == null, ptr != null)
+        if op == EQUALS:
+            # Cast both to i8* for comparison
+            i8_ptr = type_map[INT8].as_pointer()
+            left_cast = self.builder.bitcast(left, i8_ptr)
+            right_cast = self.builder.bitcast(right, i8_ptr)
+            return self.builder.icmp_unsigned('==', left_cast, right_cast)
+        elif op == NOT_EQUALS:
+            i8_ptr = type_map[INT8].as_pointer()
+            left_cast = self.builder.bitcast(left, i8_ptr)
+            right_cast = self.builder.bitcast(right, i8_ptr)
+            return self.builder.icmp_unsigned('!=', left_cast, right_cast)
+        else:
+            error('file={} line={}: Unsupported operator {} for pointers'.format(
+                self.file_name, node.line_num, op))
     else:
         error('file={} line={}: Unknown operator {} for {} and {}'.format(
             self.file_name,

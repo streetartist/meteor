@@ -1,0 +1,41 @@
+# Class Function Test - Tests class passing and returning
+
+class Counter
+    value: int
+    def new(v: int)
+        self.value = v
+    
+    def inc()
+        self.value = self.value + 1
+    
+    def get() -> int
+        return self.value
+
+# Test 1: Pass to function
+def use_counter(c0: Counter)
+    c0.inc()
+    print(c0.get())
+
+print(1)
+c1 = Counter(10)
+use_counter(c1)  # 11
+print(c1.get())  # 11
+
+# Test 2: Return from function
+def make_counter(start: int) -> Counter
+    return Counter(start)
+
+print(2)
+c2 = make_counter(20)
+print(c2.get())  # 20
+c2.inc()
+print(c2.get())  # 21
+
+# Test 3: Multiple objects in scope
+print(3)
+c3 = Counter(100)
+c4 = Counter(200)
+print(c3.get())  # 100
+print(c4.get())  # 200
+
+print(999)

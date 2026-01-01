@@ -1,0 +1,44 @@
+# Class Memory Management Test - Full Suite
+# Tests reference counting, loops, reassignment, and function calls
+
+class Point
+    x: int
+    y: int
+    def new(x: int, y: int)
+        self.x = x
+        self.y = y
+    
+    def sum() -> int
+        return self.x + self.y
+
+# Test 1: Basic class allocation
+print(1)
+p = Point(1, 2)
+print(p.sum())  # 3
+
+# Test 2: Class in loop
+print(2)
+i = 0
+while i < 3
+    q = Point(i, i * 2)
+    print(q.sum())  # 0, 3, 6
+    i = i + 1
+
+# Test 3: Reassignment
+print(3)
+r = Point(1, 1)
+print(r.sum())  # 2
+r = Point(2, 2)
+print(r.sum())  # 4
+r = Point(3, 3)
+print(r.sum())  # 6
+
+# Test 4: Large loop (memory leak detection)
+print(4)
+j = 0
+while j < 100
+    s = Point(j, j)
+    j = j + 1
+print(j)  # 100
+
+print(999)  # end marker

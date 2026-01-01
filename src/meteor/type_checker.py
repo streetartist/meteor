@@ -744,12 +744,26 @@ class Preprocessor(NodeVisitor):
         collection = self.search_scopes(node.collection.value)
         collection.accessed = True
         if isinstance(node.key, Var):
-            key = self.infer_type(node.key.value)
+            # Look up the variable symbol first, then get its type
+            key_sym = self.search_scopes(node.key.value)
+            if key_sym:
+                key_sym.accessed = True
+                key = key_sym.type if hasattr(key_sym, 'type') else key_sym
+            else:
+                key = self.infer_type(node.key.value)
         else:
             key = self.visit(node.key)
+        
+        int_type = self.search_scopes(INT)
+        
         if collection.type is self.search_scopes(LIST) or collection.type is self.search_scopes(TUPLE) or collection.type is self.search_scopes(SET):
-            if key is not self.search_scopes(INT) and key.type is not self.search_scopes(INT):
-                error('file={} line={}: Something something error... huh? (fix this message)'.format(self.file_name, node.line_num))
+            # Check if key is an integer type
+            key_is_int = (key is int_type or 
+                         (hasattr(key, 'type') and key.type is int_type) or
+                         (hasattr(key, 'name') and key.name == INT))
+            if not key_is_int:
+                error('file={} line={}: Collection index must be an integer, got {}'.format(
+                    self.file_name, node.line_num, key))
             return collection.item_types
         elif collection.type is self.search_scopes(DICT) or collection.type is self.search_scopes(ENUM):
             if key is not self.search_scopes(STR) and key.type is not self.search_scopes(STR):

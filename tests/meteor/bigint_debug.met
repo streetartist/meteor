@@ -1,0 +1,16 @@
+# Debug BigInt - test small numbers first
+a: bigint = 0
+print("a (should be 0):")
+print(a)
+
+b: bigint = 1
+print("b (should be 1):")
+print(b)
+
+c: bigint = 100
+print("c (should be 100):")
+print(c)
+
+d: bigint = 9223372036854775807
+print("d (should be 9223372036854775807):")
+print(d)
