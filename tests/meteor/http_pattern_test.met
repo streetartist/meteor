@@ -1,0 +1,62 @@
+# 模拟 HTTP 服务器的内存模式
+
+class Header
+    name: str
+    value: str
+    
+    def new(n: str, v: str)
+        self.name = n
+        self.value = v
+
+class Request
+    path: str
+    headers: list<Header>
+    
+    def new()
+        self.path = "/"
+        self.headers = []
+
+class Response
+    body: str
+    headers: list<Header>
+    
+    def new()
+        self.body = ""
+        self.headers = []
+
+def simulate_request(iteration: int)
+    print("=== Request ")
+    print(iteration)
+    print(" ===")
+    
+    # 模拟每次请求创建新对象
+    req = Request()
+    req.path = "/hello"
+    
+    # 添加一些 headers
+    req.headers.append(Header("Host", "localhost"))
+    req.headers.append(Header("User-Agent", "Test"))
+    
+    res = Response()
+    res.body = "Hello World"
+    res.headers.append(Header("Content-Type", "text/plain"))
+
+    # 模拟处理
+    i: int = 0
+    while i < req.headers.length()
+        h = req.headers[i]
+        print("  Header: ")
+        print(h.name)
+        i = i + 1
+    
+    print("  Response body: ")
+    print(res.body)
+
+def test_main()
+    i: int = 0
+    while i < 3
+        simulate_request(i)
+        i = i + 1
+    print("Done")
+
+test_main()

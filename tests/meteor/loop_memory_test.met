@@ -1,0 +1,25 @@
+# 测试循环中的内存管理
+
+class SimpleClass
+    value: int
+    
+    def new(v: int)
+        self.value = v
+        print("Created: ")
+        print(v)
+    
+    def destroy()
+        print("Destroyed: ")
+        print(self.value)
+
+def test_loop()
+    i = 0
+    while i < 3
+        obj = SimpleClass(i)
+        print("Loop iteration: ")
+        print(i)
+        i = i + 1
+    print("Loop done")
+
+test_loop()
+print("Test complete")

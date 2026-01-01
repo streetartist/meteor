@@ -24,6 +24,10 @@ def types_compatible(left_type: AST, right_type: AST) -> bool:
     l_type = str(left_type)
     r_type = str(right_type)
     
+    # ANY type is compatible with everything
+    if l_type == 'any' or r_type == 'any':
+        return True
+    
     int_type = ('i8', 'i16', 'i32', 'i64', 'int8', 'int16', 'int32', 'int64', 'int')
     float_type = ('float', 'double')
     num_type = int_type + float_type
@@ -510,6 +514,18 @@ class Preprocessor(NodeVisitor):
             if node.name in ('set', 'append'):
                 error('file={} line={}: Immutable Error: cannot use `{}` method'.format(self.file_name, node.line_num, node.name))
 
+        # Handle common collection methods
+        if node.name == 'length':
+            # length() always returns int
+            return self.search_scopes(INT)
+        elif node.name in ('append', 'set', 'clear', 'remove'):
+            # These return void or the collection itself
+            return self.search_scopes(ANY)
+        elif node.name == 'get':
+            # get() returns the element type - return any for now
+            return self.search_scopes(ANY)
+        
+        # For other methods, try to find the method and return its return type
         # method_name = node.name
         # method = self.search_scopes("{}.{}".format(self.search_scopes(node.obj).type.name, method_name))
         # for x, param in enumerate(method.parameters.values()):
@@ -531,6 +547,9 @@ class Preprocessor(NodeVisitor):
         # else:
         #     method.accessed = True
         #     return method.return_type
+        
+        # Default: return any type
+        return self.search_scopes(ANY)
 
     def visit_spawn(self, node):
         """Type check spawn statement - validates the function call and concurrency safety.
@@ -719,6 +738,9 @@ class Preprocessor(NodeVisitor):
 
     def visit_dotaccess(self, node):
         obj = self.search_scopes(node.obj)
+        if obj is None:
+            # Unknown object, return any
+            return self.search_scopes(ANY)
         obj.accessed = True
         if isinstance(obj, EnumSymbol):
             return obj
@@ -728,6 +750,9 @@ class Preprocessor(NodeVisitor):
                 error('file={} line={}: Invalid error variant {} of error {}'.format(
                     self.file_name, node.line_num, node.field, node.obj))
             return obj
+        elif not hasattr(obj, 'type') or not hasattr(obj.type, 'fields'):
+            # Not a class type with fields, return any
+            return self.search_scopes(ANY)
         elif node.field not in obj.type.fields:
             error('file={} line={}: Invalid property {} of variable {}'.format(
                 self.file_name, node.line_num, node.field, node.obj))
@@ -741,7 +766,24 @@ class Preprocessor(NodeVisitor):
         return self.search_scopes(DICT)
 
     def visit_collectionaccess(self, node):
+        from meteor.ast import DotAccess
+        
+        # Handle DotAccess collection (e.g., req.headers[i])
+        if isinstance(node.collection, DotAccess):
+            # For field access like req.headers, we can't fully type check here
+            # Just validate the key type and return any
+            if isinstance(node.key, Var):
+                key_sym = self.search_scopes(node.key.value)
+                if key_sym:
+                    key_sym.accessed = True
+            else:
+                self.visit(node.key)
+            return self.search_scopes(ANY)
+        
         collection = self.search_scopes(node.collection.value)
+        if collection is None:
+            # Unknown collection, return any
+            return self.search_scopes(ANY)
         collection.accessed = True
         if isinstance(node.key, Var):
             # Look up the variable symbol first, then get its type

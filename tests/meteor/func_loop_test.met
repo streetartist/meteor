@@ -1,0 +1,23 @@
+# 模拟 http_pattern_test 的基本结构
+
+class Obj
+    value: int
+    
+    def new(v: int)
+        self.value = v
+
+def process(iteration: int)
+    print("Processing ")
+    print(iteration)
+    obj = Obj(iteration)
+    print(" obj.value = ")
+    print(obj.value)
+
+def test()
+    i: int = 0
+    while i < 3
+        process(i)
+        i = i + 1
+    print("Done")
+
+test()

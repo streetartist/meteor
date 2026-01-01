@@ -1,0 +1,30 @@
+# 测试 if 块内循环中的内存管理
+
+class Item
+    value: int
+    
+    def new(v: int)
+        self.value = v
+        print("Created: ")
+        print(v)
+    
+    def destroy()
+        print("Destroyed: ")
+        print(self.value)
+
+def test_if_loop()
+    print("=== Test if block with loop ===")
+    i = 0
+    while i < 3
+        print("Iteration: ")
+        print(i)
+        
+        flag = i > 0
+        if flag
+            obj = Item(i)
+            print("  In if block")
+        
+        i = i + 1
+    print("Done")
+
+test_if_loop()

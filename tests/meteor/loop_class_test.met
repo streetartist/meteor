@@ -1,0 +1,20 @@
+# 循环中有类对象的测试
+
+class Obj
+    value: int
+    
+    def new(v: int)
+        self.value = v
+
+def test()
+    i: int = 0
+    while i < 3
+        print("i = ")
+        print(i)
+        obj = Obj(i)
+        print("obj.value = ")
+        print(obj.value)
+        i = i + 1
+    print("Done")
+
+test()

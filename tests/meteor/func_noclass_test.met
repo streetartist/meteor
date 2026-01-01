@@ -1,0 +1,14 @@
+# 简单函数调用测试 - 无类对象
+
+def process(iteration: int)
+    print("Processing ")
+    print(iteration)
+
+def test()
+    i: int = 0
+    while i < 3
+        process(i)
+        i = i + 1
+    print("Done")
+
+test()

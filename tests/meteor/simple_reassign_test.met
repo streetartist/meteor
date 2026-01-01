@@ -1,0 +1,20 @@
+# 调试 - 测试循环中的类内存管理
+
+class SimpleClass
+    value: int
+    
+    def new(v: int)
+        self.value = v
+        print("Created: ")
+        print(v)
+    
+    def destroy()
+        print("Destroyed: ")
+        print(self.value)
+
+def test_simple()
+    obj1 = SimpleClass(1)
+    obj1 = SimpleClass(2)  # 这里应该释放 obj1(1)
+    print("Done")
+
+test_simple()

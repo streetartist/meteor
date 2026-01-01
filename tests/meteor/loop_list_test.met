@@ -1,0 +1,23 @@
+# 循环中有类对象和 list 的测试
+
+class Obj
+    value: int
+    items: list<str>
+    
+    def new(v: int)
+        self.value = v
+        self.items = []
+        self.items.append("test")
+
+def test()
+    i: int = 0
+    while i < 3
+        print("i = ")
+        print(i)
+        obj = Obj(i)
+        print("obj.value = ")
+        print(obj.value)
+        i = i + 1
+    print("Done")
+
+test()

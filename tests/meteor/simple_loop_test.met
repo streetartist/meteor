@@ -1,0 +1,11 @@
+# 最简单的循环测试
+
+def test()
+    i: int = 0
+    while i < 3
+        print("i = ")
+        print(i)
+        i = i + 1
+    print("Done")
+
+test()

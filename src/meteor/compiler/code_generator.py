@@ -1362,8 +1362,9 @@ class CodeGenerator(NodeVisitor):
             self.managed_vars_stack.append([])
             ret = self.visit(node.blocks[x])
             # Release managed variables created in this block
+            # Use set_null=True to prevent double-release in loops
             if not self.builder.block.is_terminated:
-                self.release_scope_variables()
+                self.release_scope_variables(set_null=True)
                 if not self.is_break:
                     self.branch(end_block)
             # Pop the managed vars list
@@ -1471,10 +1472,15 @@ class CodeGenerator(NodeVisitor):
         self.loop_end_blocks.pop()
 
     def visit_loopblock(self, node):
+        ret = None
         for child in node.children:
             temp = self.visit(child)
             if temp:
-                return temp
+                ret = temp
+            # Stop generating code if current block is terminated (unreachable code)
+            if hasattr(self, 'builder') and self.builder.block and self.builder.block.is_terminated:
+                break
+        return ret
 
     def visit_switch(self, node):
         default_exists = False
@@ -1515,13 +1521,15 @@ class CodeGenerator(NodeVisitor):
         if len(self.loop_end_blocks) == 0:  # TODO: Move this to typechecker
             error('file={} line={} Syntax Error: break keyword cannot be used outside of control flow statements'.format(self.file_name, node.line_num))
         # Release managed variables in current scope before breaking
+        # Don't need set_null=True for break since we're exiting the loop
         self.release_scope_variables()
         self.is_break = True
         return self.branch(self.loop_end_blocks[-1])
 
     def visit_continue(self, _):
         # Release managed variables in current scope before continuing
-        self.release_scope_variables()
+        # Use set_null=True to prevent double-release on next loop iteration
+        self.release_scope_variables(set_null=True)
         self.is_break = True
         return self.branch(self.loop_test_blocks[-1])
 
@@ -3314,6 +3322,16 @@ class CodeGenerator(NodeVisitor):
         
         builder.position_at_end(not_null_block)
         
+        # Call user-defined destroy() method if it exists
+        user_destroy_name = f'{class_name}.destroy'
+        try:
+            user_destroy = self.module.get_global(user_destroy_name)
+            if user_destroy is not None:
+                builder.call(user_destroy, [obj_ptr])
+        except KeyError:
+            # No user-defined destroy method, that's fine - we'll still release managed fields
+            pass
+        
         # Iterate through all fields and release managed ones
         for i, field_name in enumerate(class_type.fields):
             field_type = class_type.elements[i]
@@ -3390,6 +3408,10 @@ class CodeGenerator(NodeVisitor):
         if hasattr(pointee, 'name'):
             # Arrays have object headers
             if pointee.name.endswith('.array'):
+                return True
+            # Check if we can find the class by name
+            class_def = self.search_scopes(pointee.name)
+            if class_def is not None and hasattr(class_def, 'methods'):
                 return True
         # Check if it's a class type (IdentifiedStructType with methods)
         if isinstance(pointee, ir.IdentifiedStructType):
@@ -3471,13 +3493,24 @@ class CodeGenerator(NodeVisitor):
             obj_type = obj_ptr.type
             if hasattr(obj_type, 'pointee'):
                 pointee = obj_type.pointee
-                if isinstance(pointee, ir.IdentifiedStructType) and hasattr(pointee, 'methods'):
-                    # Ensure destructor is generated
-                    if not hasattr(pointee, 'destructor'):
-                        class_name = pointee.name if hasattr(pointee, 'name') else str(pointee)
-                        self._generate_class_destructor(class_name, pointee)
+                
+                # Try to find the class definition by name if pointee doesn't have methods
+                class_def = None
+                if hasattr(pointee, 'name'):
+                    class_def = self.search_scopes(pointee.name)
+                
+                has_methods = hasattr(pointee, 'methods') or (class_def is not None and hasattr(class_def, 'methods'))
+                
+                if isinstance(pointee, ir.IdentifiedStructType) and has_methods:
+                    # Use class_def if available, otherwise pointee
+                    actual_class = class_def if class_def is not None and hasattr(class_def, 'destructor') else pointee
                     
-                    if hasattr(pointee, 'destructor'):
+                    # Ensure destructor is generated
+                    if not hasattr(actual_class, 'destructor'):
+                        class_name = pointee.name if hasattr(pointee, 'name') else str(pointee)
+                        self._generate_class_destructor(class_name, actual_class)
+                    
+                    if hasattr(actual_class, 'destructor'):
                         # Get header to check RC
                         header = self.get_object_header(obj_ptr)
                         rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
@@ -3493,7 +3526,7 @@ class CodeGenerator(NodeVisitor):
                         
                         # Call destructor before release
                         self.builder.position_at_end(destroy_block)
-                        self.builder.call(pointee.destructor, [obj_ptr])
+                        self.builder.call(actual_class.destructor, [obj_ptr])
                         header2 = self.get_object_header(obj_ptr)
                         self.builder.call(release_func, [header2])
                         self.builder.branch(continue_block)
@@ -3624,8 +3657,15 @@ class CodeGenerator(NodeVisitor):
                 if self.is_managed_type(var_ptr.type.pointee):
                     self.managed_vars_stack[-1].append((name, var_ptr))
 
-    def release_scope_variables(self, exclude=None):
-        """Release all managed variables in current scope."""
+    def release_scope_variables(self, exclude=None, set_null=False):
+        """Release all managed variables in current scope.
+        
+        Args:
+            exclude: Optional value to skip releasing
+            set_null: If True, set the variable pointer to NULL after release.
+                     This is needed for continue/break in loops to prevent
+                     double-release on next iteration.
+        """
         # Skip if no builder or no current block
         if not hasattr(self, 'builder') or self.builder is None:
             return
@@ -3645,6 +3685,10 @@ class CodeGenerator(NodeVisitor):
                 continue
             # Call release directly - the runtime function handles NULL
             self.rc_release(val)
+            # Set to NULL after release to prevent double-release in loops
+            if set_null:
+                null_val = ir.Constant(val.type, None)
+                self.builder.store(null_val, var_ptr)
 
     def new_scope(self):
         """Override to also push managed vars stack."""
@@ -3735,7 +3779,10 @@ class CodeGenerator(NodeVisitor):
         # Check if variable already exists (loop re-iteration case)
         existing_var = self.search_scopes(name)
         
-        if existing_var is not None and self.is_managed_type(typ):
+        # Only handle as existing LLVM variable if it's an ir.Value (not a dict from module import)
+        # For managed types, always generate code to release old value before storing new
+        # This handles both first declaration and loop re-iteration cases correctly
+        if existing_var is not None and self.is_managed_type(typ) and isinstance(existing_var, ir.Value):
             # Variable already declared - this is a loop re-iteration
             # Release old value and store new one
             old_val = self.builder.load(existing_var)
@@ -3771,6 +3818,15 @@ class CodeGenerator(NodeVisitor):
             
             # Register for scope cleanup
             self.register_managed_var(name, var_addr)
+            
+            # Generate code to release old value before storing new (handles loop re-iteration)
+            # On first iteration, var_addr contains NULL so release will be skipped
+            old_val = self.builder.load(var_addr)
+            null_ptr = ir.Constant(typ, None)
+            is_not_null = self.builder.icmp_unsigned('!=', old_val, null_ptr)
+            
+            with self.builder.if_then(is_not_null):
+                self.rc_release(old_val)
             
             # Store the value (new objects from class_assign already have RC=1)
             self.builder.store(val, var_addr)
