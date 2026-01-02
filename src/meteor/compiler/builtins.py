@@ -1628,9 +1628,12 @@ def define_print_number(self):
 
 def define_bigint_add(self):
     # bigint_add(bigint*, bigint*) -> bigint*
-    # Returns pointer to new bigint.
+    # Returns pointer to new heap-allocated bigint with RC=1
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_add')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -1639,40 +1642,49 @@ def define_bigint_add(self):
     a_ptr = func.args[0]
     b_ptr = func.args[1]
     
-    # Check signs? For MVP assume explicit positive addition logic for now. 
-    # Logic: c = a + b
-    
-    # 1. Allocate Result BigInt
-    res_ptr = builder.alloca(bigint_struct, name="res")
-    
-    # 2. Get Arrays (BigInt: { header, sign, digits* } - digits at index 2)
-    # a.digits
-    a_digits_ptr_ptr = builder.gep(a_ptr, [zero_32, two_32])
-    a_digits = builder.load(a_digits_ptr_ptr)
-    # b.digits
-    b_digits_ptr_ptr = builder.gep(b_ptr, [zero_32, two_32])
-    b_digits = builder.load(b_digits_ptr_ptr)
-    
-    # 3. Create Result Array (Heap Allocated)
-    # Using malloc to ensure the array struct persists after return.
-    # sizeof(i64.array) = 8 (size) + 8 (capacity) + 8 (ptr) = 24 bytes
+    # 1. Allocate Result BigInt on heap with header
+    # BigInt struct: { header, sign, digits* } 
+    # Header is embedded, so we just malloc sizeof(bigint)
     malloc_func = self.module.get_global('malloc')
     if not malloc_func:
         char_ptr = type_map[INT8].as_pointer()
         malloc_type = ir.FunctionType(char_ptr, [type_map[INT]])
         malloc_func = ir.Function(self.module, malloc_type, 'malloc')
-        
+    
+    # Sizeof bigint struct (header=16 + sign=1 + padding + digits_ptr=8) ~ 32 bytes
+    res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_ptr = builder.bitcast(res_mem, bigint_ptr_type)
+    
+    # Initialize header (BigInt: { header, sign, digits } - header at index 0)
+    header_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    # strong_rc = 1
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    # weak_rc = 0
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    # flags = 0
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    # type_tag = TYPE_TAG_BIGINT
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    # 2. Get Arrays (BigInt: { header, sign, digits* } - digits at index 2)
+    a_digits_ptr_ptr = builder.gep(a_ptr, [zero_32, two_32])
+    a_digits = builder.load(a_digits_ptr_ptr)
+    b_digits_ptr_ptr = builder.gep(b_ptr, [zero_32, two_32])
+    b_digits = builder.load(b_digits_ptr_ptr)
+    
+    # 3. Create Result Array (Heap Allocated)
     res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     u64_array_type = self.module.context.get_identified_type('i64.array')
     res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
     
-    # Initialize
     init_func = self.module.get_global('i64.array.init')
     builder.call(init_func, [res_digits])
     
     # 4. Addition Loop
-    # We'll use a simple loop over the max length. 
-    # Get lengths
     len_func = self.module.get_global('i64.array.length')
     get_func = self.module.get_global('i64.array.get')
     append_func = self.module.get_global('i64.array.append')
@@ -1682,7 +1694,6 @@ def define_bigint_add(self):
     carry_ptr = builder.alloca(type_map[INT64], name="carry")
     builder.store(zero, carry_ptr)
 
-    # Allocate val_a and val_b at entry (not in loop!)
     val_a_ptr = builder.alloca(type_map[INT64], name="val_a")
     val_b_ptr = builder.alloca(type_map[INT64], name="val_b")
 
@@ -1695,36 +1706,29 @@ def define_bigint_add(self):
     
     builder.branch(cond_block)
     
-    # Condition: idx < len_a || idx < len_b || carry != 0
     builder.position_at_end(cond_block)
     idx = builder.load(idx_ptr)
     carry = builder.load(carry_ptr)
     
-    # Restoring c1 which was deleted inadvertently
     c1 = builder.icmp_signed(LESS_THAN, idx, len_a)
     c2 = builder.icmp_signed(LESS_THAN, idx, len_b)
     c3 = builder.icmp_signed(NOT_EQUALS, carry, zero)
     cond = builder.or_(builder.or_(c1, c2), c3)
     
-
     builder.cbranch(cond, body_block, end_block)
     
-    # Body
     builder.position_at_end(body_block)
 
-    # val_a = (idx < len_a) ? a[idx] : 0
     builder.store(zero, val_a_ptr)
     with builder.if_then(c1):
         val = builder.call(get_func, [a_digits, idx])
         builder.store(val, val_a_ptr)
 
-    # val_b = (idx < len_b) ? b[idx] : 0
     builder.store(zero, val_b_ptr)
     with builder.if_then(c2):
         val = builder.call(get_func, [b_digits, idx])
         builder.store(val, val_b_ptr)
         
-    # sum = val_a + val_b + carry
     val_a_loaded = builder.load(val_a_ptr)
     val_b_loaded = builder.load(val_b_ptr)
     carry_loaded = builder.load(carry_ptr)
@@ -1747,16 +1751,16 @@ def define_bigint_add(self):
     # End
     builder.position_at_end(end_block)
     
-    # Assign digits to result
+    # Assign digits to result (digits at index 2)
     res_digits_ptr = builder.gep(res_ptr, [zero_32, BIGINT_DIGITS])
     builder.store(res_digits, res_digits_ptr)
 
-    # Sign (positive)
+    # Sign (positive) (sign at index 1)
     res_sign_ptr = builder.gep(res_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), res_sign_ptr)
     
-    res_val = builder.load(res_ptr)
-    builder.ret(res_val)
+    # Return pointer (not struct value)
+    builder.ret(res_ptr)
 
     # Dead code removed
 
@@ -1765,8 +1769,12 @@ def define_bigint_add(self):
 
 def define_bigint_neg(self):
     # bigint_neg(bigint*) -> bigint*
+    # Returns pointer to new heap-allocated bigint with RC=1
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_neg')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -1774,17 +1782,29 @@ def define_bigint_neg(self):
     
     val_ptr = func.args[0]
     
-    # helper functions
+    # Helper functions
     len_func = self.module.get_global('i64.array.length')
     get_func = self.module.get_global('i64.array.get')
     append_func = self.module.get_global('i64.array.append')
     init_func = self.module.get_global('i64.array.init')
     
-    # Allocate Result
-    res_ptr = builder.alloca(bigint_struct, name="res")
+    # Allocate Result on heap
+    malloc_func = self.module.get_global('malloc')
+    res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_ptr = builder.bitcast(res_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
     
     # Malloc array for result
-    malloc_func = self.module.get_global('malloc')
     res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     u64_array_type = self.module.context.get_identified_type('i64.array')
     res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
@@ -1830,7 +1850,8 @@ def define_bigint_neg(self):
     res_digits_ptr = builder.gep(res_ptr, [zero_32, two_32])  # digits at index 2
     builder.store(res_digits, res_digits_ptr)
     
-    builder.ret(builder.load(res_ptr))
+    # Return pointer (not struct value)
+    builder.ret(res_ptr)
 
 
 def define_bigint_cmp(self):
@@ -1963,8 +1984,12 @@ def define_bigint_cmp(self):
 
 def define_bigint_sub(self):
     # bigint_sub(bigint*, bigint*) -> bigint*
+    # Returns pointer to new heap-allocated bigint with RC=1
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_sub')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -1978,7 +2003,7 @@ def define_bigint_sub(self):
     get_func = self.module.get_global('i64.array.get')
     append_func = self.module.get_global('i64.array.append')
     init_func = self.module.get_global('i64.array.init')
-    add_func = self.module.get_global('bigint_add') # Handles add of magnitudes essentially
+    add_func = self.module.get_global('bigint_add') # Now returns bigint*
 
     # helpers
     zero_i32 = ir.Constant(type_map[INT32], 0)
@@ -1999,19 +2024,15 @@ def define_bigint_sub(self):
     
     # --- Different Signs ---
     builder.position_at_end(signs_diff_block)
-    # result = |a| + |b|. Sign depends on a.
-    # bigint_add computes |a| + |b| and returns positive result.
-    res_add = builder.call(add_func, [a_ptr, b_ptr])
+    # bigint_add now returns bigint* - already has sign set to positive
+    res_add_ptr = builder.call(add_func, [a_ptr, b_ptr])
     
-    # res_add is a struct Value. Need to store to modify.
-    res_add_ptr = builder.alloca(bigint_struct)
-    builder.store(res_add, res_add_ptr)
-    
-    # Modification: if a is neg, res is neg.
+    # Modify sign: if a is neg, res is neg.
     res_add_sign_ptr = builder.gep(res_add_ptr, [zero_32, BIGINT_SIGN])
     builder.store(a_sign, res_add_sign_ptr)
     
-    builder.ret(builder.load(res_add_ptr))
+    # Return the pointer directly
+    builder.ret(res_add_ptr)
     
     # --- Same Signs ---
     builder.position_at_end(signs_same_block)
@@ -2106,12 +2127,25 @@ def define_bigint_sub(self):
     
     # Algorithm: |x| - |y|
     
-    # 1. Allocate Result
-    res_sub_ptr = builder.alloca(bigint_struct)
-    
+    # 1. Allocate Result on heap with header
     malloc_func = self.module.get_global('malloc')
-    res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    res_digits = builder.bitcast(res_mem, u64_array_type.as_pointer())
+    res_sub_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_sub_ptr = builder.bitcast(res_sub_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_sub_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    # Allocate digits array
+    res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [res_digits])
     
     # Loop over x digits
@@ -2217,7 +2251,7 @@ def define_bigint_sub(self):
     with builder.if_then(is_result_zero):
         builder.store(ir.Constant(type_map[BOOL], 0), final_sign_ptr)
 
-    builder.ret(builder.load(res_sub_ptr))
+    builder.ret(res_sub_ptr)
 
 
 def define_free_bigint(self):
@@ -2301,8 +2335,12 @@ def define_free_bigint(self):
 def define_bigint_mul_naive(self):
     # bigint_mul_naive(bigint*, bigint*) -> bigint*
     # O(n^2) naive multiplication - used as base case for Karatsuba
+    # Returns pointer to new heap-allocated bigint with RC=1
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_mul_naive')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2332,9 +2370,23 @@ def define_bigint_mul_naive(self):
     len_a = builder.call(len_func, [a_digits])
     len_b = builder.call(len_func, [b_digits])
     
-    # Result
-    res_mul_ptr = builder.alloca(bigint_struct)
+    # Result - heap allocate with header
     malloc_func = self.module.get_global('malloc')
+    res_mul_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_mul_ptr = builder.bitcast(res_mul_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_mul_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    # Allocate result digits array
     res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     u64_array_type = self.module.context.get_identified_type('i64.array')
     res_digits = builder.bitcast(res_mem, u64_array_type.as_pointer())
@@ -2493,13 +2545,16 @@ def define_bigint_mul_naive(self):
     with builder.if_then(is_result_zero):
         builder.store(ir.Constant(type_map[BOOL], 0), final_sign_ptr)
 
-    builder.ret(builder.load(res_mul_ptr))
+    builder.ret(res_mul_ptr)
 
 
 def define_bigint_split_low(self):
     """Split bigint and return low m digits"""
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), type_map[INT]])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, type_map[INT]])
     func = ir.Function(self.module, func_type, 'bigint_split_low')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2517,11 +2572,24 @@ def define_bigint_split_low(self):
     src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
-    # Result
-    res_ptr = builder.alloca(bigint_struct)
-    u64_array_type = self.module.context.get_identified_type('i64.array')
+    # Result - heap allocate with header
     res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    res_digits = builder.bitcast(res_mem, u64_array_type.as_pointer())
+    res_ptr = builder.bitcast(res_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    u64_array_type = self.module.context.get_identified_type('i64.array')
+    res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [res_digits])
 
     # Copy min(m, src_len) digits
@@ -2560,13 +2628,16 @@ def define_bigint_split_low(self):
     builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
     builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
-    builder.ret(builder.load(res_ptr))
+    builder.ret(res_ptr)
 
 
 def define_bigint_split_high(self):
     """Split bigint and return high digits (from position m onwards)"""
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), type_map[INT]])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, type_map[INT]])
     func = ir.Function(self.module, func_type, 'bigint_split_high')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2584,11 +2655,24 @@ def define_bigint_split_high(self):
     src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
-    # Result
-    res_ptr = builder.alloca(bigint_struct)
-    u64_array_type = self.module.context.get_identified_type('i64.array')
+    # Result - heap allocate with header
     res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    res_digits = builder.bitcast(res_mem, u64_array_type.as_pointer())
+    res_ptr = builder.bitcast(res_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    u64_array_type = self.module.context.get_identified_type('i64.array')
+    res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [res_digits])
 
     # Copy digits from m to src_len
@@ -2624,13 +2708,16 @@ def define_bigint_split_high(self):
     builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
     builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
-    builder.ret(builder.load(res_ptr))
+    builder.ret(res_ptr)
 
 
 def define_bigint_shift_left(self):
     """Shift bigint left by m digits (multiply by B^m)"""
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), type_map[INT]])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, type_map[INT]])
     func = ir.Function(self.module, func_type, 'bigint_shift_left')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2648,11 +2735,24 @@ def define_bigint_shift_left(self):
     src_digits = builder.load(builder.gep(src_ptr, [zero_32, two_32]))  # digits at index 2
     src_len = builder.call(len_func, [src_digits])
 
-    # Result
-    res_ptr = builder.alloca(bigint_struct)
-    u64_array_type = self.module.context.get_identified_type('i64.array')
+    # Result - heap allocate with header
     res_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    res_digits = builder.bitcast(res_mem, u64_array_type.as_pointer())
+    res_ptr = builder.bitcast(res_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(res_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    u64_array_type = self.module.context.get_identified_type('i64.array')
+    res_digits_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    res_digits = builder.bitcast(res_digits_mem, u64_array_type.as_pointer())
     builder.call(init_func, [res_digits])
 
     # First add m zeros
@@ -2703,13 +2803,16 @@ def define_bigint_shift_left(self):
     builder.store(src_sign, builder.gep(res_ptr, [zero_32, BIGINT_SIGN]))
     builder.store(res_digits, builder.gep(res_ptr, [zero_32, BIGINT_DIGITS]))
 
-    builder.ret(builder.load(res_ptr))
+    builder.ret(res_ptr)
 
 
 def define_bigint_mul(self):
     """Karatsuba multiplication with fallback to naive for small numbers"""
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_mul')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2760,121 +2863,130 @@ def define_bigint_mul(self):
     # Split a and b
     # a = a1 * B^m + a0
     # b = b1 * B^m + b0
-    a0_tmp = builder.alloca(bigint_struct)
-    a1_tmp = builder.alloca(bigint_struct)
-    b0_tmp = builder.alloca(bigint_struct)
-    b1_tmp = builder.alloca(bigint_struct)
+    # split_low/high now return bigint* - use pointer allocas
+    a0_ptr_tmp = builder.alloca(bigint_ptr_type)
+    a1_ptr_tmp = builder.alloca(bigint_ptr_type)
+    b0_ptr_tmp = builder.alloca(bigint_ptr_type)
+    b1_ptr_tmp = builder.alloca(bigint_ptr_type)
 
-    a0_val = builder.call(split_low_func, [a_ptr, m])
-    builder.store(a0_val, a0_tmp)
-    a1_val = builder.call(split_high_func, [a_ptr, m])
-    builder.store(a1_val, a1_tmp)
-    b0_val = builder.call(split_low_func, [b_ptr, m])
-    builder.store(b0_val, b0_tmp)
-    b1_val = builder.call(split_high_func, [b_ptr, m])
-    builder.store(b1_val, b1_tmp)
+    a0_ptr = builder.call(split_low_func, [a_ptr, m])
+    builder.store(a0_ptr, a0_ptr_tmp)
+    a1_ptr = builder.call(split_high_func, [a_ptr, m])
+    builder.store(a1_ptr, a1_ptr_tmp)
+    b0_ptr = builder.call(split_low_func, [b_ptr, m])
+    builder.store(b0_ptr, b0_ptr_tmp)
+    b1_ptr = builder.call(split_high_func, [b_ptr, m])
+    builder.store(b1_ptr, b1_ptr_tmp)
 
-    # z0 = a0 * b0
-    # z2 = a1 * b1
-    # z1 = (a0 + a1) * (b0 + b1) - z0 - z2
-    z0_tmp = builder.alloca(bigint_struct)
-    z2_tmp = builder.alloca(bigint_struct)
+    # Use pointer allocas since func now returns bigint*
+    z0_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z2_ptr_tmp = builder.alloca(bigint_ptr_type)
 
-    z0_val = builder.call(func, [a0_tmp, b0_tmp])  # Recursive call
-    builder.store(z0_val, z0_tmp)
-    z2_val = builder.call(func, [a1_tmp, b1_tmp])  # Recursive call
-    builder.store(z2_val, z2_tmp)
+    # Load split pointers
+    a0_loaded = builder.load(a0_ptr_tmp)
+    a1_loaded = builder.load(a1_ptr_tmp)
+    b0_loaded = builder.load(b0_ptr_tmp)
+    b1_loaded = builder.load(b1_ptr_tmp)
+    
+    z0_ptr = builder.call(func, [a0_loaded, b0_loaded])  # Recursive - returns bigint*
+    builder.store(z0_ptr, z0_ptr_tmp)
+    z2_ptr = builder.call(func, [a1_loaded, b1_loaded])  # Recursive - returns bigint*
+    builder.store(z2_ptr, z2_ptr_tmp)
 
-    # a0 + a1
-    a_sum_tmp = builder.alloca(bigint_struct)
-    a_sum_val = builder.call(add_func, [a0_tmp, a1_tmp])
-    builder.store(a_sum_val, a_sum_tmp)
+    # a0 + a1 (add_func returns bigint*)
+    a_sum_ptr_tmp = builder.alloca(bigint_ptr_type)
+    a_sum_ptr = builder.call(add_func, [a0_loaded, a1_loaded])
+    builder.store(a_sum_ptr, a_sum_ptr_tmp)
 
-    # b0 + b1
-    b_sum_tmp = builder.alloca(bigint_struct)
-    b_sum_val = builder.call(add_func, [b0_tmp, b1_tmp])
-    builder.store(b_sum_val, b_sum_tmp)
+    # b0 + b1 (add_func returns bigint*)
+    b_sum_ptr_tmp = builder.alloca(bigint_ptr_type)
+    b_sum_ptr = builder.call(add_func, [b0_loaded, b1_loaded])
+    builder.store(b_sum_ptr, b_sum_ptr_tmp)
 
-    # (a0 + a1) * (b0 + b1)
-    z1_prod_tmp = builder.alloca(bigint_struct)
-    z1_prod_val = builder.call(func, [a_sum_tmp, b_sum_tmp])  # Recursive call
-    builder.store(z1_prod_val, z1_prod_tmp)
+    # (a0 + a1) * (b0 + b1) (recursive - returns bigint*)
+    a_sum_loaded = builder.load(a_sum_ptr_tmp)
+    b_sum_loaded = builder.load(b_sum_ptr_tmp)
+    z1_prod_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z1_prod_ptr = builder.call(func, [a_sum_loaded, b_sum_loaded])
+    builder.store(z1_prod_ptr, z1_prod_ptr_tmp)
 
-    # z1 = z1_prod - z0 - z2
-    z1_sub1_tmp = builder.alloca(bigint_struct)
-    z1_sub1_val = builder.call(sub_func, [z1_prod_tmp, z0_tmp])
-    builder.store(z1_sub1_val, z1_sub1_tmp)
+    # z1 = z1_prod - z0 - z2 (sub_func returns bigint*)
+    z0_loaded = builder.load(z0_ptr_tmp)
+    z1_sub1_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z1_prod_loaded = builder.load(z1_prod_ptr_tmp)
+    z1_sub1_ptr = builder.call(sub_func, [z1_prod_loaded, z0_loaded])
+    builder.store(z1_sub1_ptr, z1_sub1_ptr_tmp)
 
-    z1_tmp = builder.alloca(bigint_struct)
-    z1_val = builder.call(sub_func, [z1_sub1_tmp, z2_tmp])
-    builder.store(z1_val, z1_tmp)
+    z2_loaded = builder.load(z2_ptr_tmp)
+    z1_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z1_sub1_loaded = builder.load(z1_sub1_ptr_tmp)
+    z1_ptr = builder.call(sub_func, [z1_sub1_loaded, z2_loaded])
+    builder.store(z1_ptr, z1_ptr_tmp)
 
     # result = z2 * B^(2m) + z1 * B^m + z0
     m2 = builder.mul(m, two)
 
-    z2_shifted_tmp = builder.alloca(bigint_struct)
-    z2_shifted_val = builder.call(shift_func, [z2_tmp, m2])
-    builder.store(z2_shifted_val, z2_shifted_tmp)
+    # shift_func now returns bigint* - use pointer allocas
+    z2_shifted_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z2_shifted_ptr = builder.call(shift_func, [z2_loaded, m2])
+    builder.store(z2_shifted_ptr, z2_shifted_ptr_tmp)
 
-    z1_shifted_tmp = builder.alloca(bigint_struct)
-    z1_shifted_val = builder.call(shift_func, [z1_tmp, m])
-    builder.store(z1_shifted_val, z1_shifted_tmp)
+    z1_loaded = builder.load(z1_ptr_tmp)
+    z1_shifted_ptr_tmp = builder.alloca(bigint_ptr_type)
+    z1_shifted_ptr = builder.call(shift_func, [z1_loaded, m])
+    builder.store(z1_shifted_ptr, z1_shifted_ptr_tmp)
 
-    # z2_shifted + z1_shifted
-    sum1_tmp = builder.alloca(bigint_struct)
-    sum1_val = builder.call(add_func, [z2_shifted_tmp, z1_shifted_tmp])
-    builder.store(sum1_val, sum1_tmp)
+    # z2_shifted + z1_shifted (add_func returns bigint*)
+    z2_shifted_loaded = builder.load(z2_shifted_ptr_tmp)
+    z1_shifted_loaded = builder.load(z1_shifted_ptr_tmp)
+    sum1_ptr_tmp = builder.alloca(bigint_ptr_type)
+    sum1_ptr = builder.call(add_func, [z2_shifted_loaded, z1_shifted_loaded])
+    builder.store(sum1_ptr, sum1_ptr_tmp)
 
-    # sum1 + z0
-    result_val = builder.call(add_func, [sum1_tmp, z0_tmp])
+    # sum1 + z0 (add_func returns bigint*)
+    sum1_loaded = builder.load(sum1_ptr_tmp)
+    result_ptr = builder.call(add_func, [sum1_loaded, z0_loaded])
 
-    # Free ALL temporaries before returning
-    free_func = self.module.get_global('free_bigint')
+    # Release intermediate temporaries via meteor_release
+    release_func = self.module.get_global('meteor_release')
+    header_struct = self.search_scopes('meteor.header')
+    header_ptr_type = header_struct.as_pointer()
     
-    # List of temps to free:
-    # a0_tmp, a1_tmp, b0_tmp, b1_tmp
-    # z0_tmp, z2_tmp
-    # a_sum_tmp, b_sum_tmp
-    # z1_prod_tmp (z1_raw)
-    # z1_sub1_tmp, z1_tmp
-    # z2_shifted_tmp, z1_shifted_tmp
-    # sum1_tmp
+    # Helper to release a bigint*
+    def release_bigint(ptr):
+        if release_func:
+            header = builder.bitcast(ptr, header_ptr_type)
+            builder.call(release_func, [header])
     
-    # Note: z0_val was stored in z0_tmp. z0_val IS the result pointer (assuming struct pointer semantics? No, struct value)
-    # bigint_mul returns struct value.
-    # We stored it in alloca `z0_tmp`.
-    # When we free `z0_tmp`, we pass the pointer to the struct.
-    # free_bigint takes `bigint*`. Correct.
+    # Release all intermediate bigint* (but not the result)
+    release_bigint(builder.load(z0_ptr_tmp))
+    release_bigint(builder.load(z2_ptr_tmp))
+    release_bigint(builder.load(a_sum_ptr_tmp))
+    release_bigint(builder.load(b_sum_ptr_tmp))
+    release_bigint(builder.load(z1_prod_ptr_tmp))
+    release_bigint(builder.load(z1_sub1_ptr_tmp))
+    release_bigint(builder.load(z1_ptr_tmp))
+    release_bigint(builder.load(sum1_ptr_tmp))
     
-    builder.call(free_func, [a0_tmp])
-    builder.call(free_func, [a1_tmp])
-    builder.call(free_func, [b0_tmp])
-    builder.call(free_func, [b1_tmp])
-    
-    builder.call(free_func, [z0_tmp])
-    builder.call(free_func, [z2_tmp])
-    
-    builder.call(free_func, [a_sum_tmp])
-    builder.call(free_func, [b_sum_tmp])
-    
-    builder.call(free_func, [z1_prod_tmp])
-    
-    builder.call(free_func, [z1_sub1_tmp])
-    builder.call(free_func, [z1_tmp])
-    
-    builder.call(free_func, [z2_shifted_tmp])
-    builder.call(free_func, [z1_shifted_tmp])
-    
-    builder.call(free_func, [sum1_tmp])
+    # Release split and shift pointers
+    release_bigint(builder.load(a0_ptr_tmp))
+    release_bigint(builder.load(a1_ptr_tmp))
+    release_bigint(builder.load(b0_ptr_tmp))
+    release_bigint(builder.load(b1_ptr_tmp))
+    release_bigint(builder.load(z2_shifted_ptr_tmp))
+    release_bigint(builder.load(z1_shifted_ptr_tmp))
 
-    builder.ret(result_val)
+    builder.ret(result_ptr)
 
 
 def define_bigint_div(self):
     # bigint_div(bigint*, bigint*) -> bigint*
-    # Truncated division
+    # Truncated division - returns heap-allocated bigint* with RC=1
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
+    
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_div')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -2948,9 +3060,23 @@ def define_bigint_div(self):
     builder.store(r_digits, r_digits_slot)
     
     # Q starts as 0
-    q_ptr = builder.alloca(bigint_struct)
+    # Q starts as 0 - heap allocate with header
     q_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    q_digits = builder.bitcast(q_mem, u64_array_type.as_pointer())
+    q_ptr = builder.bitcast(q_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(q_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
+    q_mem_digits = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    q_digits = builder.bitcast(q_mem_digits, u64_array_type.as_pointer())
     builder.call(init_func, [q_digits])
     
     q_digits_slot = builder.gep(q_ptr, [zero_32, BIGINT_DIGITS])
@@ -3073,22 +3199,13 @@ def define_bigint_div(self):
     
     builder.position_at_end(sub_block)
     # R = R - b_abs
-    # Helper: R -= B.
-    # Note: bigint_sub returns new struct.
-    sub_res_struct = builder.call(sub_func, [r_ptr, b_abs])
+    # Note: bigint_sub now returns bigint* pointer
+    sub_res_ptr = builder.call(sub_func, [r_ptr, b_abs])
     
     # We need to update r_ptr content.
-    # r_ptr -> {sign, digits_ptr}
-    # sub_res -> {sign, digits_ptr}
-    # Just extract digits ptr from sub_res and store in r_ptr?
-    # Yes, since r_ptr is allocated on stack, we just update fields.
-    
-    # Store sub_res to stack to access fields
-    temp_res = builder.alloca(bigint_struct)
-    builder.store(sub_res_struct, temp_res)
-
-    temp_digits = builder.load(builder.gep(temp_res, [zero_32, BIGINT_DIGITS]))
-    temp_sign = builder.load(builder.gep(temp_res, [zero_32, BIGINT_SIGN]))
+    # sub_res_ptr is already a bigint*, access fields directly
+    temp_digits = builder.load(builder.gep(sub_res_ptr, [zero_32, BIGINT_DIGITS]))
+    temp_sign = builder.load(builder.gep(sub_res_ptr, [zero_32, BIGINT_SIGN]))
 
     # Free old R contents before overwriting
     free_bg = self.module.get_global('free_bigint')
@@ -3153,7 +3270,7 @@ def define_bigint_div(self):
     free_bg = self.module.get_global('free_bigint')
     builder.call(free_bg, [r_ptr])
 
-    builder.ret(builder.load(q_ptr))
+    builder.ret(q_ptr)
 
 
 def define_bigint_mod(self):
@@ -3161,9 +3278,11 @@ def define_bigint_mod(self):
     # Identical to div but returns R logic.
     # Logic duplication for simplicity in this context.
     # Note: R sign should be a.sign (Truncated division remainder).
+    from meteor.compiler.base import HEADER_STRONG_RC, HEADER_WEAK_RC, HEADER_FLAGS, HEADER_TYPE_TAG, TYPE_TAG_BIGINT
     
     bigint_struct = type_map[BIGINT]
-    func_type = ir.FunctionType(bigint_struct, [bigint_struct.as_pointer(), bigint_struct.as_pointer()])
+    bigint_ptr_type = bigint_struct.as_pointer()
+    func_type = ir.FunctionType(bigint_ptr_type, [bigint_ptr_type, bigint_ptr_type])
     func = ir.Function(self.module, func_type, 'bigint_mod')
     entry = func.append_basic_block('entry')
     builder = ir.IRBuilder(entry)
@@ -3183,6 +3302,7 @@ def define_bigint_mod(self):
     init_func = self.module.get_global('i64.array.init')
     cmp_func = self.module.get_global('bigint_cmp')
     sub_func = self.module.get_global('bigint_sub')
+    malloc_func = self.module.get_global('malloc')
     
     zero = ir.Constant(type_map[INT], 0)
     one = ir.Constant(type_map[INT], 1)
@@ -3221,14 +3341,28 @@ def define_bigint_mod(self):
     b_abs_digits = builder.gep(b_abs, [zero_32, BIGINT_DIGITS])
     builder.store(b_digits, b_abs_digits)
 
-    r_ptr = builder.alloca(bigint_struct)
+    # R starts as 0 (positive) - heap allocate with header
+    # But wait, r is returned at the end. So it must be heap allocated.
+    r_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    r_ptr = builder.bitcast(r_mem, bigint_ptr_type)
+    
+    # Initialize header
+    header_ptr = builder.gep(r_ptr, [zero_32, zero_32])
+    rc_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 1), rc_ptr)
+    weak_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_WEAK_RC)])
+    builder.store(ir.Constant(type_map[UINT32], 0), weak_ptr)
+    flags_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_FLAGS)])
+    builder.store(ir.Constant(type_map[UINT8], 0), flags_ptr)
+    tag_ptr = builder.gep(header_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
+    builder.store(ir.Constant(type_map[UINT8], TYPE_TAG_BIGINT), tag_ptr)
+    
     r_sign = builder.gep(r_ptr, [zero_32, BIGINT_SIGN])
     builder.store(ir.Constant(type_map[BOOL], 0), r_sign)
     r_digits_slot = builder.gep(r_ptr, [zero_32, BIGINT_DIGITS])
 
-    malloc_func = self.module.get_global('malloc')
-    r_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
-    r_digits = builder.bitcast(r_mem, u64_array_type.as_pointer())
+    r_mem_digits = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
+    r_digits = builder.bitcast(r_mem_digits, u64_array_type.as_pointer())
     builder.call(init_func, [r_digits])
     builder.call(append_func, [r_digits, ir.Constant(type_map[INT64], 0)])
     builder.store(r_digits, r_digits_slot)
@@ -3313,12 +3447,11 @@ def define_bigint_mod(self):
     builder.cbranch(ge_res, sub_block, next_iter)
     
     builder.position_at_end(sub_block)
-    sub_res_struct = builder.call(sub_func, [r_ptr, b_abs])
+    sub_res_ptr = builder.call(sub_func, [r_ptr, b_abs])
     
-    temp_res = builder.alloca(bigint_struct)
-    builder.store(sub_res_struct, temp_res)
-    temp_digits = builder.load(builder.gep(temp_res, [zero_32, BIGINT_DIGITS]))
-    temp_sign = builder.load(builder.gep(temp_res, [zero_32, BIGINT_SIGN]))
+    # sub_res_ptr is already a bigint*, access fields directly
+    temp_digits = builder.load(builder.gep(sub_res_ptr, [zero_32, BIGINT_DIGITS]))
+    temp_sign = builder.load(builder.gep(sub_res_ptr, [zero_32, BIGINT_SIGN]))
 
     # Free old R contents before overwriting
     free_bg = self.module.get_global('free_bigint')
@@ -3349,7 +3482,7 @@ def define_bigint_mod(self):
     with builder.if_then(is_result_zero):
         builder.store(ir.Constant(type_map[BOOL], 0), r_sign)
 
-    builder.ret(builder.load(r_ptr))
+    builder.ret(r_ptr)
 def define_new_types(self):
     # BIGINT: { header: meteor.header, sign: i1, digits: [u64] }
     from meteor.compiler.base import OBJECT_HEADER
@@ -3490,13 +3623,9 @@ def define_decimal_neg(self):
     # Allocate result
     res_ptr = builder.alloca(decimal_struct)
 
-    # Store negated mantissa on heap
-    neg_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 24)])
-    neg_mantissa_ptr = builder.bitcast(neg_mantissa_mem, bigint_struct.as_pointer())
-    builder.store(neg_mantissa, neg_mantissa_ptr)
-
+    # Store negated mantissa directly
     res_mantissa_ptr = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
-    builder.store(neg_mantissa_ptr, res_mantissa_ptr)
+    builder.store(neg_mantissa, res_mantissa_ptr)
 
     # Copy exponent
     res_exp_ptr = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
@@ -3546,13 +3675,8 @@ def define_decimal_mul(self):
     # Allocate result
     res_ptr = builder.alloca(decimal_struct)
 
-    # Allocate result mantissa on heap
-    res_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
-    res_mantissa_ptr = builder.bitcast(res_mantissa_mem, bigint_struct.as_pointer())
-    builder.store(res_mantissa, res_mantissa_ptr)
-
     res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
-    builder.store(res_mantissa_ptr, res_mantissa_slot)
+    builder.store(res_mantissa, res_mantissa_slot)
 
     # Store result exponent
     res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
@@ -3657,10 +3781,20 @@ def define_decimal_add(self):
     builder.position_at_end(loop_body_b)
     cur_b = builder.load(b_adj_ptr)
     new_b = builder.call(bigint_mul, [cur_b, ten_bigint_ptr])
-    new_b_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
-    new_b_ptr = builder.bitcast(new_b_mem, bigint_struct.as_pointer())
-    builder.store(new_b, new_b_ptr)
-    builder.store(new_b_ptr, b_adj_ptr)
+    
+    # Release previous temporary if not original
+    # We need release_bigint helper here
+    release_func = self.module.get_global('meteor_release')
+    header_struct = self.search_scopes('meteor.header')
+    header_ptr_type = header_struct.as_pointer()
+    
+    is_orig = builder.icmp_unsigned(EQUALS, cur_b, b_mantissa_ptr)
+    with builder.if_then(builder.not_(is_orig)):
+         if release_func:
+            header = builder.bitcast(cur_b, header_ptr_type)
+            builder.call(release_func, [header])
+
+    builder.store(new_b, b_adj_ptr)
     builder.store(builder.add(i_b, ir.Constant(type_map[INT64], 1)), loop_i_b)
     builder.branch(loop_cond_b)
 
@@ -3710,10 +3844,15 @@ def define_decimal_add(self):
     builder.position_at_end(loop_body_a)
     cur_a = builder.load(a_adj_ptr)
     new_a = builder.call(bigint_mul, [cur_a, ten_bigint_ptr2])
-    new_a_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
-    new_a_ptr = builder.bitcast(new_a_mem, bigint_struct.as_pointer())
-    builder.store(new_a, new_a_ptr)
-    builder.store(new_a_ptr, a_adj_ptr)
+    
+    # Release previous temporary if not original
+    is_orig_a = builder.icmp_unsigned(EQUALS, cur_a, a_mantissa_ptr)
+    with builder.if_then(builder.not_(is_orig_a)):
+         if release_func:
+            header = builder.bitcast(cur_a, header_ptr_type)
+            builder.call(release_func, [header])
+
+    builder.store(new_a, a_adj_ptr)
     builder.store(builder.add(i_a, ir.Constant(type_map[INT64], 1)), loop_i_a)
     builder.branch(loop_cond_a)
 
@@ -3733,14 +3872,9 @@ def define_decimal_add(self):
 
     res_mantissa = builder.call(bigint_add, [final_a, final_b])
 
-    # Allocate result mantissa on heap
-    res_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
-    res_mantissa_store = builder.bitcast(res_mantissa_mem, bigint_struct.as_pointer())
-    builder.store(res_mantissa, res_mantissa_store)
-
     res_ptr = builder.alloca(decimal_struct)
     res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
-    builder.store(res_mantissa_store, res_mantissa_slot)
+    builder.store(res_mantissa, res_mantissa_slot)
 
     res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
     builder.store(final_exp, res_exp_slot)
@@ -3844,9 +3978,18 @@ def define_decimal_sub(self):
     builder.position_at_end(loop_body_b)
     cur_b = builder.load(b_adj_ptr)
     new_b = builder.call(bigint_mul, [cur_b, ten_bigint_ptr])
-    new_b_ptr = builder.alloca(bigint_struct)
-    builder.store(new_b, new_b_ptr)
-    builder.store(new_b_ptr, b_adj_ptr)
+    
+    # Release previous temporary if not original
+    release_func = self.module.get_global('meteor_release')
+    header_struct = self.search_scopes('meteor.header')
+    header_ptr_type = header_struct.as_pointer()
+    is_orig = builder.icmp_unsigned(EQUALS, cur_b, b_mantissa_ptr)
+    with builder.if_then(builder.not_(is_orig)):
+         if release_func:
+            header = builder.bitcast(cur_b, header_ptr_type)
+            builder.call(release_func, [header])
+
+    builder.store(new_b, b_adj_ptr)
     builder.store(builder.add(i_b, ir.Constant(type_map[INT64], 1)), loop_i_b)
     builder.branch(loop_cond_b)
 
@@ -3899,9 +4042,15 @@ def define_decimal_sub(self):
     builder.position_at_end(loop_body_a)
     cur_a = builder.load(a_adj_ptr)
     new_a = builder.call(bigint_mul, [cur_a, ten_bigint_ptr2])
-    new_a_ptr = builder.alloca(bigint_struct)
-    builder.store(new_a, new_a_ptr)
-    builder.store(new_a_ptr, a_adj_ptr)
+
+    # Release previous temporary if not original
+    is_orig_a = builder.icmp_unsigned(EQUALS, cur_a, a_mantissa_ptr)
+    with builder.if_then(builder.not_(is_orig_a)):
+         if release_func:
+            header = builder.bitcast(cur_a, header_ptr_type)
+            builder.call(release_func, [header])
+
+    builder.store(new_a, a_adj_ptr)
     builder.store(builder.add(i_a, ir.Constant(type_map[INT64], 1)), loop_i_a)
     builder.branch(loop_cond_a)
 
@@ -3922,16 +4071,11 @@ def define_decimal_sub(self):
     # Subtract mantissas
     res_mantissa = builder.call(bigint_sub, [final_a, final_b])
 
-    # Allocate result mantissa on heap
-    res_mantissa_mem = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
-    res_mantissa_store = builder.bitcast(res_mantissa_mem, bigint_struct.as_pointer())
-    builder.store(res_mantissa, res_mantissa_store)
-
     # Allocate result decimal
     res_ptr = builder.alloca(decimal_struct)
 
     res_mantissa_slot = builder.gep(res_ptr, [zero_32, DECIMAL_MANTISSA])
-    builder.store(res_mantissa_store, res_mantissa_slot)
+    builder.store(res_mantissa, res_mantissa_slot)
 
     # Store result exponent
     res_exp_slot = builder.gep(res_ptr, [zero_32, DECIMAL_EXPONENT])
@@ -3989,11 +4133,11 @@ def define_number_to_decimal(self):
     int_val = builder.load(int_ptr)
 
     # Allocate decimal
-    dec_mem_int = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    dec_mem_int = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     dec_ptr_int = builder.bitcast(dec_mem_int, decimal_struct.as_pointer())
 
     # Create bigint for mantissa (heap allocated)
-    bigint_mem_int = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    bigint_mem_int = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     bigint_ptr_int = builder.bitcast(bigint_mem_int, bigint_struct.as_pointer())
     u64_arr_int = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     u64_arr_int = builder.bitcast(u64_arr_int, u64_array_type.as_pointer())
@@ -4030,11 +4174,11 @@ def define_number_to_decimal(self):
     mant_i64 = builder.fptosi(scaled, type_map[INT64])
 
     # Allocate decimal
-    dec_mem_flt = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    dec_mem_flt = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     dec_ptr_flt = builder.bitcast(dec_mem_flt, decimal_struct.as_pointer())
 
     # Create bigint (heap allocated)
-    bigint_mem_flt = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    bigint_mem_flt = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     bigint_ptr_flt = builder.bitcast(bigint_mem_flt, bigint_struct.as_pointer())
     u64_arr_flt = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     u64_arr_flt = builder.bitcast(u64_arr_flt, u64_array_type.as_pointer())
@@ -4061,7 +4205,7 @@ def define_number_to_decimal(self):
     builder.position_at_end(case_bigint)
     bigint_src = builder.bitcast(data_ptr, bigint_struct.as_pointer())
 
-    dec_mem_big = builder.call(malloc_func, [ir.Constant(type_map[INT], 16)])
+    dec_mem_big = builder.call(malloc_func, [ir.Constant(type_map[INT], 32)])
     dec_ptr_big = builder.bitcast(dec_mem_big, decimal_struct.as_pointer())
 
     mant_slot_big = builder.gep(dec_ptr_big, [zero_32, DECIMAL_MANTISSA])
@@ -5364,7 +5508,44 @@ def define_meteor_destroy(self):
     # Also check for STR (which uses TYPE_TAG_STR = 4)
     is_str = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], 4))  # TYPE_TAG_STR
     is_array_or_str = builder.or_(is_array, is_str)
-    builder.cbranch(is_array_or_str, free_array_data, exit_block)
+    
+    # Check for BigInt (TYPE_TAG_BIGINT = 5)
+    check_bigint = func.append_basic_block('check_bigint')
+    builder.cbranch(is_array_or_str, free_array_data, check_bigint)
+    
+    # Handle BigInt cleanup
+    builder.position_at_end(check_bigint)
+    is_bigint = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], 5))  # TYPE_TAG_BIGINT
+    free_bigint_data = func.append_basic_block('free_bigint_data')
+    builder.cbranch(is_bigint, free_bigint_data, exit_block)
+    
+    # Free BigInt's digits array
+    builder.position_at_end(free_bigint_data)
+    # BigInt layout: { header(16), sign(1+padding), digits*(8) }
+    # Header is embedded at offset 0, digits pointer at offset ~24 (index 2)
+    bigint_ptr = builder.bitcast(obj_ptr, type_map[BIGINT].as_pointer())
+    digits_ptr_ptr = builder.gep(bigint_ptr, [zero_32, ir.Constant(type_map[INT32], 2)])  # digits at index 2
+    digits_ptr = builder.load(digits_ptr_ptr)
+    
+    # Check if digits is not null
+    digits_null = ir.Constant(digits_ptr.type, None)
+    digits_is_null = builder.icmp_unsigned('==', digits_ptr, digits_null)
+    
+    free_digits_block = func.append_basic_block('free_digits')
+    builder.cbranch(digits_is_null, exit_block, free_digits_block)
+    
+    builder.position_at_end(free_digits_block)
+    # Directly free digits array data and struct (no meteor_release call to avoid circular dependency)
+    # Array: { header, size, capacity, data* } - data at index 3
+    data_ptr_ptr = builder.gep(digits_ptr, [zero_32, ir.Constant(type_map[INT32], 3)])
+    data_ptr = builder.load(data_ptr_ptr)
+    data_i8 = builder.bitcast(data_ptr, type_map[INT8].as_pointer())
+    free_func = self.module.get_global('free')
+    builder.call(free_func, [data_i8])
+    # Free the array struct itself
+    digits_i8 = builder.bitcast(digits_ptr, type_map[INT8].as_pointer())
+    builder.call(free_func, [digits_i8])
+    builder.branch(exit_block)
     
     # Free array data pointer
     builder.position_at_end(free_array_data)

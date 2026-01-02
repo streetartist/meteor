@@ -286,11 +286,17 @@ def binary_op(self, node):
          not is_decimal_type(left.type) and not is_decimal_type(right.type):
         # Handle bigint operations, including mixed bigint/int
         # But NOT if one operand is decimal (decimal takes priority)
+        # Track temporaries from int_to_bigint for cleanup
+        temp_left_bigint = None
+        temp_right_bigint = None
+        
         # Convert int to bigint if needed
         if is_bigint_type(left.type) and is_int_type(right.type):
             right = int_to_bigint(self, right)
+            temp_right_bigint = right  # Mark for cleanup
         elif is_int_type(left.type) and is_bigint_type(right.type):
             left = int_to_bigint(self, left)
+            temp_left_bigint = left  # Mark for cleanup
 
         # Get pointers for bigint operations - use entry block alloca to avoid stack overflow in loops
         if not isinstance(left.type, ir.PointerType):
@@ -307,16 +313,40 @@ def binary_op(self, node):
         else:
             right_ptr = right
 
+        # Helper to release temp BigInt's digits array
+        def release_temp_bigint(temp_ptr):
+            if temp_ptr is None:
+                return
+            # BigInt: { header, sign, digits } - digits at index 2
+            digits_ptr_ptr = self.builder.gep(temp_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 2)])
+            digits = self.builder.load(digits_ptr_ptr)
+            # Release via RC decrement
+            from meteor.compiler.base import HEADER_STRONG_RC
+            header_ptr = self.builder.gep(digits, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 0)])
+            rc_ptr = self.builder.gep(header_ptr, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], HEADER_STRONG_RC)])
+            rc = self.builder.load(rc_ptr)
+            new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
+            self.builder.store(new_rc, rc_ptr)
+            is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
+            with self.builder.if_then(is_zero):
+                data_ptr = self.builder.gep(digits, [ir.Constant(type_map[INT32], 0), ir.Constant(type_map[INT32], 3)])
+                data = self.builder.load(data_ptr)
+                data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
+                self.call('free', [data_i8])
+                digits_i8 = self.builder.bitcast(digits, type_map[INT8].as_pointer())
+                self.call('free', [digits_i8])
+
+        result = None
         if op == PLUS:
-            return self.builder.call(self.module.get_global('bigint_add'), [left_ptr, right_ptr], 'bigint_add_tmp')
+            result = self.builder.call(self.module.get_global('bigint_add'), [left_ptr, right_ptr], 'bigint_add_tmp')
         elif op == MINUS:
-            return self.builder.call(self.module.get_global('bigint_sub'), [left_ptr, right_ptr], 'bigint_sub_tmp')
+            result = self.builder.call(self.module.get_global('bigint_sub'), [left_ptr, right_ptr], 'bigint_sub_tmp')
         elif op == MUL:
-            return self.builder.call(self.module.get_global('bigint_mul'), [left_ptr, right_ptr], 'bigint_mul_tmp')
+            result = self.builder.call(self.module.get_global('bigint_mul'), [left_ptr, right_ptr], 'bigint_mul_tmp')
         elif op == FLOORDIV:
-            return self.builder.call(self.module.get_global('bigint_div'), [left_ptr, right_ptr], 'bigint_div_tmp')
+            result = self.builder.call(self.module.get_global('bigint_div'), [left_ptr, right_ptr], 'bigint_div_tmp')
         elif op == MOD:
-            return self.builder.call(self.module.get_global('bigint_mod'), [left_ptr, right_ptr], 'bigint_mod_tmp')
+            result = self.builder.call(self.module.get_global('bigint_mod'), [left_ptr, right_ptr], 'bigint_mod_tmp')
         elif op in (EQUALS, NOT_EQUALS, LESS_THAN, LESS_THAN_OR_EQUAL_TO, GREATER_THAN, GREATER_THAN_OR_EQUAL_TO):
             cmp_res = self.builder.call(self.module.get_global('bigint_cmp'), [left_ptr, right_ptr], 'bigint_cmp_res')
             zero = ir.Constant(type_map[INT32], 0)
@@ -332,7 +362,13 @@ def binary_op(self, node):
                 res = self.builder.icmp_signed(GREATER_THAN, cmp_res, zero)
             elif op == GREATER_THAN_OR_EQUAL_TO:
                 res = self.builder.icmp_signed(GREATER_THAN_OR_EQUAL_TO, cmp_res, zero)
-            return self.builder.zext(res, type_map[BOOL])
+            result = self.builder.zext(res, type_map[BOOL])
+        
+        # Release temporary BigInts from int_to_bigint
+        release_temp_bigint(temp_left_bigint)
+        release_temp_bigint(temp_right_bigint)
+        
+        return result
     elif is_number_type(left.type) or is_number_type(right.type):
         # Handle number type - convert to decimal for operations
         if is_number_type(left.type):

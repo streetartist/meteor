@@ -2331,6 +2331,29 @@ class CodeGenerator(NodeVisitor):
                             is_negative = py_val < 0
                             abs_val = abs(py_val)
                             
+                            # === Release old digits before creating new ===
+                            # BigInt: { header, sign, digits } - digits at index 2
+                            old_digits_ptr = self.builder.gep(bigint_ptr, [self.const(0), self.const(2, width=INT32)])
+                            old_digits = self.builder.load(old_digits_ptr)
+                            null_ptr = ir.Constant(old_digits.type, None)
+                            is_not_null = self.builder.icmp_unsigned('!=', old_digits, null_ptr)
+
+                            with self.builder.if_then(is_not_null):
+                                from meteor.compiler.base import HEADER_STRONG_RC
+                                header_ptr = self.builder.gep(old_digits, [self.const(0), self.const(0, width=INT32)])
+                                rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
+                                rc = self.builder.load(rc_ptr)
+                                new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
+                                self.builder.store(new_rc, rc_ptr)
+                                is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
+                                with self.builder.if_then(is_zero):
+                                    data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
+                                    data = self.builder.load(data_ptr)
+                                    data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
+                                    self.call('free', [data_i8])
+                                    digits_i8 = self.builder.bitcast(old_digits, type_map[INT8].as_pointer())
+                                    self.call('free', [digits_i8])
+                            
                             u64_array_ptr = self.create_array(type_map[UINT64])
                             
                             BASE = 2**64
@@ -2431,21 +2454,43 @@ class CodeGenerator(NodeVisitor):
                         val = var
                         decimal_ptr = var_value
                         
+                        # === Release old mantissa before creating new ===
+                        # Decimal: { header, mantissa, exponent } - mantissa at index 1
+                        old_mantissa_ptr_ptr = self.builder.gep(decimal_ptr, [self.const(0), self.const(1, width=INT32)])
+                        old_mantissa_ptr = self.builder.load(old_mantissa_ptr_ptr)
+                        null_ptr = ir.Constant(old_mantissa_ptr.type, None)
+                        is_not_null = self.builder.icmp_unsigned('!=', old_mantissa_ptr, null_ptr)
+
+                        with self.builder.if_then(is_not_null):
+                            # Release old mantissa's digits array
+                            # BigInt: { header, sign, digits } - digits at index 2
+                            old_digits_ptr = self.builder.gep(old_mantissa_ptr, [self.const(0), self.const(2, width=INT32)])
+                            old_digits = self.builder.load(old_digits_ptr)
+                            digits_null = ir.Constant(old_digits.type, None)
+                            digits_not_null = self.builder.icmp_unsigned('!=', old_digits, digits_null)
+                            
+                            with self.builder.if_then(digits_not_null):
+                                from meteor.compiler.base import HEADER_STRONG_RC
+                                header_ptr = self.builder.gep(old_digits, [self.const(0), self.const(0, width=INT32)])
+                                rc_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
+                                rc = self.builder.load(rc_ptr)
+                                new_rc = self.builder.sub(rc, ir.Constant(type_map[UINT32], 1))
+                                self.builder.store(new_rc, rc_ptr)
+                                is_zero = self.builder.icmp_unsigned('==', new_rc, ir.Constant(type_map[UINT32], 0))
+                                with self.builder.if_then(is_zero):
+                                    data_ptr = self.builder.gep(old_digits, [self.const(0), self.const(3, width=INT32)])
+                                    data = self.builder.load(data_ptr)
+                                    data_i8 = self.builder.bitcast(data, type_map[INT8].as_pointer())
+                                    self.call('free', [data_i8])
+                                    digits_i8 = self.builder.bitcast(old_digits, type_map[INT8].as_pointer())
+                                    self.call('free', [digits_i8])
+                        
                         # 1. Handle value conversion (Int/Double -> "Int")
-                        # TODO: proper float decomposition.
                         val_int = val
                         if isinstance(val.type, ir.DoubleType) or isinstance(val.type, ir.FloatType):
                             val_int = self.builder.fptosi(val, type_map[INT])
                         
                         # 2. Create Mantissa (BigInt)
-                        # We allocate a new BigInt struct on stack (which we will point to)
-                        # Actually we need heap alloc or stack alloc that persists. 
-                        # Since `decimal` structs hold a POINTER to bigint, we need that pointer to be valid.
-                        # `alloca` is stack. `malloc` is heap. 
-                        # For now, as long as we are in the same function scope, stack is OK. 
-                        # But if variable escapes, this is bad. 
-                        # Ideally assume `malloc`. But for simplicity of this task, `alloca` matching previous patterns.
-                        
                         bigint_struct_type = type_map[BIGINT]
                         bigint_ptr = self.builder.alloca(bigint_struct_type, name="mantissa_reassign")
 

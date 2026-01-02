@@ -1231,17 +1231,17 @@ check_array:                                      ; preds = %not_null
   %.9 = icmp eq i8 %.6, 7
   %.10 = icmp eq i8 %.6, 4
   %.11 = or i1 %.9, %.10
-  br i1 %.11, label %free_array_data, label %exit
+  br i1 %.11, label %free_array_data, label %check_bigint
 
 free_array_data:                                  ; preds = %check_array
-  %.13 = bitcast ptr %.1 to ptr
-  %.14 = getelementptr i8, ptr %.13, i64 32
-  %.15 = bitcast ptr %.14 to ptr
-  %.16 = load ptr, ptr %.15, align 8
-  %.17 = icmp eq ptr %.16, null
-  br i1 %.17, label %exit, label %do_free
+  %.27 = bitcast ptr %.1 to ptr
+  %.28 = getelementptr i8, ptr %.27, i64 32
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = load ptr, ptr %.29, align 8
+  %.31 = icmp eq ptr %.30, null
+  br i1 %.31, label %exit, label %do_free
 
-exit:                                             ; preds = %do_free, %not_null, %free_array_data, %check_array, %entry
+exit:                                             ; preds = %do_free, %free_digits, %free_bigint_data, %check_bigint, %not_null, %free_array_data, %entry
   ret void
 
 not_null:                                         ; preds = %entry
@@ -1250,8 +1250,28 @@ not_null:                                         ; preds = %entry
   %.7 = icmp eq i8 %.6, 10
   br i1 %.7, label %exit, label %check_array
 
+check_bigint:                                     ; preds = %check_array
+  %.13 = icmp eq i8 %.6, 5
+  br i1 %.13, label %free_bigint_data, label %exit
+
+free_bigint_data:                                 ; preds = %check_bigint
+  %.15 = bitcast ptr %.1 to ptr
+  %.16 = getelementptr %bigint, ptr %.15, i32 0, i32 2
+  %.17 = load ptr, ptr %.16, align 8
+  %.18 = icmp eq ptr %.17, null
+  br i1 %.18, label %exit, label %free_digits
+
+free_digits:                                      ; preds = %free_bigint_data
+  %.20 = getelementptr %i64.array, ptr %.17, i32 0, i32 3
+  %.21 = load ptr, ptr %.20, align 8
+  %.22 = bitcast ptr %.21 to ptr
+  call void @free(ptr %.22)
+  %.24 = bitcast ptr %.17 to ptr
+  call void @free(ptr %.24)
+  br label %exit
+
 do_free:                                          ; preds = %free_array_data
-  call void @free(ptr %.16)
+  call void @free(ptr %.30)
   br label %exit
 }
 
@@ -1434,114 +1454,132 @@ entry:
   ret ptr %.1
 }
 
-define %bigint @bigint_add(ptr %.1, ptr %.2) {
+define ptr @bigint_add(ptr %.1, ptr %.2) {
 entry:
-  %res = alloca %bigint, align 8
-  %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.5 = load ptr, ptr %.4, align 8
-  %.6 = getelementptr %bigint, ptr %.2, i32 0, i32 2
-  %.7 = load ptr, ptr %.6, align 8
-  %.8 = call ptr @malloc(i64 32)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
+  %.4 = call ptr @malloc(i64 32)
+  %.5 = bitcast ptr %.4 to ptr
+  %.6 = getelementptr %bigint, ptr %.5, i32 0, i32 0
+  %.7 = getelementptr %meteor.header, ptr %.6, i32 0, i32 0
+  store i32 1, ptr %.7, align 4
+  %.9 = getelementptr %meteor.header, ptr %.6, i32 0, i32 1
+  store i32 0, ptr %.9, align 4
+  %.11 = getelementptr %meteor.header, ptr %.6, i32 0, i32 2
+  store i8 0, ptr %.11, align 1
+  %.13 = getelementptr %meteor.header, ptr %.6, i32 0, i32 3
+  store i8 5, ptr %.13, align 1
+  %.15 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.16 = load ptr, ptr %.15, align 8
+  %.17 = getelementptr %bigint, ptr %.2, i32 0, i32 2
+  %.18 = load ptr, ptr %.17, align 8
+  %.19 = call ptr @malloc(i64 32)
+  %.20 = bitcast ptr %.19 to ptr
+  call void @i64.array.init(ptr %.20)
   %idx = alloca i64, align 8
   store i64 0, ptr %idx, align 4
   %carry = alloca i64, align 8
   store i64 0, ptr %carry, align 4
   %val_a = alloca i64, align 8
   %val_b = alloca i64, align 8
-  %.13 = call i64 @i64.array.length(ptr %.5)
-  %.14 = call i64 @i64.array.length(ptr %.7)
+  %.24 = call i64 @i64.array.length(ptr %.16)
+  %.25 = call i64 @i64.array.length(ptr %.18)
   br label %cond
 
 cond:                                             ; preds = %body.endif.endif, %entry
-  %.16 = load i64, ptr %idx, align 4
-  %.17 = load i64, ptr %carry, align 4
-  %.18 = icmp slt i64 %.16, %.13
-  %.19 = icmp slt i64 %.16, %.14
-  %.20 = icmp ne i64 %.17, 0
-  %.21 = or i1 %.18, %.19
-  %.22 = or i1 %.21, %.20
-  br i1 %.22, label %body, label %end
+  %.27 = load i64, ptr %idx, align 4
+  %.28 = load i64, ptr %carry, align 4
+  %.29 = icmp slt i64 %.27, %.24
+  %.30 = icmp slt i64 %.27, %.25
+  %.31 = icmp ne i64 %.28, 0
+  %.32 = or i1 %.29, %.30
+  %.33 = or i1 %.32, %.31
+  br i1 %.33, label %body, label %end
 
 body:                                             ; preds = %cond
   store i64 0, ptr %val_a, align 4
-  br i1 %.18, label %body.if, label %body.endif
+  br i1 %.29, label %body.if, label %body.endif
 
 end:                                              ; preds = %cond
-  %.48 = getelementptr %bigint, ptr %res, i32 0, i32 2
-  store ptr %.9, ptr %.48, align 8
-  %.50 = getelementptr %bigint, ptr %res, i32 0, i32 1
-  store i1 false, ptr %.50, align 1
-  %.52 = load %bigint, ptr %res, align 8
-  ret %bigint %.52
+  %.59 = getelementptr %bigint, ptr %.5, i32 0, i32 2
+  store ptr %.20, ptr %.59, align 8
+  %.61 = getelementptr %bigint, ptr %.5, i32 0, i32 1
+  store i1 false, ptr %.61, align 1
+  ret ptr %.5
 
 body.if:                                          ; preds = %body
-  %.26 = call i64 @i64.array.get(ptr %.5, i64 %.16)
-  store i64 %.26, ptr %val_a, align 4
+  %.37 = call i64 @i64.array.get(ptr %.16, i64 %.27)
+  store i64 %.37, ptr %val_a, align 4
   br label %body.endif
 
 body.endif:                                       ; preds = %body.if, %body
   store i64 0, ptr %val_b, align 4
-  br i1 %.19, label %body.endif.if, label %body.endif.endif
+  br i1 %.30, label %body.endif.if, label %body.endif.endif
 
 body.endif.if:                                    ; preds = %body.endif
-  %.31 = call i64 @i64.array.get(ptr %.7, i64 %.16)
-  store i64 %.31, ptr %val_b, align 4
+  %.42 = call i64 @i64.array.get(ptr %.18, i64 %.27)
+  store i64 %.42, ptr %val_b, align 4
   br label %body.endif.endif
 
 body.endif.endif:                                 ; preds = %body.endif.if, %body.endif
-  %.34 = load i64, ptr %val_a, align 4
-  %.35 = load i64, ptr %val_b, align 4
-  %.36 = load i64, ptr %carry, align 4
-  %.37 = add i64 %.34, %.35
-  %.38 = icmp ult i64 %.37, %.34
-  %.39 = add i64 %.37, %.36
-  %.40 = icmp ult i64 %.39, %.37
-  %.41 = or i1 %.38, %.40
-  %.42 = zext i1 %.41 to i64
-  store i64 %.42, ptr %carry, align 4
-  call void @i64.array.append(ptr %.9, i64 %.39)
-  %.45 = add i64 %.16, 1
-  store i64 %.45, ptr %idx, align 4
+  %.45 = load i64, ptr %val_a, align 4
+  %.46 = load i64, ptr %val_b, align 4
+  %.47 = load i64, ptr %carry, align 4
+  %.48 = add i64 %.45, %.46
+  %.49 = icmp ult i64 %.48, %.45
+  %.50 = add i64 %.48, %.47
+  %.51 = icmp ult i64 %.50, %.48
+  %.52 = or i1 %.49, %.51
+  %.53 = zext i1 %.52 to i64
+  store i64 %.53, ptr %carry, align 4
+  call void @i64.array.append(ptr %.20, i64 %.50)
+  %.56 = add i64 %.27, 1
+  store i64 %.56, ptr %idx, align 4
   br label %cond
 }
 
-define %bigint @bigint_neg(ptr %.1) {
+define ptr @bigint_neg(ptr %.1) {
 entry:
-  %res = alloca %bigint, align 8
   %.3 = call ptr @malloc(i64 32)
   %.4 = bitcast ptr %.3 to ptr
-  call void @i64.array.init(ptr %.4)
-  %.6 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.7 = load i1, ptr %.6, align 1
-  %.8 = xor i1 %.7, true
-  %.9 = getelementptr %bigint, ptr %res, i32 0, i32 1
-  store i1 %.8, ptr %.9, align 1
-  %.11 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.12 = load ptr, ptr %.11, align 8
-  %.13 = call i64 @i64.array.length(ptr %.12)
-  %.14 = alloca i64, align 8
-  store i64 0, ptr %.14, align 4
+  %.5 = getelementptr %bigint, ptr %.4, i32 0, i32 0
+  %.6 = getelementptr %meteor.header, ptr %.5, i32 0, i32 0
+  store i32 1, ptr %.6, align 4
+  %.8 = getelementptr %meteor.header, ptr %.5, i32 0, i32 1
+  store i32 0, ptr %.8, align 4
+  %.10 = getelementptr %meteor.header, ptr %.5, i32 0, i32 2
+  store i8 0, ptr %.10, align 1
+  %.12 = getelementptr %meteor.header, ptr %.5, i32 0, i32 3
+  store i8 5, ptr %.12, align 1
+  %.14 = call ptr @malloc(i64 32)
+  %.15 = bitcast ptr %.14 to ptr
+  call void @i64.array.init(ptr %.15)
+  %.17 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.18 = load i1, ptr %.17, align 1
+  %.19 = xor i1 %.18, true
+  %.20 = getelementptr %bigint, ptr %.4, i32 0, i32 1
+  store i1 %.19, ptr %.20, align 1
+  %.22 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.23 = load ptr, ptr %.22, align 8
+  %.24 = call i64 @i64.array.length(ptr %.23)
+  %.25 = alloca i64, align 8
+  store i64 0, ptr %.25, align 4
   br label %cond
 
 cond:                                             ; preds = %body, %entry
-  %.17 = load i64, ptr %.14, align 4
-  %.18 = icmp slt i64 %.17, %.13
-  br i1 %.18, label %body, label %end
+  %.28 = load i64, ptr %.25, align 4
+  %.29 = icmp slt i64 %.28, %.24
+  br i1 %.29, label %body, label %end
 
 body:                                             ; preds = %cond
-  %.20 = call i64 @i64.array.get(ptr %.12, i64 %.17)
-  call void @i64.array.append(ptr %.4, i64 %.20)
-  %.22 = add i64 %.17, 1
-  store i64 %.22, ptr %.14, align 4
+  %.31 = call i64 @i64.array.get(ptr %.23, i64 %.28)
+  call void @i64.array.append(ptr %.15, i64 %.31)
+  %.33 = add i64 %.28, 1
+  store i64 %.33, ptr %.25, align 4
   br label %cond
 
 end:                                              ; preds = %cond
-  %.25 = getelementptr %bigint, ptr %res, i32 0, i32 2
-  store ptr %.4, ptr %.25, align 8
-  %.27 = load %bigint, ptr %res, align 8
-  ret %bigint %.27
+  %.36 = getelementptr %bigint, ptr %.4, i32 0, i32 2
+  store ptr %.15, ptr %.36, align 8
+  ret ptr %.4
 }
 
 define i32 @bigint_cmp(ptr %.1, ptr %.2) {
@@ -1607,7 +1645,7 @@ continue:                                         ; preds = %loop_body
   br label %loop_cond
 }
 
-define %bigint @bigint_sub(ptr %.1, ptr %.2) {
+define ptr @bigint_sub(ptr %.1, ptr %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 1
   %.5 = load i1, ptr %.4, align 1
@@ -1617,165 +1655,171 @@ entry:
   br i1 %.8, label %signs_diff, label %signs_same
 
 signs_diff:                                       ; preds = %entry
-  %.10 = call %bigint @bigint_add(ptr %.1, ptr %.2)
-  %.11 = alloca %bigint, align 8
-  store %bigint %.10, ptr %.11, align 8
-  %.13 = getelementptr %bigint, ptr %.11, i32 0, i32 1
-  store i1 %.5, ptr %.13, align 1
-  %.15 = load %bigint, ptr %.11, align 8
-  ret %bigint %.15
+  %.10 = call ptr @bigint_add(ptr %.1, ptr %.2)
+  %.11 = getelementptr %bigint, ptr %.10, i32 0, i32 1
+  store i1 %.5, ptr %.11, align 1
+  ret ptr %.10
 
 signs_same:                                       ; preds = %entry
-  %.17 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.18 = load ptr, ptr %.17, align 8
-  %.19 = getelementptr %bigint, ptr %.2, i32 0, i32 2
-  %.20 = load ptr, ptr %.19, align 8
-  %.21 = call i64 @i64.array.length(ptr %.18)
-  %.22 = call i64 @i64.array.length(ptr %.20)
-  %.23 = alloca ptr, align 8
-  %.24 = alloca ptr, align 8
-  %.25 = alloca i1, align 1
-  store ptr %.1, ptr %.23, align 8
-  store ptr %.2, ptr %.24, align 8
-  store i1 false, ptr %.25, align 1
-  %.29 = icmp ne i64 %.21, %.22
-  br i1 %.29, label %len_check, label %digits_check
+  %.14 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.15 = load ptr, ptr %.14, align 8
+  %.16 = getelementptr %bigint, ptr %.2, i32 0, i32 2
+  %.17 = load ptr, ptr %.16, align 8
+  %.18 = call i64 @i64.array.length(ptr %.15)
+  %.19 = call i64 @i64.array.length(ptr %.17)
+  %.20 = alloca ptr, align 8
+  %.21 = alloca ptr, align 8
+  %.22 = alloca i1, align 1
+  store ptr %.1, ptr %.20, align 8
+  store ptr %.2, ptr %.21, align 8
+  store i1 false, ptr %.22, align 1
+  %.26 = icmp ne i64 %.18, %.19
+  br i1 %.26, label %len_check, label %digits_check
 
 len_check:                                        ; preds = %signs_same
-  %.31 = icmp sgt i64 %.22, %.21
-  store i1 %.31, ptr %.25, align 1
+  %.28 = icmp sgt i64 %.19, %.18
+  store i1 %.28, ptr %.22, align 1
   br label %set_x_y
 
 digits_check:                                     ; preds = %signs_same
-  %.34 = alloca i64, align 8
-  %.35 = sub i64 %.21, 1
-  store i64 %.35, ptr %.34, align 4
+  %.31 = alloca i64, align 8
+  %.32 = sub i64 %.18, 1
+  store i64 %.32, ptr %.31, align 4
   br label %d_loop_cond
 
 set_x_y:                                          ; preds = %d_diff, %d_loop_end, %len_check
-  %.52 = load i1, ptr %.25, align 1
-  %.53 = select i1 %.52, ptr %.2, ptr %.1
-  %.54 = select i1 %.52, ptr %.1, ptr %.2
-  store ptr %.53, ptr %.23, align 8
-  store ptr %.54, ptr %.24, align 8
-  %.57 = load ptr, ptr %.23, align 8
-  %.58 = load ptr, ptr %.24, align 8
-  %.59 = getelementptr %bigint, ptr %.57, i32 0, i32 2
-  %.60 = load ptr, ptr %.59, align 8
-  %.61 = getelementptr %bigint, ptr %.58, i32 0, i32 2
-  %.62 = load ptr, ptr %.61, align 8
-  %.63 = call i64 @i64.array.length(ptr %.60)
-  %.64 = call i64 @i64.array.length(ptr %.62)
-  %.65 = alloca %bigint, align 8
-  %.66 = call ptr @malloc(i64 32)
-  %.67 = bitcast ptr %.66 to ptr
-  call void @i64.array.init(ptr %.67)
-  %.69 = alloca i64, align 8
-  store i64 0, ptr %.69, align 4
-  %.71 = alloca i64, align 8
-  store i64 0, ptr %.71, align 4
-  %.73 = alloca i64, align 8
+  %.49 = load i1, ptr %.22, align 1
+  %.50 = select i1 %.49, ptr %.2, ptr %.1
+  %.51 = select i1 %.49, ptr %.1, ptr %.2
+  store ptr %.50, ptr %.20, align 8
+  store ptr %.51, ptr %.21, align 8
+  %.54 = load ptr, ptr %.20, align 8
+  %.55 = load ptr, ptr %.21, align 8
+  %.56 = getelementptr %bigint, ptr %.54, i32 0, i32 2
+  %.57 = load ptr, ptr %.56, align 8
+  %.58 = getelementptr %bigint, ptr %.55, i32 0, i32 2
+  %.59 = load ptr, ptr %.58, align 8
+  %.60 = call i64 @i64.array.length(ptr %.57)
+  %.61 = call i64 @i64.array.length(ptr %.59)
+  %.62 = call ptr @malloc(i64 32)
+  %.63 = bitcast ptr %.62 to ptr
+  %.64 = getelementptr %bigint, ptr %.63, i32 0, i32 0
+  %.65 = getelementptr %meteor.header, ptr %.64, i32 0, i32 0
+  store i32 1, ptr %.65, align 4
+  %.67 = getelementptr %meteor.header, ptr %.64, i32 0, i32 1
+  store i32 0, ptr %.67, align 4
+  %.69 = getelementptr %meteor.header, ptr %.64, i32 0, i32 2
+  store i8 0, ptr %.69, align 1
+  %.71 = getelementptr %meteor.header, ptr %.64, i32 0, i32 3
+  store i8 5, ptr %.71, align 1
+  %.73 = call ptr @malloc(i64 32)
+  %.74 = bitcast ptr %.73 to ptr
+  call void @i64.array.init(ptr %.74)
+  %.76 = alloca i64, align 8
+  store i64 0, ptr %.76, align 4
+  %.78 = alloca i64, align 8
+  store i64 0, ptr %.78, align 4
+  %.80 = alloca i64, align 8
   br label %sub_loop_cond
 
 d_loop_cond:                                      ; preds = %d_next, %digits_check
-  %.38 = load i64, ptr %.34, align 4
-  %.39 = icmp sge i64 %.38, 0
-  br i1 %.39, label %d_loop_body, label %d_loop_end
+  %.35 = load i64, ptr %.31, align 4
+  %.36 = icmp sge i64 %.35, 0
+  br i1 %.36, label %d_loop_body, label %d_loop_end
 
 d_loop_body:                                      ; preds = %d_loop_cond
-  %.41 = call i64 @i64.array.get(ptr %.18, i64 %.38)
-  %.42 = call i64 @i64.array.get(ptr %.20, i64 %.38)
-  %.43 = icmp ne i64 %.41, %.42
-  br i1 %.43, label %d_diff, label %d_next
+  %.38 = call i64 @i64.array.get(ptr %.15, i64 %.35)
+  %.39 = call i64 @i64.array.get(ptr %.17, i64 %.35)
+  %.40 = icmp ne i64 %.38, %.39
+  br i1 %.40, label %d_diff, label %d_next
 
 d_loop_end:                                       ; preds = %d_loop_cond
   br label %set_x_y
 
 d_diff:                                           ; preds = %d_loop_body
-  %.45 = icmp ugt i64 %.42, %.41
-  store i1 %.45, ptr %.25, align 1
+  %.42 = icmp ugt i64 %.39, %.38
+  store i1 %.42, ptr %.22, align 1
   br label %set_x_y
 
 d_next:                                           ; preds = %d_loop_body
-  %.48 = sub i64 %.38, 1
-  store i64 %.48, ptr %.34, align 4
+  %.45 = sub i64 %.35, 1
+  store i64 %.45, ptr %.31, align 4
   br label %d_loop_cond
 
 sub_loop_cond:                                    ; preds = %sub_loop_body.endif, %set_x_y
-  %.75 = load i64, ptr %.69, align 4
-  %.76 = icmp slt i64 %.75, %.63
-  br i1 %.76, label %sub_loop_body, label %sub_loop_end
+  %.82 = load i64, ptr %.76, align 4
+  %.83 = icmp slt i64 %.82, %.60
+  br i1 %.83, label %sub_loop_body, label %sub_loop_end
 
 sub_loop_body:                                    ; preds = %sub_loop_cond
-  %.78 = call i64 @i64.array.get(ptr %.60, i64 %.75)
-  store i64 0, ptr %.73, align 4
-  %.80 = icmp slt i64 %.75, %.64
-  br i1 %.80, label %sub_loop_body.if, label %sub_loop_body.endif
+  %.85 = call i64 @i64.array.get(ptr %.57, i64 %.82)
+  store i64 0, ptr %.80, align 4
+  %.87 = icmp slt i64 %.82, %.61
+  br i1 %.87, label %sub_loop_body.if, label %sub_loop_body.endif
 
 sub_loop_end:                                     ; preds = %sub_loop_cond
   br label %trim_cond
 
 sub_loop_body.if:                                 ; preds = %sub_loop_body
-  %.82 = call i64 @i64.array.get(ptr %.62, i64 %.75)
-  store i64 %.82, ptr %.73, align 4
+  %.89 = call i64 @i64.array.get(ptr %.59, i64 %.82)
+  store i64 %.89, ptr %.80, align 4
   br label %sub_loop_body.endif
 
 sub_loop_body.endif:                              ; preds = %sub_loop_body.if, %sub_loop_body
-  %.85 = load i64, ptr %.73, align 4
-  %.86 = load i64, ptr %.71, align 4
-  %.87 = sub i64 %.78, %.85
-  %.88 = icmp ult i64 %.78, %.85
-  %.89 = sub i64 %.87, %.86
-  %.90 = icmp ult i64 %.87, %.86
-  %.91 = or i1 %.88, %.90
-  %.92 = zext i1 %.91 to i64
-  store i64 %.92, ptr %.71, align 4
-  call void @i64.array.append(ptr %.67, i64 %.89)
-  %.95 = add i64 %.75, 1
-  store i64 %.95, ptr %.69, align 4
+  %.92 = load i64, ptr %.80, align 4
+  %.93 = load i64, ptr %.78, align 4
+  %.94 = sub i64 %.85, %.92
+  %.95 = icmp ult i64 %.85, %.92
+  %.96 = sub i64 %.94, %.93
+  %.97 = icmp ult i64 %.94, %.93
+  %.98 = or i1 %.95, %.97
+  %.99 = zext i1 %.98 to i64
+  store i64 %.99, ptr %.78, align 4
+  call void @i64.array.append(ptr %.74, i64 %.96)
+  %.102 = add i64 %.82, 1
+  store i64 %.102, ptr %.76, align 4
   br label %sub_loop_cond
 
 trim_cond:                                        ; preds = %trim_body, %sub_loop_end
-  %.99 = call i64 @i64.array.length(ptr %.67)
-  %.100 = icmp sgt i64 %.99, 1
-  br i1 %.100, label %check_zero, label %trim_end
+  %.106 = call i64 @i64.array.length(ptr %.74)
+  %.107 = icmp sgt i64 %.106, 1
+  br i1 %.107, label %check_zero, label %trim_end
 
 trim_body:                                        ; preds = %check_zero
-  %.106 = getelementptr %i64.array, ptr %.67, i32 0, i32 1
-  %.107 = sub i64 %.99, 1
-  store i64 %.107, ptr %.106, align 4
+  %.113 = getelementptr %i64.array, ptr %.74, i32 0, i32 1
+  %.114 = sub i64 %.106, 1
+  store i64 %.114, ptr %.113, align 4
   br label %trim_cond
 
 trim_end:                                         ; preds = %check_zero, %trim_cond
-  %.110 = getelementptr %bigint, ptr %.65, i32 0, i32 2
-  store ptr %.67, ptr %.110, align 8
-  %.112 = getelementptr %bigint, ptr %.65, i32 0, i32 1
-  %.113 = xor i1 %.5, true
-  %.114 = select i1 %.52, i1 %.113, i1 %.5
-  store i1 %.114, ptr %.112, align 1
-  %.116 = call i64 @i64.array.length(ptr %.67)
-  %.117 = icmp eq i64 %.116, 1
-  %.118 = call i64 @i64.array.get(ptr %.67, i64 0)
-  %.119 = icmp eq i64 %.118, 0
-  %.120 = and i1 %.117, %.119
-  br i1 %.120, label %trim_end.if, label %trim_end.endif
+  %.117 = getelementptr %bigint, ptr %.63, i32 0, i32 2
+  store ptr %.74, ptr %.117, align 8
+  %.119 = getelementptr %bigint, ptr %.63, i32 0, i32 1
+  %.120 = xor i1 %.5, true
+  %.121 = select i1 %.49, i1 %.120, i1 %.5
+  store i1 %.121, ptr %.119, align 1
+  %.123 = call i64 @i64.array.length(ptr %.74)
+  %.124 = icmp eq i64 %.123, 1
+  %.125 = call i64 @i64.array.get(ptr %.74, i64 0)
+  %.126 = icmp eq i64 %.125, 0
+  %.127 = and i1 %.124, %.126
+  br i1 %.127, label %trim_end.if, label %trim_end.endif
 
 check_zero:                                       ; preds = %trim_cond
-  %.102 = sub i64 %.99, 1
-  %.103 = call i64 @i64.array.get(ptr %.67, i64 %.102)
-  %.104 = icmp eq i64 %.103, 0
-  br i1 %.104, label %trim_body, label %trim_end
+  %.109 = sub i64 %.106, 1
+  %.110 = call i64 @i64.array.get(ptr %.74, i64 %.109)
+  %.111 = icmp eq i64 %.110, 0
+  br i1 %.111, label %trim_body, label %trim_end
 
 trim_end.if:                                      ; preds = %trim_end
-  store i1 false, ptr %.112, align 1
+  store i1 false, ptr %.119, align 1
   br label %trim_end.endif
 
 trim_end.endif:                                   ; preds = %trim_end.if, %trim_end
-  %.124 = load %bigint, ptr %.65, align 8
-  ret %bigint %.124
+  ret ptr %.63
 }
 
-define %bigint @bigint_mul_naive(ptr %.1, ptr %.2) {
+define ptr @bigint_mul_naive(ptr %.1, ptr %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 1
   %.5 = load i1, ptr %.4, align 1
@@ -1788,263 +1832,299 @@ entry:
   %.12 = load ptr, ptr %.11, align 8
   %.13 = call i64 @i64.array.length(ptr %.10)
   %.14 = call i64 @i64.array.length(ptr %.12)
-  %.15 = alloca %bigint, align 8
-  %.16 = call ptr @malloc(i64 32)
-  %.17 = bitcast ptr %.16 to ptr
-  call void @i64.array.init(ptr %.17)
-  %.19 = add i64 %.13, %.14
-  %.20 = alloca i64, align 8
-  store i64 0, ptr %.20, align 4
+  %.15 = call ptr @malloc(i64 32)
+  %.16 = bitcast ptr %.15 to ptr
+  %.17 = getelementptr %bigint, ptr %.16, i32 0, i32 0
+  %.18 = getelementptr %meteor.header, ptr %.17, i32 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i32 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i32 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i32 0, i32 3
+  store i8 5, ptr %.24, align 1
+  %.26 = call ptr @malloc(i64 32)
+  %.27 = bitcast ptr %.26 to ptr
+  call void @i64.array.init(ptr %.27)
+  %.29 = add i64 %.13, %.14
+  %.30 = alloca i64, align 8
+  store i64 0, ptr %.30, align 4
   br label %fill_cond
 
 fill_cond:                                        ; preds = %fill_body, %entry
-  %.23 = load i64, ptr %.20, align 4
-  %.24 = icmp slt i64 %.23, %.19
-  br i1 %.24, label %fill_body, label %fill_end
+  %.33 = load i64, ptr %.30, align 4
+  %.34 = icmp slt i64 %.33, %.29
+  br i1 %.34, label %fill_body, label %fill_end
 
 fill_body:                                        ; preds = %fill_cond
-  call void @i64.array.append(ptr %.17, i64 0)
-  %.27 = add i64 %.23, 1
-  store i64 %.27, ptr %.20, align 4
+  call void @i64.array.append(ptr %.27, i64 0)
+  %.37 = add i64 %.33, 1
+  store i64 %.37, ptr %.30, align 4
   br label %fill_cond
 
 fill_end:                                         ; preds = %fill_cond
-  %.30 = alloca i64, align 8
-  store i64 0, ptr %.30, align 4
-  %.32 = alloca i128, align 8
-  %.33 = alloca i64, align 8
+  %.40 = alloca i64, align 8
+  store i64 0, ptr %.40, align 4
+  %.42 = alloca i128, align 8
+  %.43 = alloca i64, align 8
   br label %outer_cond
 
 outer_cond:                                       ; preds = %inner_end, %fill_end
-  %.35 = load i64, ptr %.30, align 4
-  %.36 = icmp slt i64 %.35, %.13
-  br i1 %.36, label %outer_body, label %outer_end
+  %.45 = load i64, ptr %.40, align 4
+  %.46 = icmp slt i64 %.45, %.13
+  br i1 %.46, label %outer_body, label %outer_end
 
 outer_body:                                       ; preds = %outer_cond
-  %.38 = call i64 @i64.array.get(ptr %.10, i64 %.35)
-  %.39 = zext i64 %.38 to i128
-  store i128 0, ptr %.32, align 4
-  store i64 0, ptr %.33, align 4
+  %.48 = call i64 @i64.array.get(ptr %.10, i64 %.45)
+  %.49 = zext i64 %.48 to i128
+  store i128 0, ptr %.42, align 4
+  store i64 0, ptr %.43, align 4
   br label %inner_cond
 
 outer_end:                                        ; preds = %outer_cond
   br label %trim_cond
 
 inner_cond:                                       ; preds = %inner_body, %outer_body
-  %.43 = load i64, ptr %.33, align 4
-  %.44 = icmp slt i64 %.43, %.14
-  br i1 %.44, label %inner_body, label %inner_end
+  %.53 = load i64, ptr %.43, align 4
+  %.54 = icmp slt i64 %.53, %.14
+  br i1 %.54, label %inner_body, label %inner_end
 
 inner_body:                                       ; preds = %inner_cond
-  %.46 = call i64 @i64.array.get(ptr %.12, i64 %.43)
-  %.47 = zext i64 %.46 to i128
-  %.48 = add i64 %.35, %.43
-  %.49 = call i64 @i64.array.get(ptr %.17, i64 %.48)
-  %.50 = zext i64 %.49 to i128
-  %.51 = mul i128 %.39, %.47
-  %.52 = load i128, ptr %.32, align 4
-  %.53 = add i128 %.51, %.50
-  %.54 = add i128 %.53, %.52
-  %.55 = trunc i128 %.54 to i64
-  call void @i64.array.set(ptr %.17, i64 %.48, i64 %.55)
-  %.57 = lshr i128 %.54, 64
-  store i128 %.57, ptr %.32, align 4
-  %.59 = add i64 %.43, 1
-  store i64 %.59, ptr %.33, align 4
+  %.56 = call i64 @i64.array.get(ptr %.12, i64 %.53)
+  %.57 = zext i64 %.56 to i128
+  %.58 = add i64 %.45, %.53
+  %.59 = call i64 @i64.array.get(ptr %.27, i64 %.58)
+  %.60 = zext i64 %.59 to i128
+  %.61 = mul i128 %.49, %.57
+  %.62 = load i128, ptr %.42, align 4
+  %.63 = add i128 %.61, %.60
+  %.64 = add i128 %.63, %.62
+  %.65 = trunc i128 %.64 to i64
+  call void @i64.array.set(ptr %.27, i64 %.58, i64 %.65)
+  %.67 = lshr i128 %.64, 64
+  store i128 %.67, ptr %.42, align 4
+  %.69 = add i64 %.53, 1
+  store i64 %.69, ptr %.43, align 4
   br label %inner_cond
 
 inner_end:                                        ; preds = %inner_cond
-  %.62 = load i128, ptr %.32, align 4
-  %.63 = trunc i128 %.62 to i64
-  %.64 = add i64 %.35, %.14
-  call void @i64.array.set(ptr %.17, i64 %.64, i64 %.63)
-  %.66 = add i64 %.35, 1
-  store i64 %.66, ptr %.30, align 4
+  %.72 = load i128, ptr %.42, align 4
+  %.73 = trunc i128 %.72 to i64
+  %.74 = add i64 %.45, %.14
+  call void @i64.array.set(ptr %.27, i64 %.74, i64 %.73)
+  %.76 = add i64 %.45, 1
+  store i64 %.76, ptr %.40, align 4
   br label %outer_cond
 
 trim_cond:                                        ; preds = %trim_body, %outer_end
-  %.70 = call i64 @i64.array.length(ptr %.17)
-  %.71 = icmp sgt i64 %.70, 1
-  br i1 %.71, label %check_zero, label %trim_end
+  %.80 = call i64 @i64.array.length(ptr %.27)
+  %.81 = icmp sgt i64 %.80, 1
+  br i1 %.81, label %check_zero, label %trim_end
 
 trim_body:                                        ; preds = %check_zero
-  %.77 = getelementptr %i64.array, ptr %.17, i32 0, i32 1
-  %.78 = sub i64 %.70, 1
-  store i64 %.78, ptr %.77, align 4
+  %.87 = getelementptr %i64.array, ptr %.27, i32 0, i32 1
+  %.88 = sub i64 %.80, 1
+  store i64 %.88, ptr %.87, align 4
   br label %trim_cond
 
 trim_end:                                         ; preds = %check_zero, %trim_cond
-  %.81 = getelementptr %bigint, ptr %.15, i32 0, i32 2
-  store ptr %.17, ptr %.81, align 8
-  %.83 = getelementptr %bigint, ptr %.15, i32 0, i32 1
-  store i1 %.8, ptr %.83, align 1
-  %.85 = call i64 @i64.array.length(ptr %.17)
-  %.86 = icmp eq i64 %.85, 1
-  %.87 = call i64 @i64.array.get(ptr %.17, i64 0)
-  %.88 = icmp eq i64 %.87, 0
-  %.89 = and i1 %.86, %.88
-  br i1 %.89, label %trim_end.if, label %trim_end.endif
+  %.91 = getelementptr %bigint, ptr %.16, i32 0, i32 2
+  store ptr %.27, ptr %.91, align 8
+  %.93 = getelementptr %bigint, ptr %.16, i32 0, i32 1
+  store i1 %.8, ptr %.93, align 1
+  %.95 = call i64 @i64.array.length(ptr %.27)
+  %.96 = icmp eq i64 %.95, 1
+  %.97 = call i64 @i64.array.get(ptr %.27, i64 0)
+  %.98 = icmp eq i64 %.97, 0
+  %.99 = and i1 %.96, %.98
+  br i1 %.99, label %trim_end.if, label %trim_end.endif
 
 check_zero:                                       ; preds = %trim_cond
-  %.73 = sub i64 %.70, 1
-  %.74 = call i64 @i64.array.get(ptr %.17, i64 %.73)
-  %.75 = icmp eq i64 %.74, 0
-  br i1 %.75, label %trim_body, label %trim_end
+  %.83 = sub i64 %.80, 1
+  %.84 = call i64 @i64.array.get(ptr %.27, i64 %.83)
+  %.85 = icmp eq i64 %.84, 0
+  br i1 %.85, label %trim_body, label %trim_end
 
 trim_end.if:                                      ; preds = %trim_end
-  store i1 false, ptr %.83, align 1
+  store i1 false, ptr %.93, align 1
   br label %trim_end.endif
 
 trim_end.endif:                                   ; preds = %trim_end.if, %trim_end
-  %.93 = load %bigint, ptr %.15, align 8
-  ret %bigint %.93
+  ret ptr %.16
 }
 
-define %bigint @bigint_split_low(ptr %.1, i64 %.2) {
+define ptr @bigint_split_low(ptr %.1, i64 %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
   %.6 = call i64 @i64.array.length(ptr %.5)
-  %.7 = alloca %bigint, align 8
-  %.8 = call ptr @malloc(i64 32)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  %.11 = icmp slt i64 %.2, %.6
-  %.12 = select i1 %.11, i64 %.2, i64 %.6
-  %.13 = alloca i64, align 8
-  store i64 0, ptr %.13, align 4
+  %.7 = call ptr @malloc(i64 32)
+  %.8 = bitcast ptr %.7 to ptr
+  %.9 = getelementptr %bigint, ptr %.8, i32 0, i32 0
+  %.10 = getelementptr %meteor.header, ptr %.9, i32 0, i32 0
+  store i32 1, ptr %.10, align 4
+  %.12 = getelementptr %meteor.header, ptr %.9, i32 0, i32 1
+  store i32 0, ptr %.12, align 4
+  %.14 = getelementptr %meteor.header, ptr %.9, i32 0, i32 2
+  store i8 0, ptr %.14, align 1
+  %.16 = getelementptr %meteor.header, ptr %.9, i32 0, i32 3
+  store i8 5, ptr %.16, align 1
+  %.18 = call ptr @malloc(i64 32)
+  %.19 = bitcast ptr %.18 to ptr
+  call void @i64.array.init(ptr %.19)
+  %.21 = icmp slt i64 %.2, %.6
+  %.22 = select i1 %.21, i64 %.2, i64 %.6
+  %.23 = alloca i64, align 8
+  store i64 0, ptr %.23, align 4
   br label %cond
 
 cond:                                             ; preds = %body, %entry
-  %.16 = load i64, ptr %.13, align 4
-  %.17 = icmp slt i64 %.16, %.12
-  br i1 %.17, label %body, label %end
+  %.26 = load i64, ptr %.23, align 4
+  %.27 = icmp slt i64 %.26, %.22
+  br i1 %.27, label %body, label %end
 
 body:                                             ; preds = %cond
-  %.19 = call i64 @i64.array.get(ptr %.5, i64 %.16)
-  call void @i64.array.append(ptr %.9, i64 %.19)
-  %.21 = add i64 %.16, 1
-  store i64 %.21, ptr %.13, align 4
+  %.29 = call i64 @i64.array.get(ptr %.5, i64 %.26)
+  call void @i64.array.append(ptr %.19, i64 %.29)
+  %.31 = add i64 %.26, 1
+  store i64 %.31, ptr %.23, align 4
   br label %cond
 
 end:                                              ; preds = %cond
-  %.24 = call i64 @i64.array.length(ptr %.9)
-  %.25 = icmp eq i64 %.24, 0
-  br i1 %.25, label %end.if, label %end.endif
+  %.34 = call i64 @i64.array.length(ptr %.19)
+  %.35 = icmp eq i64 %.34, 0
+  br i1 %.35, label %end.if, label %end.endif
 
 end.if:                                           ; preds = %end
-  call void @i64.array.append(ptr %.9, i64 0)
+  call void @i64.array.append(ptr %.19, i64 0)
   br label %end.endif
 
 end.endif:                                        ; preds = %end.if, %end
-  %.29 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.30 = load i1, ptr %.29, align 1
-  %.31 = getelementptr %bigint, ptr %.7, i32 0, i32 1
-  store i1 %.30, ptr %.31, align 1
-  %.33 = getelementptr %bigint, ptr %.7, i32 0, i32 2
-  store ptr %.9, ptr %.33, align 8
-  %.35 = load %bigint, ptr %.7, align 8
-  ret %bigint %.35
+  %.39 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.40 = load i1, ptr %.39, align 1
+  %.41 = getelementptr %bigint, ptr %.8, i32 0, i32 1
+  store i1 %.40, ptr %.41, align 1
+  %.43 = getelementptr %bigint, ptr %.8, i32 0, i32 2
+  store ptr %.19, ptr %.43, align 8
+  ret ptr %.8
 }
 
-define %bigint @bigint_split_high(ptr %.1, i64 %.2) {
+define ptr @bigint_split_high(ptr %.1, i64 %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
   %.6 = call i64 @i64.array.length(ptr %.5)
-  %.7 = alloca %bigint, align 8
-  %.8 = call ptr @malloc(i64 32)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  %.11 = alloca i64, align 8
-  store i64 %.2, ptr %.11, align 4
+  %.7 = call ptr @malloc(i64 32)
+  %.8 = bitcast ptr %.7 to ptr
+  %.9 = getelementptr %bigint, ptr %.8, i32 0, i32 0
+  %.10 = getelementptr %meteor.header, ptr %.9, i32 0, i32 0
+  store i32 1, ptr %.10, align 4
+  %.12 = getelementptr %meteor.header, ptr %.9, i32 0, i32 1
+  store i32 0, ptr %.12, align 4
+  %.14 = getelementptr %meteor.header, ptr %.9, i32 0, i32 2
+  store i8 0, ptr %.14, align 1
+  %.16 = getelementptr %meteor.header, ptr %.9, i32 0, i32 3
+  store i8 5, ptr %.16, align 1
+  %.18 = call ptr @malloc(i64 32)
+  %.19 = bitcast ptr %.18 to ptr
+  call void @i64.array.init(ptr %.19)
+  %.21 = alloca i64, align 8
+  store i64 %.2, ptr %.21, align 4
   br label %cond
 
 cond:                                             ; preds = %body, %entry
-  %.14 = load i64, ptr %.11, align 4
-  %.15 = icmp slt i64 %.14, %.6
-  br i1 %.15, label %body, label %end
+  %.24 = load i64, ptr %.21, align 4
+  %.25 = icmp slt i64 %.24, %.6
+  br i1 %.25, label %body, label %end
 
 body:                                             ; preds = %cond
-  %.17 = call i64 @i64.array.get(ptr %.5, i64 %.14)
-  call void @i64.array.append(ptr %.9, i64 %.17)
-  %.19 = add i64 %.14, 1
-  store i64 %.19, ptr %.11, align 4
+  %.27 = call i64 @i64.array.get(ptr %.5, i64 %.24)
+  call void @i64.array.append(ptr %.19, i64 %.27)
+  %.29 = add i64 %.24, 1
+  store i64 %.29, ptr %.21, align 4
   br label %cond
 
 end:                                              ; preds = %cond
-  %.22 = call i64 @i64.array.length(ptr %.9)
-  %.23 = icmp eq i64 %.22, 0
-  br i1 %.23, label %end.if, label %end.endif
+  %.32 = call i64 @i64.array.length(ptr %.19)
+  %.33 = icmp eq i64 %.32, 0
+  br i1 %.33, label %end.if, label %end.endif
 
 end.if:                                           ; preds = %end
-  call void @i64.array.append(ptr %.9, i64 0)
+  call void @i64.array.append(ptr %.19, i64 0)
   br label %end.endif
 
 end.endif:                                        ; preds = %end.if, %end
-  %.27 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.28 = load i1, ptr %.27, align 1
-  %.29 = getelementptr %bigint, ptr %.7, i32 0, i32 1
-  store i1 %.28, ptr %.29, align 1
-  %.31 = getelementptr %bigint, ptr %.7, i32 0, i32 2
-  store ptr %.9, ptr %.31, align 8
-  %.33 = load %bigint, ptr %.7, align 8
-  ret %bigint %.33
+  %.37 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.38 = load i1, ptr %.37, align 1
+  %.39 = getelementptr %bigint, ptr %.8, i32 0, i32 1
+  store i1 %.38, ptr %.39, align 1
+  %.41 = getelementptr %bigint, ptr %.8, i32 0, i32 2
+  store ptr %.19, ptr %.41, align 8
+  ret ptr %.8
 }
 
-define %bigint @bigint_shift_left(ptr %.1, i64 %.2) {
+define ptr @bigint_shift_left(ptr %.1, i64 %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
   %.6 = call i64 @i64.array.length(ptr %.5)
-  %.7 = alloca %bigint, align 8
-  %.8 = call ptr @malloc(i64 32)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  %.11 = alloca i64, align 8
-  store i64 0, ptr %.11, align 4
+  %.7 = call ptr @malloc(i64 32)
+  %.8 = bitcast ptr %.7 to ptr
+  %.9 = getelementptr %bigint, ptr %.8, i32 0, i32 0
+  %.10 = getelementptr %meteor.header, ptr %.9, i32 0, i32 0
+  store i32 1, ptr %.10, align 4
+  %.12 = getelementptr %meteor.header, ptr %.9, i32 0, i32 1
+  store i32 0, ptr %.12, align 4
+  %.14 = getelementptr %meteor.header, ptr %.9, i32 0, i32 2
+  store i8 0, ptr %.14, align 1
+  %.16 = getelementptr %meteor.header, ptr %.9, i32 0, i32 3
+  store i8 5, ptr %.16, align 1
+  %.18 = call ptr @malloc(i64 32)
+  %.19 = bitcast ptr %.18 to ptr
+  call void @i64.array.init(ptr %.19)
+  %.21 = alloca i64, align 8
+  store i64 0, ptr %.21, align 4
   br label %zero_cond
 
 zero_cond:                                        ; preds = %zero_body, %entry
-  %.14 = load i64, ptr %.11, align 4
-  %.15 = icmp slt i64 %.14, %.2
-  br i1 %.15, label %zero_body, label %zero_end
+  %.24 = load i64, ptr %.21, align 4
+  %.25 = icmp slt i64 %.24, %.2
+  br i1 %.25, label %zero_body, label %zero_end
 
 zero_body:                                        ; preds = %zero_cond
-  call void @i64.array.append(ptr %.9, i64 0)
-  %.18 = add i64 %.14, 1
-  store i64 %.18, ptr %.11, align 4
+  call void @i64.array.append(ptr %.19, i64 0)
+  %.28 = add i64 %.24, 1
+  store i64 %.28, ptr %.21, align 4
   br label %zero_cond
 
 zero_end:                                         ; preds = %zero_cond
-  %.21 = alloca i64, align 8
-  store i64 0, ptr %.21, align 4
+  %.31 = alloca i64, align 8
+  store i64 0, ptr %.31, align 4
   br label %copy_cond
 
 copy_cond:                                        ; preds = %copy_body, %zero_end
-  %.24 = load i64, ptr %.21, align 4
-  %.25 = icmp slt i64 %.24, %.6
-  br i1 %.25, label %copy_body, label %copy_end
+  %.34 = load i64, ptr %.31, align 4
+  %.35 = icmp slt i64 %.34, %.6
+  br i1 %.35, label %copy_body, label %copy_end
 
 copy_body:                                        ; preds = %copy_cond
-  %.27 = call i64 @i64.array.get(ptr %.5, i64 %.24)
-  call void @i64.array.append(ptr %.9, i64 %.27)
-  %.29 = add i64 %.24, 1
-  store i64 %.29, ptr %.21, align 4
+  %.37 = call i64 @i64.array.get(ptr %.5, i64 %.34)
+  call void @i64.array.append(ptr %.19, i64 %.37)
+  %.39 = add i64 %.34, 1
+  store i64 %.39, ptr %.31, align 4
   br label %copy_cond
 
 copy_end:                                         ; preds = %copy_cond
-  %.32 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.33 = load i1, ptr %.32, align 1
-  %.34 = getelementptr %bigint, ptr %.7, i32 0, i32 1
-  store i1 %.33, ptr %.34, align 1
-  %.36 = getelementptr %bigint, ptr %.7, i32 0, i32 2
-  store ptr %.9, ptr %.36, align 8
-  %.38 = load %bigint, ptr %.7, align 8
-  ret %bigint %.38
+  %.42 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.43 = load i1, ptr %.42, align 1
+  %.44 = getelementptr %bigint, ptr %.8, i32 0, i32 1
+  store i1 %.43, ptr %.44, align 1
+  %.46 = getelementptr %bigint, ptr %.8, i32 0, i32 2
+  store ptr %.19, ptr %.46, align 8
+  ret ptr %.8
 }
 
-define %bigint @bigint_mul(ptr %.1, ptr %.2) {
+define ptr @bigint_mul(ptr %.1, ptr %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.1, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
@@ -2058,75 +2138,117 @@ entry:
   br i1 %.12, label %naive, label %karatsuba
 
 naive:                                            ; preds = %entry
-  %.14 = call %bigint @bigint_mul_naive(ptr %.1, ptr %.2)
-  ret %bigint %.14
+  %.14 = call ptr @bigint_mul_naive(ptr %.1, ptr %.2)
+  ret ptr %.14
 
 karatsuba:                                        ; preds = %entry
   %.16 = icmp sgt i64 %.8, %.9
   %.17 = select i1 %.16, i64 %.8, i64 %.9
   %.18 = sdiv i64 %.17, 2
-  %.19 = alloca %bigint, align 8
-  %.20 = alloca %bigint, align 8
-  %.21 = alloca %bigint, align 8
-  %.22 = alloca %bigint, align 8
-  %.23 = call %bigint @bigint_split_low(ptr %.1, i64 %.18)
-  store %bigint %.23, ptr %.19, align 8
-  %.25 = call %bigint @bigint_split_high(ptr %.1, i64 %.18)
-  store %bigint %.25, ptr %.20, align 8
-  %.27 = call %bigint @bigint_split_low(ptr %.2, i64 %.18)
-  store %bigint %.27, ptr %.21, align 8
-  %.29 = call %bigint @bigint_split_high(ptr %.2, i64 %.18)
-  store %bigint %.29, ptr %.22, align 8
-  %.31 = alloca %bigint, align 8
-  %.32 = alloca %bigint, align 8
-  %.33 = call %bigint @bigint_mul(ptr %.19, ptr %.21)
-  store %bigint %.33, ptr %.31, align 8
-  %.35 = call %bigint @bigint_mul(ptr %.20, ptr %.22)
-  store %bigint %.35, ptr %.32, align 8
-  %.37 = alloca %bigint, align 8
-  %.38 = call %bigint @bigint_add(ptr %.19, ptr %.20)
-  store %bigint %.38, ptr %.37, align 8
-  %.40 = alloca %bigint, align 8
-  %.41 = call %bigint @bigint_add(ptr %.21, ptr %.22)
-  store %bigint %.41, ptr %.40, align 8
-  %.43 = alloca %bigint, align 8
-  %.44 = call %bigint @bigint_mul(ptr %.37, ptr %.40)
-  store %bigint %.44, ptr %.43, align 8
-  %.46 = alloca %bigint, align 8
-  %.47 = call %bigint @bigint_sub(ptr %.43, ptr %.31)
-  store %bigint %.47, ptr %.46, align 8
-  %.49 = alloca %bigint, align 8
-  %.50 = call %bigint @bigint_sub(ptr %.46, ptr %.32)
-  store %bigint %.50, ptr %.49, align 8
-  %.52 = mul i64 %.18, 2
-  %.53 = alloca %bigint, align 8
-  %.54 = call %bigint @bigint_shift_left(ptr %.32, i64 %.52)
-  store %bigint %.54, ptr %.53, align 8
-  %.56 = alloca %bigint, align 8
-  %.57 = call %bigint @bigint_shift_left(ptr %.49, i64 %.18)
-  store %bigint %.57, ptr %.56, align 8
-  %.59 = alloca %bigint, align 8
-  %.60 = call %bigint @bigint_add(ptr %.53, ptr %.56)
-  store %bigint %.60, ptr %.59, align 8
-  %.62 = call %bigint @bigint_add(ptr %.59, ptr %.31)
-  call void @free_bigint(ptr %.19)
-  call void @free_bigint(ptr %.20)
-  call void @free_bigint(ptr %.21)
-  call void @free_bigint(ptr %.22)
-  call void @free_bigint(ptr %.31)
-  call void @free_bigint(ptr %.32)
-  call void @free_bigint(ptr %.37)
-  call void @free_bigint(ptr %.40)
-  call void @free_bigint(ptr %.43)
-  call void @free_bigint(ptr %.46)
-  call void @free_bigint(ptr %.49)
-  call void @free_bigint(ptr %.53)
-  call void @free_bigint(ptr %.56)
-  call void @free_bigint(ptr %.59)
-  ret %bigint %.62
+  %.19 = alloca ptr, align 8
+  %.20 = alloca ptr, align 8
+  %.21 = alloca ptr, align 8
+  %.22 = alloca ptr, align 8
+  %.23 = call ptr @bigint_split_low(ptr %.1, i64 %.18)
+  store ptr %.23, ptr %.19, align 8
+  %.25 = call ptr @bigint_split_high(ptr %.1, i64 %.18)
+  store ptr %.25, ptr %.20, align 8
+  %.27 = call ptr @bigint_split_low(ptr %.2, i64 %.18)
+  store ptr %.27, ptr %.21, align 8
+  %.29 = call ptr @bigint_split_high(ptr %.2, i64 %.18)
+  store ptr %.29, ptr %.22, align 8
+  %.31 = alloca ptr, align 8
+  %.32 = alloca ptr, align 8
+  %.33 = load ptr, ptr %.19, align 8
+  %.34 = load ptr, ptr %.20, align 8
+  %.35 = load ptr, ptr %.21, align 8
+  %.36 = load ptr, ptr %.22, align 8
+  %.37 = call ptr @bigint_mul(ptr %.33, ptr %.35)
+  store ptr %.37, ptr %.31, align 8
+  %.39 = call ptr @bigint_mul(ptr %.34, ptr %.36)
+  store ptr %.39, ptr %.32, align 8
+  %.41 = alloca ptr, align 8
+  %.42 = call ptr @bigint_add(ptr %.33, ptr %.34)
+  store ptr %.42, ptr %.41, align 8
+  %.44 = alloca ptr, align 8
+  %.45 = call ptr @bigint_add(ptr %.35, ptr %.36)
+  store ptr %.45, ptr %.44, align 8
+  %.47 = load ptr, ptr %.41, align 8
+  %.48 = load ptr, ptr %.44, align 8
+  %.49 = alloca ptr, align 8
+  %.50 = call ptr @bigint_mul(ptr %.47, ptr %.48)
+  store ptr %.50, ptr %.49, align 8
+  %.52 = load ptr, ptr %.31, align 8
+  %.53 = alloca ptr, align 8
+  %.54 = load ptr, ptr %.49, align 8
+  %.55 = call ptr @bigint_sub(ptr %.54, ptr %.52)
+  store ptr %.55, ptr %.53, align 8
+  %.57 = load ptr, ptr %.32, align 8
+  %.58 = alloca ptr, align 8
+  %.59 = load ptr, ptr %.53, align 8
+  %.60 = call ptr @bigint_sub(ptr %.59, ptr %.57)
+  store ptr %.60, ptr %.58, align 8
+  %.62 = mul i64 %.18, 2
+  %.63 = alloca ptr, align 8
+  %.64 = call ptr @bigint_shift_left(ptr %.57, i64 %.62)
+  store ptr %.64, ptr %.63, align 8
+  %.66 = load ptr, ptr %.58, align 8
+  %.67 = alloca ptr, align 8
+  %.68 = call ptr @bigint_shift_left(ptr %.66, i64 %.18)
+  store ptr %.68, ptr %.67, align 8
+  %.70 = load ptr, ptr %.63, align 8
+  %.71 = load ptr, ptr %.67, align 8
+  %.72 = alloca ptr, align 8
+  %.73 = call ptr @bigint_add(ptr %.70, ptr %.71)
+  store ptr %.73, ptr %.72, align 8
+  %.75 = load ptr, ptr %.72, align 8
+  %.76 = call ptr @bigint_add(ptr %.75, ptr %.52)
+  %.77 = load ptr, ptr %.31, align 8
+  %.78 = bitcast ptr %.77 to ptr
+  call void @meteor_release(ptr %.78)
+  %.80 = load ptr, ptr %.32, align 8
+  %.81 = bitcast ptr %.80 to ptr
+  call void @meteor_release(ptr %.81)
+  %.83 = load ptr, ptr %.41, align 8
+  %.84 = bitcast ptr %.83 to ptr
+  call void @meteor_release(ptr %.84)
+  %.86 = load ptr, ptr %.44, align 8
+  %.87 = bitcast ptr %.86 to ptr
+  call void @meteor_release(ptr %.87)
+  %.89 = load ptr, ptr %.49, align 8
+  %.90 = bitcast ptr %.89 to ptr
+  call void @meteor_release(ptr %.90)
+  %.92 = load ptr, ptr %.53, align 8
+  %.93 = bitcast ptr %.92 to ptr
+  call void @meteor_release(ptr %.93)
+  %.95 = load ptr, ptr %.58, align 8
+  %.96 = bitcast ptr %.95 to ptr
+  call void @meteor_release(ptr %.96)
+  %.98 = load ptr, ptr %.72, align 8
+  %.99 = bitcast ptr %.98 to ptr
+  call void @meteor_release(ptr %.99)
+  %.101 = load ptr, ptr %.19, align 8
+  %.102 = bitcast ptr %.101 to ptr
+  call void @meteor_release(ptr %.102)
+  %.104 = load ptr, ptr %.20, align 8
+  %.105 = bitcast ptr %.104 to ptr
+  call void @meteor_release(ptr %.105)
+  %.107 = load ptr, ptr %.21, align 8
+  %.108 = bitcast ptr %.107 to ptr
+  call void @meteor_release(ptr %.108)
+  %.110 = load ptr, ptr %.22, align 8
+  %.111 = bitcast ptr %.110 to ptr
+  call void @meteor_release(ptr %.111)
+  %.113 = load ptr, ptr %.63, align 8
+  %.114 = bitcast ptr %.113 to ptr
+  call void @meteor_release(ptr %.114)
+  %.116 = load ptr, ptr %.67, align 8
+  %.117 = bitcast ptr %.116 to ptr
+  call void @meteor_release(ptr %.117)
+  ret ptr %.76
 }
 
-define %bigint @bigint_div(ptr %.1, ptr %.2) {
+define ptr @bigint_div(ptr %.1, ptr %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.2, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
@@ -2166,151 +2288,158 @@ start_div:                                        ; preds = %entry
   call void @i64.array.init(ptr %.34)
   call void @i64.array.append(ptr %.34, i64 0)
   store ptr %.34, ptr %.32, align 8
-  %.38 = alloca %bigint, align 8
-  %.39 = call ptr @malloc(i64 32)
-  %.40 = bitcast ptr %.39 to ptr
-  call void @i64.array.init(ptr %.40)
-  %.42 = getelementptr %bigint, ptr %.38, i32 0, i32 2
-  store ptr %.40, ptr %.42, align 8
-  %.44 = getelementptr %bigint, ptr %.38, i32 0, i32 1
-  store i1 false, ptr %.44, align 1
-  %.46 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.47 = load ptr, ptr %.46, align 8
-  %.48 = call i64 @i64.array.length(ptr %.47)
-  %.49 = alloca i64, align 8
-  store i64 0, ptr %.49, align 4
+  %.38 = call ptr @malloc(i64 32)
+  %.39 = bitcast ptr %.38 to ptr
+  %.40 = getelementptr %bigint, ptr %.39, i32 0, i32 0
+  %.41 = getelementptr %meteor.header, ptr %.40, i32 0, i32 0
+  store i32 1, ptr %.41, align 4
+  %.43 = getelementptr %meteor.header, ptr %.40, i32 0, i32 1
+  store i32 0, ptr %.43, align 4
+  %.45 = getelementptr %meteor.header, ptr %.40, i32 0, i32 2
+  store i8 0, ptr %.45, align 1
+  %.47 = getelementptr %meteor.header, ptr %.40, i32 0, i32 3
+  store i8 5, ptr %.47, align 1
+  %.49 = call ptr @malloc(i64 32)
+  %.50 = bitcast ptr %.49 to ptr
+  call void @i64.array.init(ptr %.50)
+  %.52 = getelementptr %bigint, ptr %.39, i32 0, i32 2
+  store ptr %.50, ptr %.52, align 8
+  %.54 = getelementptr %bigint, ptr %.39, i32 0, i32 1
+  store i1 false, ptr %.54, align 1
+  %.56 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.57 = load ptr, ptr %.56, align 8
+  %.58 = call i64 @i64.array.length(ptr %.57)
+  %.59 = alloca i64, align 8
+  store i64 0, ptr %.59, align 4
   br label %fill_q_cond
 
 fill_q_cond:                                      ; preds = %fill_q_body, %start_div
-  %.52 = load i64, ptr %.49, align 4
-  %.53 = icmp slt i64 %.52, %.48
-  br i1 %.53, label %fill_q_body, label %fill_q_end
+  %.62 = load i64, ptr %.59, align 4
+  %.63 = icmp slt i64 %.62, %.58
+  br i1 %.63, label %fill_q_body, label %fill_q_end
 
 fill_q_body:                                      ; preds = %fill_q_cond
-  call void @i64.array.append(ptr %.40, i64 0)
-  %.56 = add i64 %.52, 1
-  store i64 %.56, ptr %.49, align 4
+  call void @i64.array.append(ptr %.50, i64 0)
+  %.66 = add i64 %.62, 1
+  store i64 %.66, ptr %.59, align 4
   br label %fill_q_cond
 
 fill_q_end:                                       ; preds = %fill_q_cond
-  %.59 = alloca i64, align 8
-  %.60 = alloca i64, align 8
-  %.61 = alloca i64, align 8
-  %.62 = mul i64 %.48, 64
-  %.63 = sub i64 %.62, 1
-  store i64 %.63, ptr %.59, align 4
+  %.69 = alloca i64, align 8
+  %.70 = alloca i64, align 8
+  %.71 = alloca i64, align 8
+  %.72 = mul i64 %.58, 64
+  %.73 = sub i64 %.72, 1
+  store i64 %.73, ptr %.69, align 4
   br label %loop_div_cond
 
 loop_div_cond:                                    ; preds = %next_iter, %fill_q_end
-  %.66 = load i64, ptr %.59, align 4
-  %.67 = icmp sge i64 %.66, 0
-  br i1 %.67, label %loop_div_body, label %loop_div_end
+  %.76 = load i64, ptr %.69, align 4
+  %.77 = icmp sge i64 %.76, 0
+  br i1 %.77, label %loop_div_body, label %loop_div_end
 
 loop_div_body:                                    ; preds = %loop_div_cond
-  %.69 = sdiv i64 %.66, 64
-  %.70 = srem i64 %.66, 64
-  %.71 = call i64 @i64.array.get(ptr %.47, i64 %.69)
-  %.72 = lshr i64 %.71, %.70
-  %.73 = and i64 %.72, 1
-  %.74 = load ptr, ptr %.32, align 8
-  %.75 = call i64 @i64.array.length(ptr %.74)
-  store i64 %.73, ptr %.60, align 4
-  store i64 0, ptr %.61, align 4
+  %.79 = sdiv i64 %.76, 64
+  %.80 = srem i64 %.76, 64
+  %.81 = call i64 @i64.array.get(ptr %.57, i64 %.79)
+  %.82 = lshr i64 %.81, %.80
+  %.83 = and i64 %.82, 1
+  %.84 = load ptr, ptr %.32, align 8
+  %.85 = call i64 @i64.array.length(ptr %.84)
+  store i64 %.83, ptr %.70, align 4
+  store i64 0, ptr %.71, align 4
   br label %shift_loop_cond
 
 loop_div_end:                                     ; preds = %loop_div_cond
   br label %div_trim_cond
 
 shift_loop_cond:                                  ; preds = %shift_loop_body, %loop_div_body
-  %.79 = load i64, ptr %.61, align 4
-  %.80 = icmp slt i64 %.79, %.75
-  br i1 %.80, label %shift_loop_body, label %shift_loop_end
+  %.89 = load i64, ptr %.71, align 4
+  %.90 = icmp slt i64 %.89, %.85
+  br i1 %.90, label %shift_loop_body, label %shift_loop_end
 
 shift_loop_body:                                  ; preds = %shift_loop_cond
-  %.82 = call i64 @i64.array.get(ptr %.74, i64 %.79)
-  %.83 = load i64, ptr %.60, align 4
-  %.84 = shl i64 %.82, 1
-  %.85 = or i64 %.84, %.83
-  %.86 = lshr i64 %.82, 63
-  call void @i64.array.set(ptr %.74, i64 %.79, i64 %.85)
-  store i64 %.86, ptr %.60, align 4
-  %.89 = add i64 %.79, 1
-  store i64 %.89, ptr %.61, align 4
+  %.92 = call i64 @i64.array.get(ptr %.84, i64 %.89)
+  %.93 = load i64, ptr %.70, align 4
+  %.94 = shl i64 %.92, 1
+  %.95 = or i64 %.94, %.93
+  %.96 = lshr i64 %.92, 63
+  call void @i64.array.set(ptr %.84, i64 %.89, i64 %.95)
+  store i64 %.96, ptr %.70, align 4
+  %.99 = add i64 %.89, 1
+  store i64 %.99, ptr %.71, align 4
   br label %shift_loop_cond
 
 shift_loop_end:                                   ; preds = %shift_loop_cond
-  %.92 = load i64, ptr %.60, align 4
-  %.93 = icmp ne i64 %.92, 0
-  br i1 %.93, label %shift_loop_end.if, label %shift_loop_end.endif
+  %.102 = load i64, ptr %.70, align 4
+  %.103 = icmp ne i64 %.102, 0
+  br i1 %.103, label %shift_loop_end.if, label %shift_loop_end.endif
 
 shift_loop_end.if:                                ; preds = %shift_loop_end
-  call void @i64.array.append(ptr %.74, i64 %.92)
+  call void @i64.array.append(ptr %.84, i64 %.102)
   br label %shift_loop_end.endif
 
 shift_loop_end.endif:                             ; preds = %shift_loop_end.if, %shift_loop_end
-  %.97 = call i32 @bigint_cmp(ptr %.29, ptr %.24)
-  %.98 = icmp sge i32 %.97, 0
-  br i1 %.98, label %sub_block, label %next_iter
+  %.107 = call i32 @bigint_cmp(ptr %.29, ptr %.24)
+  %.108 = icmp sge i32 %.107, 0
+  br i1 %.108, label %sub_block, label %next_iter
 
 sub_block:                                        ; preds = %shift_loop_end.endif
-  %.100 = call %bigint @bigint_sub(ptr %.29, ptr %.24)
-  %.101 = alloca %bigint, align 8
-  store %bigint %.100, ptr %.101, align 8
-  %.103 = getelementptr %bigint, ptr %.101, i32 0, i32 2
-  %.104 = load ptr, ptr %.103, align 8
-  %.105 = getelementptr %bigint, ptr %.101, i32 0, i32 1
-  %.106 = load i1, ptr %.105, align 1
+  %.110 = call ptr @bigint_sub(ptr %.29, ptr %.24)
+  %.111 = getelementptr %bigint, ptr %.110, i32 0, i32 2
+  %.112 = load ptr, ptr %.111, align 8
+  %.113 = getelementptr %bigint, ptr %.110, i32 0, i32 1
+  %.114 = load i1, ptr %.113, align 1
   call void @free_bigint(ptr %.29)
-  store ptr %.104, ptr %.32, align 8
-  store i1 %.106, ptr %.30, align 1
-  %.110 = call i64 @i64.array.get(ptr %.40, i64 %.69)
-  %.111 = shl i64 1, %.70
-  %.112 = or i64 %.110, %.111
-  call void @i64.array.set(ptr %.40, i64 %.69, i64 %.112)
+  store ptr %.112, ptr %.32, align 8
+  store i1 %.114, ptr %.30, align 1
+  %.118 = call i64 @i64.array.get(ptr %.50, i64 %.79)
+  %.119 = shl i64 1, %.80
+  %.120 = or i64 %.118, %.119
+  call void @i64.array.set(ptr %.50, i64 %.79, i64 %.120)
   br label %next_iter
 
 next_iter:                                        ; preds = %sub_block, %shift_loop_end.endif
-  %.115 = sub i64 %.66, 1
-  store i64 %.115, ptr %.59, align 4
+  %.123 = sub i64 %.76, 1
+  store i64 %.123, ptr %.69, align 4
   br label %loop_div_cond
 
 div_trim_cond:                                    ; preds = %div_trim_body, %loop_div_end
-  %.119 = call i64 @i64.array.length(ptr %.40)
-  %.120 = icmp sgt i64 %.119, 1
-  br i1 %.120, label %div_check_zero, label %div_trim_end
+  %.127 = call i64 @i64.array.length(ptr %.50)
+  %.128 = icmp sgt i64 %.127, 1
+  br i1 %.128, label %div_check_zero, label %div_trim_end
 
 div_trim_body:                                    ; preds = %div_check_zero
-  %.126 = getelementptr %i64.array, ptr %.40, i32 0, i32 1
-  %.127 = sub i64 %.119, 1
-  store i64 %.127, ptr %.126, align 4
+  %.134 = getelementptr %i64.array, ptr %.50, i32 0, i32 1
+  %.135 = sub i64 %.127, 1
+  store i64 %.135, ptr %.134, align 4
   br label %div_trim_cond
 
 div_trim_end:                                     ; preds = %div_check_zero, %div_trim_cond
-  store i1 %.23, ptr %.44, align 1
-  %.131 = call i64 @i64.array.length(ptr %.40)
-  %.132 = icmp eq i64 %.131, 1
-  %.133 = call i64 @i64.array.get(ptr %.40, i64 0)
-  %.134 = icmp eq i64 %.133, 0
-  %.135 = and i1 %.132, %.134
-  br i1 %.135, label %div_trim_end.if, label %div_trim_end.endif
+  store i1 %.23, ptr %.54, align 1
+  %.139 = call i64 @i64.array.length(ptr %.50)
+  %.140 = icmp eq i64 %.139, 1
+  %.141 = call i64 @i64.array.get(ptr %.50, i64 0)
+  %.142 = icmp eq i64 %.141, 0
+  %.143 = and i1 %.140, %.142
+  br i1 %.143, label %div_trim_end.if, label %div_trim_end.endif
 
 div_check_zero:                                   ; preds = %div_trim_cond
-  %.122 = sub i64 %.119, 1
-  %.123 = call i64 @i64.array.get(ptr %.40, i64 %.122)
-  %.124 = icmp eq i64 %.123, 0
-  br i1 %.124, label %div_trim_body, label %div_trim_end
+  %.130 = sub i64 %.127, 1
+  %.131 = call i64 @i64.array.get(ptr %.50, i64 %.130)
+  %.132 = icmp eq i64 %.131, 0
+  br i1 %.132, label %div_trim_body, label %div_trim_end
 
 div_trim_end.if:                                  ; preds = %div_trim_end
-  store i1 false, ptr %.44, align 1
+  store i1 false, ptr %.54, align 1
   br label %div_trim_end.endif
 
 div_trim_end.endif:                               ; preds = %div_trim_end.if, %div_trim_end
   call void @free_bigint(ptr %.29)
-  %.140 = load %bigint, ptr %.38, align 8
-  ret %bigint %.140
+  ret ptr %.39
 }
 
-define %bigint @bigint_mod(ptr %.1, ptr %.2) {
+define ptr @bigint_mod(ptr %.1, ptr %.2) {
 entry:
   %.4 = getelementptr %bigint, ptr %.2, i32 0, i32 2
   %.5 = load ptr, ptr %.4, align 8
@@ -2338,109 +2467,116 @@ start_div:                                        ; preds = %entry
   store i1 false, ptr %.22, align 1
   %.24 = getelementptr %bigint, ptr %.21, i32 0, i32 2
   store ptr %.5, ptr %.24, align 8
-  %.26 = alloca %bigint, align 8
-  %.27 = getelementptr %bigint, ptr %.26, i32 0, i32 1
-  store i1 false, ptr %.27, align 1
-  %.29 = getelementptr %bigint, ptr %.26, i32 0, i32 2
-  %.30 = call ptr @malloc(i64 32)
-  %.31 = bitcast ptr %.30 to ptr
-  call void @i64.array.init(ptr %.31)
-  call void @i64.array.append(ptr %.31, i64 0)
-  store ptr %.31, ptr %.29, align 8
-  %.35 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.36 = load ptr, ptr %.35, align 8
-  %.37 = call i64 @i64.array.length(ptr %.36)
-  %.38 = alloca i64, align 8
-  %.39 = alloca i64, align 8
-  %.40 = alloca i64, align 8
-  %.41 = mul i64 %.37, 64
-  %.42 = sub i64 %.41, 1
-  store i64 %.42, ptr %.38, align 4
+  %.26 = call ptr @malloc(i64 32)
+  %.27 = bitcast ptr %.26 to ptr
+  %.28 = getelementptr %bigint, ptr %.27, i32 0, i32 0
+  %.29 = getelementptr %meteor.header, ptr %.28, i32 0, i32 0
+  store i32 1, ptr %.29, align 4
+  %.31 = getelementptr %meteor.header, ptr %.28, i32 0, i32 1
+  store i32 0, ptr %.31, align 4
+  %.33 = getelementptr %meteor.header, ptr %.28, i32 0, i32 2
+  store i8 0, ptr %.33, align 1
+  %.35 = getelementptr %meteor.header, ptr %.28, i32 0, i32 3
+  store i8 5, ptr %.35, align 1
+  %.37 = getelementptr %bigint, ptr %.27, i32 0, i32 1
+  store i1 false, ptr %.37, align 1
+  %.39 = getelementptr %bigint, ptr %.27, i32 0, i32 2
+  %.40 = call ptr @malloc(i64 32)
+  %.41 = bitcast ptr %.40 to ptr
+  call void @i64.array.init(ptr %.41)
+  call void @i64.array.append(ptr %.41, i64 0)
+  store ptr %.41, ptr %.39, align 8
+  %.45 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.46 = load ptr, ptr %.45, align 8
+  %.47 = call i64 @i64.array.length(ptr %.46)
+  %.48 = alloca i64, align 8
+  %.49 = alloca i64, align 8
+  %.50 = alloca i64, align 8
+  %.51 = mul i64 %.47, 64
+  %.52 = sub i64 %.51, 1
+  store i64 %.52, ptr %.48, align 4
   br label %loop_mod_cond
 
 loop_mod_cond:                                    ; preds = %next_iter, %start_div
-  %.45 = load i64, ptr %.38, align 4
-  %.46 = icmp sge i64 %.45, 0
-  br i1 %.46, label %loop_mod_body, label %loop_mod_end
+  %.55 = load i64, ptr %.48, align 4
+  %.56 = icmp sge i64 %.55, 0
+  br i1 %.56, label %loop_mod_body, label %loop_mod_end
 
 loop_mod_body:                                    ; preds = %loop_mod_cond
-  %.48 = sdiv i64 %.45, 64
-  %.49 = srem i64 %.45, 64
-  %.50 = call i64 @i64.array.get(ptr %.36, i64 %.48)
-  %.51 = lshr i64 %.50, %.49
-  %.52 = and i64 %.51, 1
-  %.53 = load ptr, ptr %.29, align 8
-  %.54 = call i64 @i64.array.length(ptr %.53)
-  store i64 %.52, ptr %.39, align 4
-  store i64 0, ptr %.40, align 4
+  %.58 = sdiv i64 %.55, 64
+  %.59 = srem i64 %.55, 64
+  %.60 = call i64 @i64.array.get(ptr %.46, i64 %.58)
+  %.61 = lshr i64 %.60, %.59
+  %.62 = and i64 %.61, 1
+  %.63 = load ptr, ptr %.39, align 8
+  %.64 = call i64 @i64.array.length(ptr %.63)
+  store i64 %.62, ptr %.49, align 4
+  store i64 0, ptr %.50, align 4
   br label %shift_loop_cond
 
 loop_mod_end:                                     ; preds = %loop_mod_cond
-  %.93 = load ptr, ptr %.29, align 8
-  store i1 %.20, ptr %.27, align 1
-  %.95 = call i64 @i64.array.length(ptr %.93)
-  %.96 = icmp eq i64 %.95, 1
-  %.97 = call i64 @i64.array.get(ptr %.93, i64 0)
-  %.98 = icmp eq i64 %.97, 0
-  %.99 = and i1 %.96, %.98
-  br i1 %.99, label %loop_mod_end.if, label %loop_mod_end.endif
+  %.101 = load ptr, ptr %.39, align 8
+  store i1 %.20, ptr %.37, align 1
+  %.103 = call i64 @i64.array.length(ptr %.101)
+  %.104 = icmp eq i64 %.103, 1
+  %.105 = call i64 @i64.array.get(ptr %.101, i64 0)
+  %.106 = icmp eq i64 %.105, 0
+  %.107 = and i1 %.104, %.106
+  br i1 %.107, label %loop_mod_end.if, label %loop_mod_end.endif
 
 shift_loop_cond:                                  ; preds = %shift_loop_body, %loop_mod_body
-  %.58 = load i64, ptr %.40, align 4
-  %.59 = icmp slt i64 %.58, %.54
-  br i1 %.59, label %shift_loop_body, label %shift_loop_end
+  %.68 = load i64, ptr %.50, align 4
+  %.69 = icmp slt i64 %.68, %.64
+  br i1 %.69, label %shift_loop_body, label %shift_loop_end
 
 shift_loop_body:                                  ; preds = %shift_loop_cond
-  %.61 = call i64 @i64.array.get(ptr %.53, i64 %.58)
-  %.62 = load i64, ptr %.39, align 4
-  %.63 = shl i64 %.61, 1
-  %.64 = or i64 %.63, %.62
-  %.65 = lshr i64 %.61, 63
-  call void @i64.array.set(ptr %.53, i64 %.58, i64 %.64)
-  store i64 %.65, ptr %.39, align 4
-  %.68 = add i64 %.58, 1
-  store i64 %.68, ptr %.40, align 4
+  %.71 = call i64 @i64.array.get(ptr %.63, i64 %.68)
+  %.72 = load i64, ptr %.49, align 4
+  %.73 = shl i64 %.71, 1
+  %.74 = or i64 %.73, %.72
+  %.75 = lshr i64 %.71, 63
+  call void @i64.array.set(ptr %.63, i64 %.68, i64 %.74)
+  store i64 %.75, ptr %.49, align 4
+  %.78 = add i64 %.68, 1
+  store i64 %.78, ptr %.50, align 4
   br label %shift_loop_cond
 
 shift_loop_end:                                   ; preds = %shift_loop_cond
-  %.71 = load i64, ptr %.39, align 4
-  %.72 = icmp ne i64 %.71, 0
-  br i1 %.72, label %shift_loop_end.if, label %shift_loop_end.endif
+  %.81 = load i64, ptr %.49, align 4
+  %.82 = icmp ne i64 %.81, 0
+  br i1 %.82, label %shift_loop_end.if, label %shift_loop_end.endif
 
 shift_loop_end.if:                                ; preds = %shift_loop_end
-  call void @i64.array.append(ptr %.53, i64 %.71)
+  call void @i64.array.append(ptr %.63, i64 %.81)
   br label %shift_loop_end.endif
 
 shift_loop_end.endif:                             ; preds = %shift_loop_end.if, %shift_loop_end
-  %.76 = call i32 @bigint_cmp(ptr %.26, ptr %.21)
-  %.77 = icmp sge i32 %.76, 0
-  br i1 %.77, label %sub_block, label %next_iter
+  %.86 = call i32 @bigint_cmp(ptr %.27, ptr %.21)
+  %.87 = icmp sge i32 %.86, 0
+  br i1 %.87, label %sub_block, label %next_iter
 
 sub_block:                                        ; preds = %shift_loop_end.endif
-  %.79 = call %bigint @bigint_sub(ptr %.26, ptr %.21)
-  %.80 = alloca %bigint, align 8
-  store %bigint %.79, ptr %.80, align 8
-  %.82 = getelementptr %bigint, ptr %.80, i32 0, i32 2
-  %.83 = load ptr, ptr %.82, align 8
-  %.84 = getelementptr %bigint, ptr %.80, i32 0, i32 1
-  %.85 = load i1, ptr %.84, align 1
-  call void @free_bigint(ptr %.26)
-  store ptr %.83, ptr %.29, align 8
-  store i1 %.85, ptr %.27, align 1
+  %.89 = call ptr @bigint_sub(ptr %.27, ptr %.21)
+  %.90 = getelementptr %bigint, ptr %.89, i32 0, i32 2
+  %.91 = load ptr, ptr %.90, align 8
+  %.92 = getelementptr %bigint, ptr %.89, i32 0, i32 1
+  %.93 = load i1, ptr %.92, align 1
+  call void @free_bigint(ptr %.27)
+  store ptr %.91, ptr %.39, align 8
+  store i1 %.93, ptr %.37, align 1
   br label %next_iter
 
 next_iter:                                        ; preds = %sub_block, %shift_loop_end.endif
-  %.90 = sub i64 %.45, 1
-  store i64 %.90, ptr %.38, align 4
+  %.98 = sub i64 %.55, 1
+  store i64 %.98, ptr %.48, align 4
   br label %loop_mod_cond
 
 loop_mod_end.if:                                  ; preds = %loop_mod_end
-  store i1 false, ptr %.27, align 1
+  store i1 false, ptr %.37, align 1
   br label %loop_mod_end.endif
 
 loop_mod_end.endif:                               ; preds = %loop_mod_end.if, %loop_mod_end
-  %.103 = load %bigint, ptr %.26, align 8
-  ret %bigint %.103
+  ret ptr %.27
 }
 
 define %decimal @decimal_add(ptr %.1, ptr %.2) {
@@ -2485,83 +2621,94 @@ adjust_a:                                         ; preds = %entry
   br i1 %.13, label %need_adjust_a, label %no_adjust
 
 do_add:                                           ; preds = %loop_end_a, %no_adjust, %loop_end_b
-  %.85 = load ptr, ptr %.14, align 8
-  %.86 = load ptr, ptr %.15, align 8
-  %.87 = load i64, ptr %.16, align 4
-  %.88 = call %bigint @bigint_add(ptr %.85, ptr %.86)
-  %.89 = call ptr @malloc(i64 16)
-  %.90 = bitcast ptr %.89 to ptr
-  store %bigint %.88, ptr %.90, align 8
-  %.92 = alloca %decimal, align 8
-  %.93 = getelementptr %decimal, ptr %.92, i32 0, i32 1
-  store ptr %.90, ptr %.93, align 8
-  %.95 = getelementptr %decimal, ptr %.92, i32 0, i32 2
-  store i64 %.87, ptr %.95, align 4
-  %.97 = load %decimal, ptr %.92, align 8
-  ret %decimal %.97
+  %.91 = load ptr, ptr %.14, align 8
+  %.92 = load ptr, ptr %.15, align 8
+  %.93 = load i64, ptr %.16, align 4
+  %.94 = call ptr @bigint_add(ptr %.91, ptr %.92)
+  %.95 = alloca %decimal, align 8
+  %.96 = getelementptr %decimal, ptr %.95, i32 0, i32 1
+  store ptr %.94, ptr %.96, align 8
+  %.98 = getelementptr %decimal, ptr %.95, i32 0, i32 2
+  store i64 %.93, ptr %.98, align 4
+  %.100 = load %decimal, ptr %.95, align 8
+  ret %decimal %.100
 
-loop_cond_b:                                      ; preds = %loop_body_b, %adjust_b
+loop_cond_b:                                      ; preds = %loop_body_b.endif, %adjust_b
   %.37 = load i64, ptr %.34, align 4
   %.38 = icmp slt i64 %.37, %.21
   br i1 %.38, label %loop_body_b, label %loop_end_b
 
 loop_body_b:                                      ; preds = %loop_cond_b
   %.40 = load ptr, ptr %.32, align 8
-  %.41 = call %bigint @bigint_mul(ptr %.40, ptr %.23)
-  %.42 = call ptr @malloc(i64 16)
-  %.43 = bitcast ptr %.42 to ptr
-  store %bigint %.41, ptr %.43, align 8
-  store ptr %.43, ptr %.32, align 8
-  %.46 = add i64 %.37, 1
-  store i64 %.46, ptr %.34, align 4
-  br label %loop_cond_b
+  %.41 = call ptr @bigint_mul(ptr %.40, ptr %.23)
+  %.42 = icmp eq ptr %.40, %.9
+  %.43 = xor i1 %.42, true
+  br i1 %.43, label %loop_body_b.if, label %loop_body_b.endif
 
 loop_end_b:                                       ; preds = %loop_cond_b
-  %.49 = load ptr, ptr %.32, align 8
-  store ptr %.49, ptr %.15, align 8
+  %.52 = load ptr, ptr %.32, align 8
+  store ptr %.52, ptr %.15, align 8
   br label %do_add
 
+loop_body_b.if:                                   ; preds = %loop_body_b
+  %.45 = bitcast ptr %.40 to ptr
+  call void @meteor_release(ptr %.45)
+  br label %loop_body_b.endif
+
+loop_body_b.endif:                                ; preds = %loop_body_b.if, %loop_body_b
+  store ptr %.41, ptr %.32, align 8
+  %.49 = add i64 %.37, 1
+  store i64 %.49, ptr %.34, align 4
+  br label %loop_cond_b
+
 need_adjust_a:                                    ; preds = %adjust_a
-  %.53 = sub i64 %.7, %.11
+  %.56 = sub i64 %.7, %.11
   store i64 %.11, ptr %.16, align 4
-  %.55 = alloca %bigint, align 8
-  %.56 = call ptr @malloc(i64 32)
-  %.57 = bitcast ptr %.56 to ptr
-  call void @i64.array.init(ptr %.57)
-  call void @i64.array.append(ptr %.57, i64 10)
-  %.60 = getelementptr %bigint, ptr %.55, i32 0, i32 1
-  store i1 false, ptr %.60, align 1
-  %.62 = getelementptr %bigint, ptr %.55, i32 0, i32 2
-  store ptr %.57, ptr %.62, align 8
-  %.64 = alloca ptr, align 8
-  store ptr %.5, ptr %.64, align 8
-  %.66 = alloca i64, align 8
-  store i64 0, ptr %.66, align 4
+  %.58 = alloca %bigint, align 8
+  %.59 = call ptr @malloc(i64 32)
+  %.60 = bitcast ptr %.59 to ptr
+  call void @i64.array.init(ptr %.60)
+  call void @i64.array.append(ptr %.60, i64 10)
+  %.63 = getelementptr %bigint, ptr %.58, i32 0, i32 1
+  store i1 false, ptr %.63, align 1
+  %.65 = getelementptr %bigint, ptr %.58, i32 0, i32 2
+  store ptr %.60, ptr %.65, align 8
+  %.67 = alloca ptr, align 8
+  store ptr %.5, ptr %.67, align 8
+  %.69 = alloca i64, align 8
+  store i64 0, ptr %.69, align 4
   br label %loop_cond_a
 
 no_adjust:                                        ; preds = %adjust_a
   br label %do_add
 
-loop_cond_a:                                      ; preds = %loop_body_a, %need_adjust_a
-  %.69 = load i64, ptr %.66, align 4
-  %.70 = icmp slt i64 %.69, %.53
-  br i1 %.70, label %loop_body_a, label %loop_end_a
+loop_cond_a:                                      ; preds = %loop_body_a.endif, %need_adjust_a
+  %.72 = load i64, ptr %.69, align 4
+  %.73 = icmp slt i64 %.72, %.56
+  br i1 %.73, label %loop_body_a, label %loop_end_a
 
 loop_body_a:                                      ; preds = %loop_cond_a
-  %.72 = load ptr, ptr %.64, align 8
-  %.73 = call %bigint @bigint_mul(ptr %.72, ptr %.55)
-  %.74 = call ptr @malloc(i64 16)
-  %.75 = bitcast ptr %.74 to ptr
-  store %bigint %.73, ptr %.75, align 8
-  store ptr %.75, ptr %.64, align 8
-  %.78 = add i64 %.69, 1
-  store i64 %.78, ptr %.66, align 4
-  br label %loop_cond_a
+  %.75 = load ptr, ptr %.67, align 8
+  %.76 = call ptr @bigint_mul(ptr %.75, ptr %.58)
+  %.77 = icmp eq ptr %.75, %.5
+  %.78 = xor i1 %.77, true
+  br i1 %.78, label %loop_body_a.if, label %loop_body_a.endif
 
 loop_end_a:                                       ; preds = %loop_cond_a
-  %.81 = load ptr, ptr %.64, align 8
-  store ptr %.81, ptr %.14, align 8
+  %.87 = load ptr, ptr %.67, align 8
+  store ptr %.87, ptr %.14, align 8
   br label %do_add
+
+loop_body_a.if:                                   ; preds = %loop_body_a
+  %.80 = bitcast ptr %.75 to ptr
+  call void @meteor_release(ptr %.80)
+  br label %loop_body_a.endif
+
+loop_body_a.endif:                                ; preds = %loop_body_a.if, %loop_body_a
+  store ptr %.76, ptr %.67, align 8
+  %.84 = add i64 %.72, 1
+  store i64 %.84, ptr %.69, align 4
+  br label %loop_cond_a
 }
 
 define %decimal @decimal_sub(ptr %.1, ptr %.2) {
@@ -2606,81 +2753,94 @@ adjust_a:                                         ; preds = %entry
   br i1 %.13, label %need_adjust_a, label %no_adjust
 
 do_sub:                                           ; preds = %loop_end_a, %no_adjust, %loop_end_b
-  %.83 = load ptr, ptr %.14, align 8
-  %.84 = load ptr, ptr %.15, align 8
-  %.85 = load i64, ptr %.16, align 4
-  %.86 = call %bigint @bigint_sub(ptr %.83, ptr %.84)
-  %.87 = call ptr @malloc(i64 16)
-  %.88 = bitcast ptr %.87 to ptr
-  store %bigint %.86, ptr %.88, align 8
-  %.90 = alloca %decimal, align 8
-  %.91 = getelementptr %decimal, ptr %.90, i32 0, i32 1
-  store ptr %.88, ptr %.91, align 8
-  %.93 = getelementptr %decimal, ptr %.90, i32 0, i32 2
-  store i64 %.85, ptr %.93, align 4
-  %.95 = load %decimal, ptr %.90, align 8
-  ret %decimal %.95
+  %.91 = load ptr, ptr %.14, align 8
+  %.92 = load ptr, ptr %.15, align 8
+  %.93 = load i64, ptr %.16, align 4
+  %.94 = call ptr @bigint_sub(ptr %.91, ptr %.92)
+  %.95 = alloca %decimal, align 8
+  %.96 = getelementptr %decimal, ptr %.95, i32 0, i32 1
+  store ptr %.94, ptr %.96, align 8
+  %.98 = getelementptr %decimal, ptr %.95, i32 0, i32 2
+  store i64 %.93, ptr %.98, align 4
+  %.100 = load %decimal, ptr %.95, align 8
+  ret %decimal %.100
 
-loop_cond_b:                                      ; preds = %loop_body_b, %adjust_b
+loop_cond_b:                                      ; preds = %loop_body_b.endif, %adjust_b
   %.37 = load i64, ptr %.34, align 4
   %.38 = icmp slt i64 %.37, %.21
   br i1 %.38, label %loop_body_b, label %loop_end_b
 
 loop_body_b:                                      ; preds = %loop_cond_b
   %.40 = load ptr, ptr %.32, align 8
-  %.41 = call %bigint @bigint_mul(ptr %.40, ptr %.23)
-  %.42 = alloca %bigint, align 8
-  store %bigint %.41, ptr %.42, align 8
-  store ptr %.42, ptr %.32, align 8
-  %.45 = add i64 %.37, 1
-  store i64 %.45, ptr %.34, align 4
-  br label %loop_cond_b
+  %.41 = call ptr @bigint_mul(ptr %.40, ptr %.23)
+  %.42 = icmp eq ptr %.40, %.9
+  %.43 = xor i1 %.42, true
+  br i1 %.43, label %loop_body_b.if, label %loop_body_b.endif
 
 loop_end_b:                                       ; preds = %loop_cond_b
-  %.48 = load ptr, ptr %.32, align 8
-  store ptr %.48, ptr %.15, align 8
+  %.52 = load ptr, ptr %.32, align 8
+  store ptr %.52, ptr %.15, align 8
   br label %do_sub
 
+loop_body_b.if:                                   ; preds = %loop_body_b
+  %.45 = bitcast ptr %.40 to ptr
+  call void @meteor_release(ptr %.45)
+  br label %loop_body_b.endif
+
+loop_body_b.endif:                                ; preds = %loop_body_b.if, %loop_body_b
+  store ptr %.41, ptr %.32, align 8
+  %.49 = add i64 %.37, 1
+  store i64 %.49, ptr %.34, align 4
+  br label %loop_cond_b
+
 need_adjust_a:                                    ; preds = %adjust_a
-  %.52 = sub i64 %.7, %.11
+  %.56 = sub i64 %.7, %.11
   store i64 %.11, ptr %.16, align 4
-  %.54 = alloca %bigint, align 8
-  %.55 = call ptr @malloc(i64 32)
-  %.56 = bitcast ptr %.55 to ptr
-  call void @i64.array.init(ptr %.56)
-  call void @i64.array.append(ptr %.56, i64 10)
-  %.59 = getelementptr %bigint, ptr %.54, i32 0, i32 1
-  store i1 false, ptr %.59, align 1
-  %.61 = getelementptr %bigint, ptr %.54, i32 0, i32 2
-  store ptr %.56, ptr %.61, align 8
-  %.63 = alloca ptr, align 8
-  store ptr %.5, ptr %.63, align 8
-  %.65 = alloca i64, align 8
-  store i64 0, ptr %.65, align 4
+  %.58 = alloca %bigint, align 8
+  %.59 = call ptr @malloc(i64 32)
+  %.60 = bitcast ptr %.59 to ptr
+  call void @i64.array.init(ptr %.60)
+  call void @i64.array.append(ptr %.60, i64 10)
+  %.63 = getelementptr %bigint, ptr %.58, i32 0, i32 1
+  store i1 false, ptr %.63, align 1
+  %.65 = getelementptr %bigint, ptr %.58, i32 0, i32 2
+  store ptr %.60, ptr %.65, align 8
+  %.67 = alloca ptr, align 8
+  store ptr %.5, ptr %.67, align 8
+  %.69 = alloca i64, align 8
+  store i64 0, ptr %.69, align 4
   br label %loop_cond_a
 
 no_adjust:                                        ; preds = %adjust_a
   br label %do_sub
 
-loop_cond_a:                                      ; preds = %loop_body_a, %need_adjust_a
-  %.68 = load i64, ptr %.65, align 4
-  %.69 = icmp slt i64 %.68, %.52
-  br i1 %.69, label %loop_body_a, label %loop_end_a
+loop_cond_a:                                      ; preds = %loop_body_a.endif, %need_adjust_a
+  %.72 = load i64, ptr %.69, align 4
+  %.73 = icmp slt i64 %.72, %.56
+  br i1 %.73, label %loop_body_a, label %loop_end_a
 
 loop_body_a:                                      ; preds = %loop_cond_a
-  %.71 = load ptr, ptr %.63, align 8
-  %.72 = call %bigint @bigint_mul(ptr %.71, ptr %.54)
-  %.73 = alloca %bigint, align 8
-  store %bigint %.72, ptr %.73, align 8
-  store ptr %.73, ptr %.63, align 8
-  %.76 = add i64 %.68, 1
-  store i64 %.76, ptr %.65, align 4
-  br label %loop_cond_a
+  %.75 = load ptr, ptr %.67, align 8
+  %.76 = call ptr @bigint_mul(ptr %.75, ptr %.58)
+  %.77 = icmp eq ptr %.75, %.5
+  %.78 = xor i1 %.77, true
+  br i1 %.78, label %loop_body_a.if, label %loop_body_a.endif
 
 loop_end_a:                                       ; preds = %loop_cond_a
-  %.79 = load ptr, ptr %.63, align 8
-  store ptr %.79, ptr %.14, align 8
+  %.87 = load ptr, ptr %.67, align 8
+  store ptr %.87, ptr %.14, align 8
   br label %do_sub
+
+loop_body_a.if:                                   ; preds = %loop_body_a
+  %.80 = bitcast ptr %.75 to ptr
+  call void @meteor_release(ptr %.80)
+  br label %loop_body_a.endif
+
+loop_body_a.endif:                                ; preds = %loop_body_a.if, %loop_body_a
+  store ptr %.76, ptr %.67, align 8
+  %.84 = add i64 %.72, 1
+  store i64 %.84, ptr %.69, align 4
+  br label %loop_cond_a
 }
 
 define %decimal @decimal_mul(ptr %.1, ptr %.2) {
@@ -2693,18 +2853,15 @@ entry:
   %.9 = load ptr, ptr %.8, align 8
   %.10 = getelementptr %decimal, ptr %.2, i32 0, i32 2
   %.11 = load i64, ptr %.10, align 4
-  %.12 = call %bigint @bigint_mul(ptr %.5, ptr %.9)
+  %.12 = call ptr @bigint_mul(ptr %.5, ptr %.9)
   %.13 = add i64 %.7, %.11
   %.14 = alloca %decimal, align 8
-  %.15 = call ptr @malloc(i64 16)
-  %.16 = bitcast ptr %.15 to ptr
-  store %bigint %.12, ptr %.16, align 8
-  %.18 = getelementptr %decimal, ptr %.14, i32 0, i32 1
-  store ptr %.16, ptr %.18, align 8
-  %.20 = getelementptr %decimal, ptr %.14, i32 0, i32 2
-  store i64 %.13, ptr %.20, align 4
-  %.22 = load %decimal, ptr %.14, align 8
-  ret %decimal %.22
+  %.15 = getelementptr %decimal, ptr %.14, i32 0, i32 1
+  store ptr %.12, ptr %.15, align 8
+  %.17 = getelementptr %decimal, ptr %.14, i32 0, i32 2
+  store i64 %.13, ptr %.17, align 4
+  %.19 = load %decimal, ptr %.14, align 8
+  ret %decimal %.19
 }
 
 define %decimal @decimal_neg(ptr %.1) {
@@ -2713,17 +2870,14 @@ entry:
   %.4 = load ptr, ptr %.3, align 8
   %.5 = getelementptr %decimal, ptr %.1, i32 0, i32 2
   %.6 = load i64, ptr %.5, align 4
-  %.7 = call %bigint @bigint_neg(ptr %.4)
+  %.7 = call ptr @bigint_neg(ptr %.4)
   %.8 = alloca %decimal, align 8
-  %.9 = call ptr @malloc(i64 24)
-  %.10 = bitcast ptr %.9 to ptr
-  store %bigint %.7, ptr %.10, align 8
-  %.12 = getelementptr %decimal, ptr %.8, i32 0, i32 1
-  store ptr %.10, ptr %.12, align 8
-  %.14 = getelementptr %decimal, ptr %.8, i32 0, i32 2
-  store i64 %.6, ptr %.14, align 4
-  %.16 = load %decimal, ptr %.8, align 8
-  ret %decimal %.16
+  %.9 = getelementptr %decimal, ptr %.8, i32 0, i32 1
+  store ptr %.7, ptr %.9, align 8
+  %.11 = getelementptr %decimal, ptr %.8, i32 0, i32 2
+  store i64 %.6, ptr %.11, align 4
+  %.13 = load %decimal, ptr %.8, align 8
+  ret %decimal %.13
 }
 
 define ptr @number_to_decimal(ptr %.1) {
@@ -2743,9 +2897,9 @@ entry:
 case_int:                                         ; preds = %entry, %entry
   %.8 = bitcast ptr %.6 to ptr
   %.9 = load i64, ptr %.8, align 4
-  %.10 = call ptr @malloc(i64 16)
+  %.10 = call ptr @malloc(i64 32)
   %.11 = bitcast ptr %.10 to ptr
-  %.12 = call ptr @malloc(i64 16)
+  %.12 = call ptr @malloc(i64 32)
   %.13 = bitcast ptr %.12 to ptr
   %.14 = call ptr @malloc(i64 32)
   %.15 = bitcast ptr %.14 to ptr
@@ -2770,9 +2924,9 @@ case_float:                                       ; preds = %entry
   %.32 = load double, ptr %.31, align 8
   %.33 = fmul double %.32, 1.000000e+06
   %.34 = fptosi double %.33 to i64
-  %.35 = call ptr @malloc(i64 16)
+  %.35 = call ptr @malloc(i64 32)
   %.36 = bitcast ptr %.35 to ptr
-  %.37 = call ptr @malloc(i64 16)
+  %.37 = call ptr @malloc(i64 32)
   %.38 = bitcast ptr %.37 to ptr
   %.39 = call ptr @malloc(i64 32)
   %.40 = bitcast ptr %.39 to ptr
@@ -2794,7 +2948,7 @@ case_float:                                       ; preds = %entry
 
 case_bigint:                                      ; preds = %entry
   %.56 = bitcast ptr %.6 to ptr
-  %.57 = call ptr @malloc(i64 16)
+  %.57 = call ptr @malloc(i64 32)
   %.58 = bitcast ptr %.57 to ptr
   %.59 = getelementptr %decimal, ptr %.58, i32 0, i32 1
   store ptr %.56, ptr %.59, align 8
