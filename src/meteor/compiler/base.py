@@ -14,7 +14,8 @@ HEADER_WEAK_RC = 1     # Weak reference count (u32) - 4 bytes
 HEADER_FLAGS = 2       # Flags byte (u8) - 1 byte
 HEADER_TYPE_TAG = 3    # Type tag (u8) - 1 byte
 HEADER_RESERVED1 = 4   # Reserved for alignment (u16) - 2 bytes
-HEADER_RESERVED2 = 5   # Reserved for alignment (u32) - 4 bytes = 16 total
+HEADER_RESERVED1 = 4   # Reserved for alignment (u16) - 2 bytes
+HEADER_CLASS_ID = 5    # Class ID (u32) - 4 bytes = 16 total
 
 # Object Header Size in bytes
 OBJECT_HEADER_SIZE = 16

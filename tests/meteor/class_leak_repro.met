@@ -1,0 +1,50 @@
+# Class Field Memory Leak Reproduction
+# This test creates a Class instance with a String field in a loop.
+# If Class fields are not released when the Class instance is destroyed,
+# the String data will leak, causing memory usage to grow.
+
+class StringWrapper
+    value: str
+
+    # Constructor
+    def new(v: str)
+        print("In new")
+        self.value = v
+
+def int_to_str(n: int) -> str
+    # Simple recursive int to str for demo
+    if n < 10
+        if n == 0 return "0"
+        if n == 1 return "1"
+        if n == 2 return "2"
+        if n == 3 return "3"
+        if n == 4 return "4"
+        if n == 5 return "5"
+        if n == 6 return "6"
+        if n == 7 return "7"
+        if n == 8 return "8"
+        if n == 9 return "9"
+    return int_to_str(n // 10) + int_to_str(n % 10)
+
+def run_test()
+    i = 0
+    # Run enough iterations to make the leak obvious
+    # 100,000 iterations * ~32 bytes per string = ~3MB leaked if failed
+    # With overhead, it should be noticeable
+    while i < 100000
+        print("Loop start " + int_to_str(i))
+        # Create instance
+        w = StringWrapper("Initial check")
+        print("Allocated")
+        
+        # Reassign field (should release old value)
+        w.value = "Updated value " + "concatenated"
+        print("Assigned")
+        
+        # Scope ends, 'w' is destroyed.
+        i = i + 1
+        print("Scope end")
+
+print("Starting Class Leak Test...")
+run_test()
+print("Test Complete. If memory usage didn't spike, check implementation.")

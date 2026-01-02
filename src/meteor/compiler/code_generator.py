@@ -54,6 +54,9 @@ class CodeGenerator(NodeVisitor):
         self.managed_vars_stack = [[]]  # Stack of managed variables per scope for RC cleanup
         self.link_libs = []  # C libraries to link
         self.spawn_counter = 0  # Counter for unique spawn wrapper names
+        self.class_id_map = {} # Map[class_name -> int_id]
+        self.id_to_class_map = {} # Map[int_id -> classdecl]
+        self.class_id_counter = 1 # Start from 1 (0 is reserved/unknown)
 
         # llvm.initialize()
         llvm.initialize_native_target()
@@ -240,7 +243,11 @@ class CodeGenerator(NodeVisitor):
         # Release scope variables before returning (exclude return value)
         # Retain the return value first to prevent it from being freed
         if val.type != ir.VoidType() and self.is_managed_type(val.type):
-            self.rc_retain(val)
+            # Only retain if it's NOT a temporary managed value
+            # Temporaries (RC=1) are not in managed_vars_stack, so release_scope_variables won't free them.
+            # Variables (RC=1+) ARE in managed_vars_stack, so we must retain to survive scope release.
+            if not self._is_temp_managed_value(val, node.value):
+                self.rc_retain(val)
         self.release_scope_variables()
 
         self.branch(self.exit_blocks[-1])
@@ -540,14 +547,18 @@ class CodeGenerator(NodeVisitor):
         """Check if a value is a temporary managed type (class instance, not from variable)."""
         from meteor.ast import Str, BinOp, FuncCall
         # Class constructor calls are temporary
+        # Function calls (constructors AND regular functions) return temporary/new references
         if isinstance(ast_node, FuncCall):
-            # Check if it's a class constructor
+            # Check if it's a class constructor OR any function returning a managed type
+            if hasattr(val, 'type') and self.is_managed_type(val.type):
+                return True
+            # Fallback for void functions or primitives
             class_type = self.search_scopes(ast_node.name)
             if class_type is not None and hasattr(class_type, 'type') and class_type.type == CLASS:
                 return True
         # String literals and concatenations
         if isinstance(ast_node, (Str, BinOp)):
-            return True
+            return hasattr(val, 'type') and self.is_managed_type(val.type)
         # Check if it's a managed type but not from a load instruction
         if hasattr(val, 'type') and hasattr(val.type, 'pointee'):
             pointee = val.type.pointee
@@ -1131,6 +1142,11 @@ class CodeGenerator(NodeVisitor):
         classdecl.defaults = {**self.get_super_defaults(classdecl), **node.defaults}
         classdecl.name = node.name
         classdecl.type = CLASS
+        classdecl.class_id = self.class_id_counter
+        self.class_id_map[node.name] = self.class_id_counter
+        self.id_to_class_map[self.class_id_counter] = classdecl
+        self.class_id_counter += 1
+        
         super_fields, super_elements = self.get_super_fields(classdecl)
         classdecl.fields = super_fields + [field for field in node.fields.keys()]
         classdecl.set_body(*(super_elements + [field for field in fields]))
@@ -2602,17 +2618,34 @@ class CodeGenerator(NodeVisitor):
         class_type = self.search_scopes(node.name)
 
         # Ensure destructor is generated for this class type
-        if not hasattr(class_type, 'destructor'):
-            self._generate_class_destructor(node.name, class_type)
+        # Ensure destructor is generated for this class type
+        # Disable static destructor generation to rely on runtime dispatch (prevents double-free)
+        # if not hasattr(class_type, 'destructor'):
+        #    self._generate_class_destructor(node.name, class_type)
 
         # Calculate size: object header (16 bytes) + class fields
-        header_size = 16  # 4 + 4 + 1 + 1 + 2 + padding
+        # Calculate size: object header (16 bytes) + class fields
+        header_size = ir.Constant(type_map[INT64], 16)  # 4 + 4 + 1 + 1 + 2 + padding
         class_size = self.get_type_size(class_type)
-        total_size = header_size + class_size
+        
+        # Ensure correct types for addition
+        if isinstance(class_size, int):
+            class_size = ir.Constant(type_map[INT64], class_size)
+            
+        total_size = self.builder.add(header_size, class_size)
 
         # Allocate memory using malloc
         malloc_func = self.module.get_global('malloc')
-        raw_mem = self.builder.call(malloc_func, [self.const(total_size)])
+        # Ensure total_size matches malloc arg type (usually i64)
+        if total_size.type != type_map[INT]:
+             total_size = self.builder.zext(total_size, type_map[INT])
+             
+        raw_mem = self.builder.call(malloc_func, [total_size])
+
+        # Zero-initialize memory using memset
+        # memset(ptr, 0, size)
+        memset_func = self.module.get_global('memset')
+        self.builder.call(memset_func, [raw_mem, ir.Constant(type_map[INT32], 0), total_size])
 
         # Initialize object header
         header_struct = self.search_scopes(OBJECT_HEADER)
@@ -2627,12 +2660,18 @@ class CodeGenerator(NodeVisitor):
             # flags = 0
             flags_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(2, width=INT32)])
             self.builder.store(self.const(0, width=UINT8), flags_ptr)
-            # type_tag = TYPE_TAG_CLASS
             tag_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(3, width=INT32)])
             self.builder.store(self.const(TYPE_TAG_CLASS, width=UINT8), tag_ptr)
+            
+            # class_id
+            from meteor.compiler.base import HEADER_CLASS_ID
+            class_id = self.class_id_map.get(node.name, 0)
+            class_id_ptr = self.builder.gep(header_ptr, [self.const(0), self.const(HEADER_CLASS_ID, width=INT32)])
+            self.builder.store(self.const(class_id, width=INT32), class_id_ptr)
 
         # Get pointer to class data (after header)
-        data_ptr = self.builder.gep(raw_mem, [self.const(header_size)])
+        # header_size is already an ir.Constant (i64), so use it directly
+        data_ptr = self.builder.gep(raw_mem, [header_size])
         _class = self.builder.bitcast(data_ptr, class_type.as_pointer())
 
         # Initialize all pointer fields to NULL to prevent garbage pointers
@@ -3005,7 +3044,13 @@ class CodeGenerator(NodeVisitor):
         # Use malloc instead of alloca for proper memory management
         # header(16) + size(8) + capacity(8) + data*(8) = 40 bytes
         malloc_func = self.module.get_global('malloc')
-        array_mem = self.builder.call(malloc_func, [self.const(40)])
+        array_size = self.const(40)
+        array_mem = self.builder.call(malloc_func, [array_size])
+        
+        # Zero-initialize the array structure
+        memset_func = self.module.get_global('memset')
+        self.builder.call(memset_func, [array_mem, ir.Constant(type_map[INT32], 0), array_size])
+        
         array = self.builder.bitcast(array_mem, dyn_array_type.as_pointer())
 
         create_dynamic_array_methods(self, element_type)
@@ -3150,6 +3195,10 @@ class CodeGenerator(NodeVisitor):
 
         self.call('print', [val])
 
+        # Release temporary managed value (e.g. print("a" + "b"))
+        if self._is_temp_managed_value(val, node.value):
+            self.rc_release(val)
+
     def print_string(self, string, newline=True):
         stringz = self.stringz(string)
         str_ptr = self.alloc_and_store(stringz, ir.ArrayType(stringz.type.element, stringz.type.count))
@@ -3157,9 +3206,13 @@ class CodeGenerator(NodeVisitor):
         if newline:
             str_ptr = self.builder.bitcast(str_ptr, type_map[INT].as_pointer())
             self.call('puts', [str_ptr])
+            # Force flush for JIT visibility
+            self.call('fflush', [ir.Constant(type_map[INT8].as_pointer(), None)])
         else:
             str_ptr = self.builder.bitcast(str_ptr, type_map[INT8].as_pointer())
             self.call('printf', [str_ptr])
+            # Force flush
+            self.call('fflush', [ir.Constant(type_map[INT8].as_pointer(), None)])
 
     def print_num(self, num_format, num):
         percent_d = self.stringz(num_format)
@@ -3168,6 +3221,8 @@ class CodeGenerator(NodeVisitor):
         percent_d = self.builder.bitcast(percent_d, type_map[INT8].as_pointer())
         self.call('printf', [percent_d, num])
         self.call('putchar', [ir.Constant(type_map[INT], 10)])
+        # Force flush
+        self.call('fflush', [ir.Constant(type_map[INT8].as_pointer(), None)])
 
     @staticmethod
     def typeToFormat(typ):
@@ -3537,26 +3592,12 @@ class CodeGenerator(NodeVisitor):
     # ========================================================================
 
     def get_type_size(self, llvm_type):
-        """Get the size of an LLVM type in bytes."""
-        # Estimate size based on type
-        if isinstance(llvm_type, ir.IntType):
-            return llvm_type.width // 8
-        elif isinstance(llvm_type, ir.FloatType):
-            return 4
-        elif isinstance(llvm_type, ir.DoubleType):
-            return 8
-        elif isinstance(llvm_type, ir.PointerType):
-            return 8  # 64-bit pointers
-        elif isinstance(llvm_type, ir.ArrayType):
-            return llvm_type.count * self.get_type_size(llvm_type.element)
-        elif isinstance(llvm_type, (ir.LiteralStructType, ir.IdentifiedStructType)):
-            total = 0
-            if hasattr(llvm_type, 'elements'):
-                for elem in llvm_type.elements:
-                    total += self.get_type_size(elem)
-            return max(total, 8)  # Minimum 8 bytes
-        else:
-            return 8  # Default to 8 bytes
+        """Get the size of an LLVM type in bytes using GEP trick for accuracy."""
+        # Use GEP on null pointer to get the size including padding
+        null_ptr = ir.Constant(llvm_type.as_pointer(), None)
+        gep_ptr = self.builder.gep(null_ptr, [self.const(1)])
+        size = self.builder.ptrtoint(gep_ptr, type_map[INT64])
+        return size
 
     def _generate_class_destructor(self, class_name, class_type):
         """Generate a destructor function for a class that releases all managed fields.
@@ -3770,108 +3811,75 @@ class CodeGenerator(NodeVisitor):
                 
                 has_methods = hasattr(pointee, 'methods') or (class_def is not None and hasattr(class_def, 'methods'))
                 
-                if isinstance(pointee, ir.IdentifiedStructType) and has_methods:
-                    # Use class_def if available, otherwise pointee
-                    actual_class = class_def if class_def is not None and hasattr(class_def, 'destructor') else pointee
-                    
-                    # Ensure destructor is generated
-                    if not hasattr(actual_class, 'destructor'):
-                        class_name = pointee.name if hasattr(pointee, 'name') else str(pointee)
-                        self._generate_class_destructor(class_name, actual_class)
-                    
-                    if hasattr(actual_class, 'destructor'):
-                        # Get header to check RC
-                        header = self.get_object_header(obj_ptr)
-                        rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
-                        rc = self.builder.load(rc_ptr)
+                has_methods = hasattr(pointee, 'methods') or (class_def is not None and hasattr(class_def, 'methods'))
+
+                # Note: We rely on runtime dispatch for class destruction to avoid double-free issues
+                # and ensure consistent cleanup. We do not generate static destructors anymore.
+                
+                # Check if this is an array type with elements that need releasing
+                if hasattr(pointee, 'name') and pointee.name.endswith('.array'):
+                    # Get the element type name from array type name (e.g., "Header.array" -> "Header")
+                    array_type_name = pointee.name
+                    elem_type_name = array_type_name.rsplit('.array', 1)[0]
+
+                    # Check if element type is a managed type (class or nested array)
+                    # Primitive types like i64, i32, etc. don't need element release
+                    elem_is_managed = False
+                    if elem_type_name not in ('i64', 'i32', 'i8', 'u64', 'u32', 'u8', 'f64', 'f32', 'bool'):
+                        elem_type_def = self.search_scopes(elem_type_name)
+                        if elem_type_def is not None and hasattr(elem_type_def, 'methods'):
+                            elem_is_managed = True
+                        elif elem_type_name.endswith('.array'):
+                            elem_is_managed = True
+
+                    if elem_is_managed:
+                        # Get the array destroy function
+                        destroy_func_name = '{}.array.destroy'.format(elem_type_name)
+                        destroy_func = None
+                        if destroy_func_name in self.module.globals:
+                            destroy_func = self.module.globals[destroy_func_name]
                         
-                        # If RC == 1, it will become 0 after release, so call destructor first
-                        is_one = self.builder.icmp_unsigned('==', rc, ir.Constant(type_map[UINT32], 1))
-                        
-                        destroy_block = self.add_block('rc_destroy')
-                        release_only_block = self.add_block('rc_release_only')
-                        
-                        self.builder.cbranch(is_one, destroy_block, release_only_block)
-                        
-                        # Call destructor before release
-                        self.builder.position_at_end(destroy_block)
-                        self.builder.call(actual_class.destructor, [obj_ptr])
-                        header2 = self.get_object_header(obj_ptr)
-                        self.builder.call(release_func, [header2])
-                        self.builder.branch(continue_block)
-                        
-                        # Just release without destructor
-                        self.builder.position_at_end(release_only_block)
-                        header3 = self.get_object_header(obj_ptr)
-                        self.builder.call(release_func, [header3])
-                        self.builder.branch(continue_block)
-                    else:
-                        # No destructor generated (should not happen), just release
-                        header = self.get_object_header(obj_ptr)
-                        self.builder.call(release_func, [header])
-                        self.builder.branch(continue_block)
-                else:
-                    # Check if this is an array type with elements that need releasing
-                    if hasattr(pointee, 'name') and pointee.name.endswith('.array'):
-                        # Get the element type name from array type name (e.g., "Header.array" -> "Header")
-                        array_type_name = pointee.name
-                        elem_type_name = array_type_name.rsplit('.array', 1)[0]
-
-                        # Check if element type is a managed type (class or nested array)
-                        # Primitive types like i64, i32, etc. don't need element release
-                        elem_is_managed = False
-                        if elem_type_name not in ('i64', 'i32', 'i8', 'u64', 'u32', 'u8', 'f64', 'f32', 'bool'):
-                            elem_type_def = self.search_scopes(elem_type_name)
-                            if elem_type_def is not None and hasattr(elem_type_def, 'methods'):
-                                elem_is_managed = True
-                            elif elem_type_name.endswith('.array'):
-                                elem_is_managed = True
-
-                        if elem_is_managed:
-                            # Get the array destroy function
-                            destroy_func_name = f'{array_type_name}.destroy'
-                            destroy_func = self.module.get_global(destroy_func_name) if destroy_func_name in self.module.globals else None
-
-                            if destroy_func:
-                                # Check RC before calling destructor
-                                header = self.get_object_header(obj_ptr)
-                                rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
-                                rc = self.builder.load(rc_ptr)
-
-                                is_one = self.builder.icmp_unsigned('==', rc, ir.Constant(type_map[UINT32], 1))
-
-                                destroy_block = self.add_block('rc_array_destroy')
-                                release_only_block = self.add_block('rc_array_release_only')
-
-                                self.builder.cbranch(is_one, destroy_block, release_only_block)
-
-                                # Call array destructor before release
-                                self.builder.position_at_end(destroy_block)
-                                self.builder.call(destroy_func, [obj_ptr])
-                                header2 = self.get_object_header(obj_ptr)
-                                self.builder.call(release_func, [header2])
-                                self.builder.branch(continue_block)
-
-                                # Just release without destructor
-                                self.builder.position_at_end(release_only_block)
-                                header3 = self.get_object_header(obj_ptr)
-                                self.builder.call(release_func, [header3])
-                                self.builder.branch(continue_block)
-                            else:
-                                # No destroy function, just release
-                                header = self.get_object_header(obj_ptr)
-                                self.builder.call(release_func, [header])
-                                self.builder.branch(continue_block)
+                        if destroy_func:
+                             # Get header to check RC
+                            header = self.get_object_header(obj_ptr)
+                            rc_ptr = self.builder.gep(header, [self.const(0), self.const(HEADER_STRONG_RC, width=INT32)])
+                            rc = self.builder.load(rc_ptr)
+                            
+                            # If RC == 1, it will become 0 after release, so call array destroy first
+                            is_one = self.builder.icmp_unsigned('==', rc, ir.Constant(type_map[UINT32], 1))
+                            
+                            destroy_block = self.add_block('rc_destroy_arr')
+                            release_only_block = self.add_block('rc_release_only_arr')
+                            
+                            self.builder.cbranch(is_one, destroy_block, release_only_block)
+                            
+                            # Call destructor before release
+                            self.builder.position_at_end(destroy_block)
+                            self.builder.call(destroy_func, [obj_ptr])
+                            header2 = self.get_object_header(obj_ptr)
+                            self.builder.call(release_func, [header2])
+                            self.builder.branch(continue_block)
+                            
+                            # Just release without destructor
+                            self.builder.position_at_end(release_only_block)
+                            header3 = self.get_object_header(obj_ptr)
+                            self.builder.call(release_func, [header3])
+                            self.builder.branch(continue_block)
                         else:
-                            # Primitive element type (like i64 for strings), just release
                             header = self.get_object_header(obj_ptr)
                             self.builder.call(release_func, [header])
                             self.builder.branch(continue_block)
                     else:
-                        # Not a class or array, just release
                         header = self.get_object_header(obj_ptr)
                         self.builder.call(release_func, [header])
                         self.builder.branch(continue_block)
+                else:
+                    # Class type or other managed type - just use meteor_release
+                    header = self.get_object_header(obj_ptr)
+                    self.builder.call(release_func, [header])
+                    self.builder.branch(continue_block)
+                # End of rc_release logic for managed types
+
             else:
                 header = self.get_object_header(obj_ptr)
                 self.builder.call(release_func, [header])
@@ -4054,14 +4062,15 @@ class CodeGenerator(NodeVisitor):
             # Initialize to NULL/Zero if BIGINT or DECIMAL to enable safe first-time checks
             # We identify them by name since we don't have easy type checking here easily without imports?
             # typ is an LLVM type.
+            # Initialize to NULL/Zero for managed types to safe-guard first-time access
+            # This is critical when reusing allocas in loops.
             type_name = getattr(typ, 'name', '')
-            if type_name in ('bigint', 'decimal'):
+            if isinstance(typ, ir.PointerType):
+                 # Initialize pointers (Strings, Arrays, Classes) to NULL
+                 null_val = ir.Constant(typ, None)
+                 self.builder.store(null_val, var_addr)
+            elif type_name in ('bigint', 'decimal'):
                  # Zero init the entire struct (safe for both)
-                 # bigint: {i1, i64.array*} -> sign=0, ptr=null
-                 # decimal: {bigint*, i64} -> ptr=null, exp=0
-                 # Actually simpler: just memset to 0? Or store constant aggregate?
-                 # llvmlite doesn't have memset easily exposed?
-                 # Store zero constant.
                  zero_const = ir.Constant(typ, None) # Null value for the struct
                  self.builder.store(zero_const, var_addr)
             
@@ -4126,21 +4135,13 @@ class CodeGenerator(NodeVisitor):
         
         # For managed types, use entry block alloca to handle loops properly
         if self.is_managed_type(typ):
-            # Create alloca in entry block
-            entry_block = self.current_function.entry_basic_block
-            saved_block = self.builder.block
+            # Use get_entry_alloca to reuse allocas across loop iterations (even if scope was popped)
+            var_addr = self.get_entry_alloca(name, typ)
             
-            if entry_block.instructions:
-                self.builder.position_before(entry_block.instructions[0])
-            else:
-                self.builder.position_at_end(entry_block)
+            # Note: get_entry_alloca also initializes to zero/null for bigint/decimal
+            # We do NOT initialize to null here because var_addr might hold a value from 
+            # a previous loop iteration that needs to be released by the code below.
             
-            var_addr = self.builder.alloca(typ, name=name)
-            # Initialize to NULL for safe first-time check
-            null_val = ir.Constant(typ, None)
-            self.builder.store(null_val, var_addr)
-            
-            self.builder.position_at_end(saved_block)
             self.define(name, var_addr)
             
             # Register for scope cleanup
@@ -4322,6 +4323,10 @@ class CodeGenerator(NodeVisitor):
 
         # Create new Meteor string array
         str_array = self.create_array(type_map[INT])
+        
+        # Initialize array (allocate data, set capacity, set RC=1)
+        init_func = self.module.get_global('i64.array.init')
+        self.builder.call(init_func, [str_array])
 
         # Copy characters from C string to Meteor string
         i_ptr = self.builder.alloca(type_map[INT])
@@ -4369,6 +4374,12 @@ class CodeGenerator(NodeVisitor):
 
         free_ty = ir.FunctionType(type_map[VOID], [type_map[INT8].as_pointer()])
         ir.Function(self.module, free_ty, 'free')
+
+        calloc_ty = ir.FunctionType(type_map[INT8].as_pointer(), [type_map[INT], type_map[INT]])
+        ir.Function(self.module, calloc_ty, 'calloc')
+
+        memset_ty = ir.FunctionType(type_map[INT8].as_pointer(), [type_map[INT8].as_pointer(), type_map[INT32], type_map[INT]])
+        ir.Function(self.module, memset_ty, 'memset')
 
         exit_ty = ir.FunctionType(type_map[VOID], [type_map[INT32]])
         ir.Function(self.module, exit_ty, 'exit')
@@ -4612,8 +4623,84 @@ class CodeGenerator(NodeVisitor):
             func_ty = ir.FunctionType(long_ty, [void_ptr])
             ir.Function(self.module, func_ty, 'time')
 
+    def _generate_class_destructor_dispatch(self):
+        """Generate dispatch function to destruct class objects based on ID.
+        void meteor_destroy_class_dispatch(meteor.header* header, u32 class_id)
+        """
+        from meteor.compiler.base import OBJECT_HEADER, TYPE_TAG_CLASS
+        
+        # Function signature
+        header_struct = self.search_scopes(OBJECT_HEADER)
+        if not header_struct:
+             return
+             
+        header_ptr_ty = header_struct.as_pointer()
+        
+        func_ty = ir.FunctionType(type_map[VOID], [header_ptr_ty, type_map[UINT32]])
+        if "meteor_destroy_class_dispatch" in self.module.globals:
+             func = self.module.globals["meteor_destroy_class_dispatch"]
+        else:
+             func = ir.Function(self.module, func_ty, "meteor_destroy_class_dispatch")
+        
+        entry = func.append_basic_block("entry")
+        builder = ir.IRBuilder(entry)
+        
+        # Save old builder and current function to restore later
+        old_builder = self.builder
+        old_function = getattr(self, 'current_function', None)
+        self.builder = builder 
+        self.current_function = func
+        
+        header_val = func.args[0]
+        class_id_val = func.args[1]
+        
+        # Switch on class_id
+        default_block = func.append_basic_block("default")
+        switch = builder.switch(class_id_val, default_block)
+        
+        # Default: do nothing
+        builder.position_at_end(default_block)
+        builder.ret_void()
+        
+        # Generate cases for each class
+        for cls_id, classdecl in self.id_to_class_map.items():
+            case_block = func.append_basic_block(f"case_{classdecl.name}")
+            switch.add_case(ir.Constant(type_map[UINT32], cls_id), case_block)
+            
+            builder.position_at_end(case_block)
+            
+            # Cast header* to Class*
+            # Header is 16 bytes. Class data starts after header.
+            # pointer_to_class = (Class*)((i8*)header + 16)
+            
+            i8_ptr = builder.bitcast(header_val, type_map[INT8].as_pointer())
+            # Header size is 16 bytes
+            class_data_ptr = builder.gep(i8_ptr, [ir.Constant(type_map[INT32], 16)])
+            
+            class_ptr = builder.bitcast(class_data_ptr, classdecl.as_pointer())
+            
+            # Release managed fields
+            if hasattr(classdecl, 'elements'):
+                for i, field_type in enumerate(classdecl.elements):
+                     if self.is_managed_type(field_type):
+                          # Release
+                          # GEP on struct requires i32 for the member index
+                          field_ptr = builder.gep(class_ptr, [self.const(0), ir.Constant(type_map[INT32], i)])
+                          field_val = builder.load(field_ptr)
+                          
+                          # Use rc_release (handles null check and type logic)
+                          self.rc_release(field_val)
+            
+            builder.ret_void()
+            
+        self.builder = old_builder
+        if old_function:
+            self.current_function = old_function
+
     def generate_code(self, node):
-        return self.visit(node)
+        code = self.visit(node)
+        self._generate_class_destructor_dispatch()
+        return code
 
     def add_debug_info(self, optimize: bool, filename: str):
         di_file = self.module.add_debug_info("DIFile", {
@@ -4661,6 +4748,35 @@ class CodeGenerator(NodeVisitor):
         # Keep reference to prevent garbage collection
         self._mi_version_callback = mi_version_callback
         llvm.add_symbol('mi_version', ctypes.cast(mi_version_callback, ctypes.c_void_p).value)
+
+        # Register standard C library functions for JIT execution
+        # On Windows, these might not be automatically resolved by MCJIT
+        if os.name == 'nt':
+            try:
+                msvcrt = ctypes.cdll.msvcrt
+                
+                # Memory management
+                llvm.add_symbol('malloc', ctypes.cast(msvcrt.malloc, ctypes.c_void_p).value)
+                llvm.add_symbol('calloc', ctypes.cast(msvcrt.calloc, ctypes.c_void_p).value)
+                llvm.add_symbol('free', ctypes.cast(msvcrt.free, ctypes.c_void_p).value)
+                llvm.add_symbol('realloc', ctypes.cast(msvcrt.realloc, ctypes.c_void_p).value)
+                
+                # I/O
+                llvm.add_symbol('printf', ctypes.cast(msvcrt.printf, ctypes.c_void_p).value)
+                llvm.add_symbol('puts', ctypes.cast(msvcrt.puts, ctypes.c_void_p).value)
+                llvm.add_symbol('putchar', ctypes.cast(msvcrt.putchar, ctypes.c_void_p).value)
+                llvm.add_symbol('fflush', ctypes.cast(msvcrt.fflush, ctypes.c_void_p).value)
+                
+                # Process
+                llvm.add_symbol('exit', ctypes.cast(msvcrt.exit, ctypes.c_void_p).value)
+                llvm.add_symbol('abort', ctypes.cast(msvcrt.abort, ctypes.c_void_p).value)
+                
+                # String/Memory Ops
+                llvm.add_symbol('memset', ctypes.cast(msvcrt.memset, ctypes.c_void_p).value)
+                llvm.add_symbol('memcpy', ctypes.cast(msvcrt.memcpy, ctypes.c_void_p).value)
+                
+            except Exception as e:
+                print(f"Warning: Failed to register CRT symbols: {e}")
 
         module_str = str(self.module)
         llvmmod = llvm.parse_assembly(module_str)

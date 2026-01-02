@@ -469,6 +469,11 @@ class Preprocessor(NodeVisitor):
             func.accessed = True
             return func.type
 
+        if func is None:
+            error('file={} line={}: Name Error: {}'.format(self.file_name, node.line_num, repr(func_name)))
+            # Return ANY to allow continuation/prevent crash
+            return self.search_scopes(ANY)
+
         parameters = None
         parameter_defaults = None
         if isinstance(func, (ClassSymbol, EnumSymbol)):

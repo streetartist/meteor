@@ -4529,7 +4529,8 @@ def define_object_header(self):
         type_map[UINT32],   # weak_rc
         type_map[UINT8],    # flags
         type_map[UINT8],    # type_tag
-        type_map[UINT16]    # reserved
+        type_map[UINT16],   # reserved
+        type_map[UINT32]    # class_id
     )
 
     self.define(OBJECT_HEADER, header_struct)
@@ -5469,7 +5470,7 @@ def define_meteor_destroy(self):
     Class layout: { header(16), [class fields] }
     - No internal data pointer to free (destructor handles field cleanup)
     """
-    from meteor.compiler.base import OBJECT_HEADER, HEADER_TYPE_TAG, TYPE_TAG_CLASS, TYPE_TAG_LIST
+    from meteor.compiler.base import OBJECT_HEADER, HEADER_TYPE_TAG, TYPE_TAG_CLASS, TYPE_TAG_LIST, HEADER_CLASS_ID
 
     header_struct = self.search_scopes(OBJECT_HEADER)
     header_ptr = header_struct.as_pointer()
@@ -5498,9 +5499,27 @@ def define_meteor_destroy(self):
     type_tag_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_TYPE_TAG)])
     type_tag = builder.load(type_tag_ptr)
     
-    # For CLASS types, skip destruction (class destructors handle this separately)
+    # For CLASS types, call dispatch function
     is_class = builder.icmp_unsigned('==', type_tag, ir.Constant(type_map[UINT8], TYPE_TAG_CLASS))
-    builder.cbranch(is_class, exit_block, check_array)
+    class_destroy_block = func.append_basic_block('class_destroy')
+    builder.cbranch(is_class, class_destroy_block, check_array)
+    
+    # Class cleanup
+    builder.position_at_end(class_destroy_block)
+    # Get class_id (index 5)
+    class_id_ptr = builder.gep(obj_ptr, [zero_32, ir.Constant(type_map[INT32], HEADER_CLASS_ID)])
+    class_id = builder.load(class_id_ptr)
+    
+    # Dispatch
+    func_ty = ir.FunctionType(type_map[VOID], [header_ptr, type_map[UINT32]])
+    dispatch_name = 'meteor_destroy_class_dispatch'
+    if dispatch_name in self.module.globals:
+        dispatch_func = self.module.globals[dispatch_name]
+    else:
+        dispatch_func = ir.Function(self.module, func_ty, dispatch_name)
+    
+    builder.call(dispatch_func, [obj_ptr, class_id])
+    builder.branch(exit_block)
     
     # Check if it's an array type (LIST, STR, etc.)
     builder.position_at_end(check_array)
