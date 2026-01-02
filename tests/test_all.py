@@ -7,18 +7,18 @@ from subprocess import Popen, PIPE
 def get_tests():
     tests = []
     path = os.path.dirname(__file__)
-    for unittest in os.listdir(os.path.join(path, "lesma")):
-        if unittest.endswith(".les"):
+    for unittest in os.listdir(os.path.join(path, "meteor")):
+        if unittest.endswith(".met"):
             tests.append(os.path.basename(unittest).split('.')[0])
     return tests
 
 
-# Base test for Lesma script files
+# Base test for Meteor script files
 @pytest.mark.parametrize("test_name", get_tests())
 def test_base(test_name):
     path = os.path.join(os.path.dirname(__file__), os.pardir)
-    proc = Popen([sys.executable, os.path.join(path, "src", "les.py"),
-                 "run", os.path.join(path, "tests", "lesma", test_name + ".les")],
+    proc = Popen([sys.executable, os.path.join(path, "src", "meteor.py"),
+                 "run", os.path.join(path, "tests", "meteor", test_name + ".met")],
                  stdout=PIPE, stderr=PIPE, universal_newlines=True)
     out, err = proc.communicate()
     output = out.strip()

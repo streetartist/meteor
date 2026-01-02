@@ -23,6 +23,140 @@
 
 **Meteor** 是一门现代化的静态类型编程语言，底层基于 **LLVM** 构建，旨在融合 Python 的极简语法与 C/C++ 的原生性能。它专为这一代的硬件架构设计，内置了任意精度算术、无 GC 暂停的内存管理以及轻量级并发模型。
 
+**功能强大，已经可以编写简单的http服务端代码（有内存泄漏，目前无法解决，极其需要帮助）：**
+```python
+# HTTP Server 示例程序
+# 演示 Meteor HTTP 库的基本用法
+
+@include("std/http")
+@link("std/http/http_native")
+import http.server
+import c "time.h"
+
+# 整数转字符串辅助函数
+def int_to_str(n: int) -> str
+    if n == 0
+        return "0"
+    
+    result = ""
+    num = n
+    is_neg = false
+    
+    if num < 0
+        is_neg = true
+        num = 0 - num
+    
+    while num > 0
+        d = num % 10
+        if d == 0
+            result = "0" + result
+        else if d == 1
+            result = "1" + result
+        else if d == 2
+            result = "2" + result
+        else if d == 3
+            result = "3" + result
+        else if d == 4
+            result = "4" + result
+        else if d == 5
+            result = "5" + result
+        else if d == 6
+            result = "6" + result
+        else if d == 7
+            result = "7" + result
+        else if d == 8
+            result = "8" + result
+        else
+            result = "9" + result
+        num = num / 10
+    
+    if is_neg
+        result = "-" + result
+    
+    return result
+
+# 首页处理器
+def home_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Meteor HTTP Demo</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+            h1 { color: #6a5acd; }
+            .links { margin-top: 20px; }
+            .links a { margin-right: 15px; color: #4169e1; }
+            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        </style>
+    </head>
+    <body>
+        <h1>🚀 Welcome to Meteor HTTP Server!</h1>
+        <p>This is a demo page served by Meteor's HTTP library.</p>
+        <div class="links">
+            <h3>Try these endpoints:</h3>
+            <ul>
+                <li><a href="/hello">GET /hello</a> - Simple text response</li>
+                <li><a href="/api/info">GET /api/info</a> - JSON API response</li>
+                <li><a href="/api/time">GET /api/time</a> - Current time (JSON)</li>
+            </ul>
+        </div>
+        <p><code>Powered by Meteor Language</code></p>
+    </body>
+    </html>
+    """
+    return res.html(html)
+
+# Hello 处理器
+def hello_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    return res.text("Hello from Meteor! 🌟")
+
+# API Info 处理器
+def api_info_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    json_data = '{"name": "Meteor HTTP Server", "version": "1.0.0", "status": "running"}'
+    return res.json(json_data)
+
+# API Time 处理器
+def api_time_handler(req: http.server.Request, res: http.server.Response) -> http.server.Response
+    # 获取当前时间戳
+    timestamp: int = c.time(null)
+    ts_str = int_to_str(timestamp)
+    json_data = '{"timestamp": ' + ts_str + ', "message": "Current server time (Unix timestamp)"}'
+    return res.json(json_data)
+
+# 主函数
+def mymain()
+    print("========================================")
+    print("   Meteor HTTP Server Demo")
+    print("========================================")
+    
+    # 创建服务器
+    server = http.server.create_server()
+    
+    # 配置服务器
+    server.bind("127.0.0.1", 8080)
+    
+    # 注册路由
+    server.get("/", home_handler)
+    server.get("/hello", hello_handler)
+    server.get("/api/info", api_info_handler)
+    server.get("/api/time", api_time_handler)
+    
+    print("")
+    print("Routes registered:")
+    print("  GET /         -> Home page")
+    print("  GET /hello    -> Text greeting")
+    print("  GET /api/info -> Server info JSON")
+    print("  GET /api/time -> Time JSON")
+    print("")
+    
+    # 启动服务器
+    server.listen()
+
+# 运行
+mymain()
+```
+
 ## 🌟 核心特性全览
 
 ### 1. 强大的类型系统 (Type System)

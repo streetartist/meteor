@@ -3,7 +3,7 @@ source_filename = "<string>"
 target triple = "unknown-unknown-unknown"
 
 %i64.array = type { %meteor.header, i64, i64, ptr }
-%meteor.header = type { i32, i32, i8, i8, i16 }
+%meteor.header = type { i32, i32, i8, i8, i16, i32 }
 %bigint = type { %meteor.header, i1, ptr }
 %decimal = type { %meteor.header, ptr, i64 }
 %number = type { %meteor.header, i8, ptr }
@@ -11,16 +11,16 @@ target triple = "unknown-unknown-unknown"
 %meteor.mutex = type { ptr }
 %meteor.channel = type { %meteor.header, ptr, ptr, ptr, i64, i64, i64, i64 }
 %Header = type { ptr, ptr }
-%Header.array = type { %meteor.header, i64, i64, ptr }
-%HttpMethod = type { i8 }
 %Request = type { ptr, ptr, ptr, ptr, ptr, ptr }
-%HttpStatus = type { i8 }
 %Response = type { ptr, ptr, ptr }
 %Route = type { ptr, ptr, ptr }
+%Server = type { ptr, ptr, i64, ptr, ptr, ptr }
+%Header.array = type { %meteor.header, i64, i64, ptr }
+%HttpMethod = type { i8 }
+%HttpStatus = type { i8 }
 %Middleware = type { ptr }
 %Route.array = type { %meteor.header, i64, i64, ptr }
 %Middleware.array = type { %meteor.header, i64, i64, ptr }
-%Server = type { ptr, ptr, i64, ptr, ptr, ptr }
 
 @uam_err_msg = constant [51 x i8] c"Error: Use-After-Move - accessing moved variable!\0A\00"
 @minus_str = constant [2 x i8] c"-\00"
@@ -49,6 +49,10 @@ declare ptr @malloc(i64)
 declare ptr @realloc(ptr, i64)
 
 declare void @free(ptr)
+
+declare ptr @calloc(i64, i64)
+
+declare ptr @memset(ptr, i32, i64)
 
 declare void @exit(i32)
 
@@ -220,26 +224,27 @@ index_out_of_bounds:                              ; preds = %entry
   %.19 = getelementptr [26 x i8], ptr %.17, i64 0, i64 0
   %.20 = bitcast ptr %.19 to ptr
   %.21 = call i64 @puts(ptr %.20)
+  %.22 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 is_index_less_than_zero:                          ; preds = %entry
-  %.24 = icmp slt i64 %.11, 0
-  br i1 %.24, label %negative_index, label %set
+  %.25 = icmp slt i64 %.11, 0
+  br i1 %.25, label %negative_index, label %set
 
 negative_index:                                   ; preds = %is_index_less_than_zero
-  %.26 = add i64 %.14, %.11
-  store i64 %.26, ptr %.7, align 4
+  %.27 = add i64 %.14, %.11
+  store i64 %.27, ptr %.7, align 4
   br label %set
 
 set:                                              ; preds = %negative_index, %is_index_less_than_zero
-  %.29 = load ptr, ptr %.5, align 8
-  %.30 = getelementptr inbounds %i64.array, ptr %.29, i32 0, i32 3
-  %.31 = load i64, ptr %.7, align 4
-  %.32 = load ptr, ptr %.30, align 8
-  %.33 = getelementptr inbounds i64, ptr %.32, i64 %.31
-  %.34 = load i64, ptr %.9, align 4
-  store i64 %.34, ptr %.33, align 4
+  %.30 = load ptr, ptr %.5, align 8
+  %.31 = getelementptr inbounds %i64.array, ptr %.30, i32 0, i32 3
+  %.32 = load i64, ptr %.7, align 4
+  %.33 = load ptr, ptr %.31, align 8
+  %.34 = getelementptr inbounds i64, ptr %.33, i64 %.32
+  %.35 = load i64, ptr %.9, align 4
+  store i64 %.35, ptr %.34, align 4
   br label %exit
 }
 
@@ -436,183 +441,185 @@ single_digit:                                     ; preds = %print_value
 multi_digit:                                      ; preds = %print_value
   %.30 = load i64, ptr @BIGINT_DIV_CONST_1E9, align 4
   %.31 = call ptr @malloc(i64 40)
-  %.32 = bitcast ptr %.31 to ptr
-  call void @i64.array.init(ptr %.32)
-  %.34 = call ptr @malloc(i64 40)
-  %.35 = bitcast ptr %.34 to ptr
-  call void @i64.array.init(ptr %.35)
-  %.37 = alloca i64, align 8
-  store i64 0, ptr %.37, align 4
+  %.32 = call ptr @memset(ptr %.31, i32 0, i64 40)
+  %.33 = bitcast ptr %.31 to ptr
+  call void @i64.array.init(ptr %.33)
+  %.35 = call ptr @malloc(i64 40)
+  %.36 = call ptr @memset(ptr %.35, i32 0, i64 40)
+  %.37 = bitcast ptr %.35 to ptr
+  call void @i64.array.init(ptr %.37)
+  %.39 = alloca i64, align 8
+  store i64 0, ptr %.39, align 4
   br label %copy_cond
 
 end:                                              ; preds = %print_dec_finish, %print_zero, %single_digit
   ret void
 
 copy_cond:                                        ; preds = %copy_body, %multi_digit
-  %.40 = load i64, ptr %.37, align 4
-  %.41 = icmp slt i64 %.40, %.20
-  br i1 %.41, label %copy_body, label %copy_end
+  %.42 = load i64, ptr %.39, align 4
+  %.43 = icmp slt i64 %.42, %.20
+  br i1 %.43, label %copy_body, label %copy_end
 
 copy_body:                                        ; preds = %copy_cond
-  %.43 = getelementptr i64, ptr %.22, i64 %.40
-  %.44 = load i64, ptr %.43, align 4
-  call void @i64.array.append(ptr %.35, i64 %.44)
-  %.46 = add i64 %.40, 1
-  store i64 %.46, ptr %.37, align 4
+  %.45 = getelementptr i64, ptr %.22, i64 %.42
+  %.46 = load i64, ptr %.45, align 4
+  call void @i64.array.append(ptr %.37, i64 %.46)
+  %.48 = add i64 %.42, 1
+  store i64 %.48, ptr %.39, align 4
   br label %copy_cond
 
 copy_end:                                         ; preds = %copy_cond
-  %.49 = alloca i64, align 8
-  %.50 = alloca i64, align 8
   %.51 = alloca i64, align 8
+  %.52 = alloca i64, align 8
+  %.53 = alloca i64, align 8
   br label %div_loop
 
 div_loop:                                         ; preds = %trim_end, %copy_end
-  %.53 = getelementptr %i64.array, ptr %.35, i32 0, i32 1
-  %.54 = load i64, ptr %.53, align 4
-  store i64 %.54, ptr %.51, align 4
-  %.56 = icmp eq i64 %.54, 0
-  br i1 %.56, label %div_end, label %div_check_zero
+  %.55 = getelementptr %i64.array, ptr %.37, i32 0, i32 1
+  %.56 = load i64, ptr %.55, align 4
+  store i64 %.56, ptr %.53, align 4
+  %.58 = icmp eq i64 %.56, 0
+  br i1 %.58, label %div_end, label %div_check_zero
 
 div_check_zero:                                   ; preds = %div_loop
-  %.58 = getelementptr %i64.array, ptr %.35, i32 0, i32 3
-  %.59 = load ptr, ptr %.58, align 8
-  %.60 = sub i64 %.54, 1
-  %.61 = getelementptr i64, ptr %.59, i64 %.60
-  %.62 = load i64, ptr %.61, align 4
-  %.63 = icmp eq i64 %.62, 0
-  %.64 = icmp eq i64 %.54, 1
-  %.65 = and i1 %.63, %.64
-  br i1 %.65, label %div_end, label %div_body
+  %.60 = getelementptr %i64.array, ptr %.37, i32 0, i32 3
+  %.61 = load ptr, ptr %.60, align 8
+  %.62 = sub i64 %.56, 1
+  %.63 = getelementptr i64, ptr %.61, i64 %.62
+  %.64 = load i64, ptr %.63, align 4
+  %.65 = icmp eq i64 %.64, 0
+  %.66 = icmp eq i64 %.56, 1
+  %.67 = and i1 %.65, %.66
+  br i1 %.67, label %div_end, label %div_body
 
 div_body:                                         ; preds = %div_check_zero
-  store i64 0, ptr %.49, align 4
-  %.68 = load i64, ptr %.51, align 4
-  %.69 = sub i64 %.68, 1
-  store i64 %.69, ptr %.50, align 4
+  store i64 0, ptr %.51, align 4
+  %.70 = load i64, ptr %.53, align 4
+  %.71 = sub i64 %.70, 1
+  store i64 %.71, ptr %.52, align 4
   br label %div_inner_cond
 
 div_end:                                          ; preds = %div_check_zero, %div_loop
-  %.119 = getelementptr %i64.array, ptr %.32, i32 0, i32 1
-  %.120 = load i64, ptr %.119, align 4
-  %.121 = icmp sgt i64 %.120, 0
-  br i1 %.121, label %print_digits, label %print_zero
+  %.121 = getelementptr %i64.array, ptr %.33, i32 0, i32 1
+  %.122 = load i64, ptr %.121, align 4
+  %.123 = icmp sgt i64 %.122, 0
+  br i1 %.123, label %print_digits, label %print_zero
 
 div_inner_cond:                                   ; preds = %div_inner_body, %div_body
-  %.72 = load i64, ptr %.50, align 4
-  %.73 = icmp sge i64 %.72, 0
-  br i1 %.73, label %div_inner_body, label %div_inner_end
+  %.74 = load i64, ptr %.52, align 4
+  %.75 = icmp sge i64 %.74, 0
+  br i1 %.75, label %div_inner_body, label %div_inner_end
 
 div_inner_body:                                   ; preds = %div_inner_cond
-  %.75 = getelementptr %i64.array, ptr %.35, i32 0, i32 3
-  %.76 = load ptr, ptr %.75, align 8
-  %.77 = getelementptr i64, ptr %.76, i64 %.72
-  %.78 = load i64, ptr %.77, align 4
-  %.79 = load i64, ptr %.49, align 4
-  %.80 = mul i64 %.79, %.30
-  %.81 = mul i64 %.79, 709551616
-  %.82 = add i64 %.81, %.78
-  %.83 = icmp ult i64 %.82, %.78
-  %.84 = udiv i64 %.82, 1000000000
-  %.85 = urem i64 %.82, 1000000000
-  %.86 = select i1 %.83, i64 %.30, i64 0
-  %.87 = select i1 %.83, i64 709551616, i64 0
-  %.88 = add i64 %.85, %.87
-  %.89 = urem i64 %.88, 1000000000
-  %.90 = udiv i64 %.88, 1000000000
-  %.91 = add i64 %.80, %.84
-  %.92 = add i64 %.91, %.86
-  %.93 = add i64 %.92, %.90
-  store i64 %.93, ptr %.77, align 4
-  store i64 %.89, ptr %.49, align 4
-  %.96 = sub i64 %.72, 1
-  store i64 %.96, ptr %.50, align 4
+  %.77 = getelementptr %i64.array, ptr %.37, i32 0, i32 3
+  %.78 = load ptr, ptr %.77, align 8
+  %.79 = getelementptr i64, ptr %.78, i64 %.74
+  %.80 = load i64, ptr %.79, align 4
+  %.81 = load i64, ptr %.51, align 4
+  %.82 = mul i64 %.81, %.30
+  %.83 = mul i64 %.81, 709551616
+  %.84 = add i64 %.83, %.80
+  %.85 = icmp ult i64 %.84, %.80
+  %.86 = udiv i64 %.84, 1000000000
+  %.87 = urem i64 %.84, 1000000000
+  %.88 = select i1 %.85, i64 %.30, i64 0
+  %.89 = select i1 %.85, i64 709551616, i64 0
+  %.90 = add i64 %.87, %.89
+  %.91 = urem i64 %.90, 1000000000
+  %.92 = udiv i64 %.90, 1000000000
+  %.93 = add i64 %.82, %.86
+  %.94 = add i64 %.93, %.88
+  %.95 = add i64 %.94, %.92
+  store i64 %.95, ptr %.79, align 4
+  store i64 %.91, ptr %.51, align 4
+  %.98 = sub i64 %.74, 1
+  store i64 %.98, ptr %.52, align 4
   br label %div_inner_cond
 
 div_inner_end:                                    ; preds = %div_inner_cond
-  %.99 = load i64, ptr %.49, align 4
-  call void @i64.array.append(ptr %.32, i64 %.99)
+  %.101 = load i64, ptr %.51, align 4
+  call void @i64.array.append(ptr %.33, i64 %.101)
   br label %trim_cond
 
 trim_cond:                                        ; preds = %trim_do, %div_inner_end
-  %.102 = getelementptr %i64.array, ptr %.35, i32 0, i32 1
-  %.103 = load i64, ptr %.102, align 4
-  %.104 = icmp sgt i64 %.103, 0
-  br i1 %.104, label %trim_body, label %trim_end
+  %.104 = getelementptr %i64.array, ptr %.37, i32 0, i32 1
+  %.105 = load i64, ptr %.104, align 4
+  %.106 = icmp sgt i64 %.105, 0
+  br i1 %.106, label %trim_body, label %trim_end
 
 trim_body:                                        ; preds = %trim_cond
-  %.106 = getelementptr %i64.array, ptr %.35, i32 0, i32 3
-  %.107 = load ptr, ptr %.106, align 8
-  %.108 = sub i64 %.103, 1
-  %.109 = getelementptr i64, ptr %.107, i64 %.108
-  %.110 = load i64, ptr %.109, align 4
-  %.111 = icmp eq i64 %.110, 0
-  %.112 = icmp sgt i64 %.103, 1
-  %.113 = and i1 %.111, %.112
-  br i1 %.113, label %trim_do, label %trim_end
+  %.108 = getelementptr %i64.array, ptr %.37, i32 0, i32 3
+  %.109 = load ptr, ptr %.108, align 8
+  %.110 = sub i64 %.105, 1
+  %.111 = getelementptr i64, ptr %.109, i64 %.110
+  %.112 = load i64, ptr %.111, align 4
+  %.113 = icmp eq i64 %.112, 0
+  %.114 = icmp sgt i64 %.105, 1
+  %.115 = and i1 %.113, %.114
+  br i1 %.115, label %trim_do, label %trim_end
 
 trim_end:                                         ; preds = %trim_body, %trim_cond
   br label %div_loop
 
 trim_do:                                          ; preds = %trim_body
-  %.115 = sub i64 %.103, 1
-  store i64 %.115, ptr %.102, align 4
+  %.117 = sub i64 %.105, 1
+  store i64 %.117, ptr %.104, align 4
   br label %trim_cond
 
 print_zero:                                       ; preds = %div_end
-  %.123 = bitcast ptr @fmt_zero to ptr
-  %.124 = call i32 (ptr, ...) @printf(ptr %.123)
+  %.125 = bitcast ptr @fmt_zero to ptr
+  %.126 = call i32 (ptr, ...) @printf(ptr %.125)
   br label %end
 
 print_digits:                                     ; preds = %div_end
-  %.126 = alloca i64, align 8
-  %.127 = sub i64 %.120, 1
-  store i64 %.127, ptr %.126, align 4
+  %.128 = alloca i64, align 8
+  %.129 = sub i64 %.122, 1
+  store i64 %.129, ptr %.128, align 4
   br label %print_dec_cond
 
 print_dec_cond:                                   ; preds = %print_cont_blk, %print_digits
-  %.130 = load i64, ptr %.126, align 4
-  %.131 = icmp sge i64 %.130, 0
-  br i1 %.131, label %print_dec_body, label %print_dec_finish
+  %.132 = load i64, ptr %.128, align 4
+  %.133 = icmp sge i64 %.132, 0
+  br i1 %.133, label %print_dec_body, label %print_dec_finish
 
 print_dec_body:                                   ; preds = %print_dec_cond
-  %.133 = getelementptr %i64.array, ptr %.32, i32 0, i32 3
-  %.134 = load ptr, ptr %.133, align 8
-  %.135 = getelementptr i64, ptr %.134, i64 %.130
-  %.136 = load i64, ptr %.135, align 4
-  %.137 = icmp eq i64 %.130, %.127
-  br i1 %.137, label %print_first_blk, label %print_pad_blk
+  %.135 = getelementptr %i64.array, ptr %.33, i32 0, i32 3
+  %.136 = load ptr, ptr %.135, align 8
+  %.137 = getelementptr i64, ptr %.136, i64 %.132
+  %.138 = load i64, ptr %.137, align 4
+  %.139 = icmp eq i64 %.132, %.129
+  br i1 %.139, label %print_first_blk, label %print_pad_blk
 
 print_dec_finish:                                 ; preds = %print_dec_cond
-  %.148 = getelementptr %i64.array, ptr %.35, i32 0, i32 3
-  %.149 = load ptr, ptr %.148, align 8
-  %.150 = bitcast ptr %.149 to ptr
-  call void @free(ptr %.150)
-  %.152 = bitcast ptr %.35 to ptr
+  %.150 = getelementptr %i64.array, ptr %.37, i32 0, i32 3
+  %.151 = load ptr, ptr %.150, align 8
+  %.152 = bitcast ptr %.151 to ptr
   call void @free(ptr %.152)
-  %.154 = getelementptr %i64.array, ptr %.32, i32 0, i32 3
-  %.155 = load ptr, ptr %.154, align 8
-  %.156 = bitcast ptr %.155 to ptr
-  call void @free(ptr %.156)
-  %.158 = bitcast ptr %.32 to ptr
+  %.154 = bitcast ptr %.37 to ptr
+  call void @free(ptr %.154)
+  %.156 = getelementptr %i64.array, ptr %.33, i32 0, i32 3
+  %.157 = load ptr, ptr %.156, align 8
+  %.158 = bitcast ptr %.157 to ptr
   call void @free(ptr %.158)
-  %.160 = bitcast ptr @nl_str to ptr
-  %.161 = call i32 (ptr, ...) @printf(ptr %.160)
+  %.160 = bitcast ptr %.33 to ptr
+  call void @free(ptr %.160)
+  %.162 = bitcast ptr @nl_str to ptr
+  %.163 = call i32 (ptr, ...) @printf(ptr %.162)
   br label %end
 
 print_first_blk:                                  ; preds = %print_dec_body
-  %.139 = bitcast ptr @fmt_dec_first to ptr
-  %.140 = call i32 (ptr, ...) @printf(ptr %.139, i64 %.136)
+  %.141 = bitcast ptr @fmt_dec_first to ptr
+  %.142 = call i32 (ptr, ...) @printf(ptr %.141, i64 %.138)
   br label %print_cont_blk
 
 print_pad_blk:                                    ; preds = %print_dec_body
-  %.142 = bitcast ptr @fmt_dec_pad to ptr
-  %.143 = call i32 (ptr, ...) @printf(ptr %.142, i64 %.136)
+  %.144 = bitcast ptr @fmt_dec_pad to ptr
+  %.145 = call i32 (ptr, ...) @printf(ptr %.144, i64 %.138)
   br label %print_cont_blk
 
 print_cont_blk:                                   ; preds = %print_pad_blk, %print_first_blk
-  %.145 = sub i64 %.130, 1
-  store i64 %.145, ptr %.126, align 4
+  %.147 = sub i64 %.132, 1
+  store i64 %.147, ptr %.128, align 4
   br label %print_dec_cond
 }
 
@@ -1228,51 +1235,327 @@ entry:
   br i1 %.3, label %exit, label %not_null
 
 check_array:                                      ; preds = %not_null
-  %.9 = icmp eq i8 %.6, 7
-  %.10 = icmp eq i8 %.6, 4
-  %.11 = or i1 %.9, %.10
-  br i1 %.11, label %free_array_data, label %check_bigint
+  %.13 = icmp eq i8 %.6, 7
+  %.14 = icmp eq i8 %.6, 4
+  %.15 = or i1 %.13, %.14
+  br i1 %.15, label %free_array_data, label %check_bigint
 
 free_array_data:                                  ; preds = %check_array
-  %.27 = bitcast ptr %.1 to ptr
-  %.28 = getelementptr i8, ptr %.27, i64 32
-  %.29 = bitcast ptr %.28 to ptr
-  %.30 = load ptr, ptr %.29, align 8
-  %.31 = icmp eq ptr %.30, null
-  br i1 %.31, label %exit, label %do_free
+  %.31 = bitcast ptr %.1 to ptr
+  %.32 = getelementptr i8, ptr %.31, i64 32
+  %.33 = bitcast ptr %.32 to ptr
+  %.34 = load ptr, ptr %.33, align 8
+  %.35 = icmp eq ptr %.34, null
+  br i1 %.35, label %exit, label %do_free
 
-exit:                                             ; preds = %do_free, %free_digits, %free_bigint_data, %check_bigint, %not_null, %free_array_data, %entry
+exit:                                             ; preds = %do_free, %free_digits, %free_bigint_data, %check_bigint, %class_destroy, %free_array_data, %entry
   ret void
 
 not_null:                                         ; preds = %entry
   %.5 = getelementptr %meteor.header, ptr %.1, i32 0, i32 3
   %.6 = load i8, ptr %.5, align 1
   %.7 = icmp eq i8 %.6, 10
-  br i1 %.7, label %exit, label %check_array
+  br i1 %.7, label %class_destroy, label %check_array
+
+class_destroy:                                    ; preds = %not_null
+  %.9 = getelementptr %meteor.header, ptr %.1, i32 0, i32 5
+  %.10 = load i32, ptr %.9, align 4
+  call void @meteor_destroy_class_dispatch(ptr %.1, i32 %.10)
+  br label %exit
 
 check_bigint:                                     ; preds = %check_array
-  %.13 = icmp eq i8 %.6, 5
-  br i1 %.13, label %free_bigint_data, label %exit
+  %.17 = icmp eq i8 %.6, 5
+  br i1 %.17, label %free_bigint_data, label %exit
 
 free_bigint_data:                                 ; preds = %check_bigint
-  %.15 = bitcast ptr %.1 to ptr
-  %.16 = getelementptr %bigint, ptr %.15, i32 0, i32 2
-  %.17 = load ptr, ptr %.16, align 8
-  %.18 = icmp eq ptr %.17, null
-  br i1 %.18, label %exit, label %free_digits
+  %.19 = bitcast ptr %.1 to ptr
+  %.20 = getelementptr %bigint, ptr %.19, i32 0, i32 2
+  %.21 = load ptr, ptr %.20, align 8
+  %.22 = icmp eq ptr %.21, null
+  br i1 %.22, label %exit, label %free_digits
 
 free_digits:                                      ; preds = %free_bigint_data
-  %.20 = getelementptr %i64.array, ptr %.17, i32 0, i32 3
-  %.21 = load ptr, ptr %.20, align 8
-  %.22 = bitcast ptr %.21 to ptr
-  call void @free(ptr %.22)
-  %.24 = bitcast ptr %.17 to ptr
-  call void @free(ptr %.24)
+  %.24 = getelementptr %i64.array, ptr %.21, i32 0, i32 3
+  %.25 = load ptr, ptr %.24, align 8
+  %.26 = bitcast ptr %.25 to ptr
+  call void @free(ptr %.26)
+  %.28 = bitcast ptr %.21 to ptr
+  call void @free(ptr %.28)
   br label %exit
 
 do_free:                                          ; preds = %free_array_data
-  call void @free(ptr %.30)
+  call void @free(ptr %.34)
   br label %exit
+}
+
+define void @meteor_destroy_class_dispatch(ptr %.1, i32 %.2) {
+entry:
+  switch i32 %.2, label %default [
+    i32 1, label %case_Header
+    i32 2, label %case_Request
+    i32 3, label %case_Response
+    i32 4, label %case_Route
+    i32 5, label %case_Middleware
+    i32 6, label %case_Server
+  ]
+
+default:                                          ; preds = %entry
+  ret void
+
+case_Header:                                      ; preds = %entry
+  %.6 = bitcast ptr %.1 to ptr
+  %.7 = getelementptr i8, ptr %.6, i32 16
+  %.8 = bitcast ptr %.7 to ptr
+  %.9 = getelementptr %Header, ptr %.8, i64 0, i32 0
+  %.10 = load ptr, ptr %.9, align 8
+  %.11 = icmp eq ptr %.10, null
+  br i1 %.11, label %rc_release_continue, label %rc_release
+
+rc_release:                                       ; preds = %case_Header
+  %.13 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.13)
+  br label %rc_release_continue
+
+rc_release_continue:                              ; preds = %rc_release, %case_Header
+  %.16 = getelementptr %Header, ptr %.8, i64 0, i32 1
+  %.17 = load ptr, ptr %.16, align 8
+  %.18 = icmp eq ptr %.17, null
+  br i1 %.18, label %rc_release_continue.1, label %rc_release.1
+
+rc_release.1:                                     ; preds = %rc_release_continue
+  %.20 = bitcast ptr %.17 to ptr
+  call void @meteor_release(ptr %.20)
+  br label %rc_release_continue.1
+
+rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue
+  ret void
+
+case_Request:                                     ; preds = %entry
+  %.24 = bitcast ptr %.1 to ptr
+  %.25 = getelementptr i8, ptr %.24, i32 16
+  %.26 = bitcast ptr %.25 to ptr
+  %.27 = getelementptr %Request, ptr %.26, i64 0, i32 1
+  %.28 = load ptr, ptr %.27, align 8
+  %.29 = icmp eq ptr %.28, null
+  br i1 %.29, label %rc_release_continue.2, label %rc_release.2
+
+rc_release.2:                                     ; preds = %case_Request
+  %.31 = bitcast ptr %.28 to ptr
+  call void @meteor_release(ptr %.31)
+  br label %rc_release_continue.2
+
+rc_release_continue.2:                            ; preds = %rc_release.2, %case_Request
+  %.34 = getelementptr %Request, ptr %.26, i64 0, i32 2
+  %.35 = load ptr, ptr %.34, align 8
+  %.36 = icmp eq ptr %.35, null
+  br i1 %.36, label %rc_release_continue.3, label %rc_release.3
+
+rc_release.3:                                     ; preds = %rc_release_continue.2
+  %.38 = bitcast ptr %.35 to ptr
+  call void @meteor_release(ptr %.38)
+  br label %rc_release_continue.3
+
+rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.2
+  %.41 = getelementptr %Request, ptr %.26, i64 0, i32 3
+  %.42 = load ptr, ptr %.41, align 8
+  %.43 = icmp eq ptr %.42, null
+  br i1 %.43, label %rc_release_continue.4, label %rc_release.4
+
+rc_release.4:                                     ; preds = %rc_release_continue.3
+  %.45 = bitcast ptr %.42 to ptr
+  call void @meteor_release(ptr %.45)
+  br label %rc_release_continue.4
+
+rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3
+  %.48 = getelementptr %Request, ptr %.26, i64 0, i32 4
+  %.49 = load ptr, ptr %.48, align 8
+  %.50 = icmp eq ptr %.49, null
+  br i1 %.50, label %rc_release_continue.5, label %rc_release.5
+
+rc_release.5:                                     ; preds = %rc_release_continue.4
+  %.52 = bitcast ptr %.49 to ptr
+  %.53 = getelementptr %meteor.header, ptr %.52, i64 0, i32 0
+  %.54 = load i32, ptr %.53, align 4
+  %.55 = icmp eq i32 %.54, 1
+  br i1 %.55, label %rc_destroy_arr, label %rc_release_only_arr
+
+rc_release_continue.5:                            ; preds = %rc_release_only_arr, %rc_destroy_arr, %rc_release_continue.4
+  %.64 = getelementptr %Request, ptr %.26, i64 0, i32 5
+  %.65 = load ptr, ptr %.64, align 8
+  %.66 = icmp eq ptr %.65, null
+  br i1 %.66, label %rc_release_continue.6, label %rc_release.6
+
+rc_destroy_arr:                                   ; preds = %rc_release.5
+  call void @Header.array.destroy(ptr %.49)
+  %.58 = bitcast ptr %.49 to ptr
+  call void @meteor_release(ptr %.58)
+  br label %rc_release_continue.5
+
+rc_release_only_arr:                              ; preds = %rc_release.5
+  %.61 = bitcast ptr %.49 to ptr
+  call void @meteor_release(ptr %.61)
+  br label %rc_release_continue.5
+
+rc_release.6:                                     ; preds = %rc_release_continue.5
+  %.68 = bitcast ptr %.65 to ptr
+  %.69 = getelementptr %meteor.header, ptr %.68, i64 0, i32 0
+  %.70 = load i32, ptr %.69, align 4
+  %.71 = icmp eq i32 %.70, 1
+  br i1 %.71, label %rc_destroy_arr.1, label %rc_release_only_arr.1
+
+rc_release_continue.6:                            ; preds = %rc_release_only_arr.1, %rc_destroy_arr.1, %rc_release_continue.5
+  ret void
+
+rc_destroy_arr.1:                                 ; preds = %rc_release.6
+  call void @Header.array.destroy(ptr %.65)
+  %.74 = bitcast ptr %.65 to ptr
+  call void @meteor_release(ptr %.74)
+  br label %rc_release_continue.6
+
+rc_release_only_arr.1:                            ; preds = %rc_release.6
+  %.77 = bitcast ptr %.65 to ptr
+  call void @meteor_release(ptr %.77)
+  br label %rc_release_continue.6
+
+case_Response:                                    ; preds = %entry
+  %.81 = bitcast ptr %.1 to ptr
+  %.82 = getelementptr i8, ptr %.81, i32 16
+  %.83 = bitcast ptr %.82 to ptr
+  %.84 = getelementptr %Response, ptr %.83, i64 0, i32 1
+  %.85 = load ptr, ptr %.84, align 8
+  %.86 = icmp eq ptr %.85, null
+  br i1 %.86, label %rc_release_continue.7, label %rc_release.7
+
+rc_release.7:                                     ; preds = %case_Response
+  %.88 = bitcast ptr %.85 to ptr
+  %.89 = getelementptr %meteor.header, ptr %.88, i64 0, i32 0
+  %.90 = load i32, ptr %.89, align 4
+  %.91 = icmp eq i32 %.90, 1
+  br i1 %.91, label %rc_destroy_arr.2, label %rc_release_only_arr.2
+
+rc_release_continue.7:                            ; preds = %rc_release_only_arr.2, %rc_destroy_arr.2, %case_Response
+  %.100 = getelementptr %Response, ptr %.83, i64 0, i32 2
+  %.101 = load ptr, ptr %.100, align 8
+  %.102 = icmp eq ptr %.101, null
+  br i1 %.102, label %rc_release_continue.8, label %rc_release.8
+
+rc_destroy_arr.2:                                 ; preds = %rc_release.7
+  call void @Header.array.destroy(ptr %.85)
+  %.94 = bitcast ptr %.85 to ptr
+  call void @meteor_release(ptr %.94)
+  br label %rc_release_continue.7
+
+rc_release_only_arr.2:                            ; preds = %rc_release.7
+  %.97 = bitcast ptr %.85 to ptr
+  call void @meteor_release(ptr %.97)
+  br label %rc_release_continue.7
+
+rc_release.8:                                     ; preds = %rc_release_continue.7
+  %.104 = bitcast ptr %.101 to ptr
+  call void @meteor_release(ptr %.104)
+  br label %rc_release_continue.8
+
+rc_release_continue.8:                            ; preds = %rc_release.8, %rc_release_continue.7
+  ret void
+
+case_Route:                                       ; preds = %entry
+  %.108 = bitcast ptr %.1 to ptr
+  %.109 = getelementptr i8, ptr %.108, i32 16
+  %.110 = bitcast ptr %.109 to ptr
+  %.111 = getelementptr %Route, ptr %.110, i64 0, i32 1
+  %.112 = load ptr, ptr %.111, align 8
+  %.113 = icmp eq ptr %.112, null
+  br i1 %.113, label %rc_release_continue.9, label %rc_release.9
+
+rc_release.9:                                     ; preds = %case_Route
+  %.115 = bitcast ptr %.112 to ptr
+  call void @meteor_release(ptr %.115)
+  br label %rc_release_continue.9
+
+rc_release_continue.9:                            ; preds = %rc_release.9, %case_Route
+  ret void
+
+case_Middleware:                                  ; preds = %entry
+  %.119 = bitcast ptr %.1 to ptr
+  %.120 = getelementptr i8, ptr %.119, i32 16
+  %.121 = bitcast ptr %.120 to ptr
+  ret void
+
+case_Server:                                      ; preds = %entry
+  %.123 = bitcast ptr %.1 to ptr
+  %.124 = getelementptr i8, ptr %.123, i32 16
+  %.125 = bitcast ptr %.124 to ptr
+  %.126 = getelementptr %Server, ptr %.125, i64 0, i32 1
+  %.127 = load ptr, ptr %.126, align 8
+  %.128 = icmp eq ptr %.127, null
+  br i1 %.128, label %rc_release_continue.10, label %rc_release.10
+
+rc_release.10:                                    ; preds = %case_Server
+  %.130 = bitcast ptr %.127 to ptr
+  call void @meteor_release(ptr %.130)
+  br label %rc_release_continue.10
+
+rc_release_continue.10:                           ; preds = %rc_release.10, %case_Server
+  %.133 = getelementptr %Server, ptr %.125, i64 0, i32 3
+  %.134 = load ptr, ptr %.133, align 8
+  %.135 = icmp eq ptr %.134, null
+  br i1 %.135, label %rc_release_continue.11, label %rc_release.11
+
+rc_release.11:                                    ; preds = %rc_release_continue.10
+  %.137 = bitcast ptr %.134 to ptr
+  %.138 = getelementptr %meteor.header, ptr %.137, i64 0, i32 0
+  %.139 = load i32, ptr %.138, align 4
+  %.140 = icmp eq i32 %.139, 1
+  br i1 %.140, label %rc_destroy_arr.3, label %rc_release_only_arr.3
+
+rc_release_continue.11:                           ; preds = %rc_release_only_arr.3, %rc_destroy_arr.3, %rc_release_continue.10
+  %.149 = getelementptr %Server, ptr %.125, i64 0, i32 4
+  %.150 = load ptr, ptr %.149, align 8
+  %.151 = icmp eq ptr %.150, null
+  br i1 %.151, label %rc_release_continue.12, label %rc_release.12
+
+rc_destroy_arr.3:                                 ; preds = %rc_release.11
+  call void @Route.array.destroy(ptr %.134)
+  %.143 = bitcast ptr %.134 to ptr
+  call void @meteor_release(ptr %.143)
+  br label %rc_release_continue.11
+
+rc_release_only_arr.3:                            ; preds = %rc_release.11
+  %.146 = bitcast ptr %.134 to ptr
+  call void @meteor_release(ptr %.146)
+  br label %rc_release_continue.11
+
+rc_release.12:                                    ; preds = %rc_release_continue.11
+  %.153 = bitcast ptr %.150 to ptr
+  %.154 = getelementptr %meteor.header, ptr %.153, i64 0, i32 0
+  %.155 = load i32, ptr %.154, align 4
+  %.156 = icmp eq i32 %.155, 1
+  br i1 %.156, label %rc_destroy_arr.4, label %rc_release_only_arr.4
+
+rc_release_continue.12:                           ; preds = %rc_release_only_arr.4, %rc_destroy_arr.4, %rc_release_continue.11
+  %.165 = getelementptr %Server, ptr %.125, i64 0, i32 5
+  %.166 = load ptr, ptr %.165, align 8
+  %.167 = icmp eq ptr %.166, null
+  br i1 %.167, label %rc_release_continue.13, label %rc_release.13
+
+rc_destroy_arr.4:                                 ; preds = %rc_release.12
+  call void @Middleware.array.destroy(ptr %.150)
+  %.159 = bitcast ptr %.150 to ptr
+  call void @meteor_release(ptr %.159)
+  br label %rc_release_continue.12
+
+rc_release_only_arr.4:                            ; preds = %rc_release.12
+  %.162 = bitcast ptr %.150 to ptr
+  call void @meteor_release(ptr %.162)
+  br label %rc_release_continue.12
+
+rc_release.13:                                    ; preds = %rc_release_continue.12
+  %.169 = bitcast ptr %.166 to ptr
+  call void @meteor_release(ptr %.169)
+  br label %rc_release_continue.13
+
+rc_release_continue.13:                           ; preds = %rc_release.13, %rc_release_continue.12
+  ret void
 }
 
 define internal void @meteor_retain(ptr %.1) {
@@ -2265,178 +2548,179 @@ div_zero:                                         ; preds = %entry
   %.14 = getelementptr [17 x i8], ptr %.12, i64 0, i64 0
   %.15 = bitcast ptr %.14 to ptr
   %.16 = call i64 @puts(ptr %.15)
+  %.17 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 start_div:                                        ; preds = %entry
-  %.19 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.20 = load i1, ptr %.19, align 1
-  %.21 = getelementptr %bigint, ptr %.2, i32 0, i32 1
-  %.22 = load i1, ptr %.21, align 1
-  %.23 = xor i1 %.20, %.22
-  %.24 = alloca %bigint, align 8
-  %.25 = getelementptr %bigint, ptr %.24, i32 0, i32 1
-  store i1 false, ptr %.25, align 1
-  %.27 = getelementptr %bigint, ptr %.24, i32 0, i32 2
-  store ptr %.5, ptr %.27, align 8
-  %.29 = alloca %bigint, align 8
-  %.30 = getelementptr %bigint, ptr %.29, i32 0, i32 1
-  store i1 false, ptr %.30, align 1
-  %.32 = getelementptr %bigint, ptr %.29, i32 0, i32 2
-  %.33 = call ptr @malloc(i64 32)
-  %.34 = bitcast ptr %.33 to ptr
-  call void @i64.array.init(ptr %.34)
-  call void @i64.array.append(ptr %.34, i64 0)
-  store ptr %.34, ptr %.32, align 8
-  %.38 = call ptr @malloc(i64 32)
-  %.39 = bitcast ptr %.38 to ptr
-  %.40 = getelementptr %bigint, ptr %.39, i32 0, i32 0
-  %.41 = getelementptr %meteor.header, ptr %.40, i32 0, i32 0
-  store i32 1, ptr %.41, align 4
-  %.43 = getelementptr %meteor.header, ptr %.40, i32 0, i32 1
-  store i32 0, ptr %.43, align 4
-  %.45 = getelementptr %meteor.header, ptr %.40, i32 0, i32 2
-  store i8 0, ptr %.45, align 1
-  %.47 = getelementptr %meteor.header, ptr %.40, i32 0, i32 3
-  store i8 5, ptr %.47, align 1
-  %.49 = call ptr @malloc(i64 32)
-  %.50 = bitcast ptr %.49 to ptr
-  call void @i64.array.init(ptr %.50)
-  %.52 = getelementptr %bigint, ptr %.39, i32 0, i32 2
-  store ptr %.50, ptr %.52, align 8
-  %.54 = getelementptr %bigint, ptr %.39, i32 0, i32 1
-  store i1 false, ptr %.54, align 1
-  %.56 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.57 = load ptr, ptr %.56, align 8
-  %.58 = call i64 @i64.array.length(ptr %.57)
-  %.59 = alloca i64, align 8
-  store i64 0, ptr %.59, align 4
+  %.20 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.21 = load i1, ptr %.20, align 1
+  %.22 = getelementptr %bigint, ptr %.2, i32 0, i32 1
+  %.23 = load i1, ptr %.22, align 1
+  %.24 = xor i1 %.21, %.23
+  %.25 = alloca %bigint, align 8
+  %.26 = getelementptr %bigint, ptr %.25, i32 0, i32 1
+  store i1 false, ptr %.26, align 1
+  %.28 = getelementptr %bigint, ptr %.25, i32 0, i32 2
+  store ptr %.5, ptr %.28, align 8
+  %.30 = alloca %bigint, align 8
+  %.31 = getelementptr %bigint, ptr %.30, i32 0, i32 1
+  store i1 false, ptr %.31, align 1
+  %.33 = getelementptr %bigint, ptr %.30, i32 0, i32 2
+  %.34 = call ptr @malloc(i64 32)
+  %.35 = bitcast ptr %.34 to ptr
+  call void @i64.array.init(ptr %.35)
+  call void @i64.array.append(ptr %.35, i64 0)
+  store ptr %.35, ptr %.33, align 8
+  %.39 = call ptr @malloc(i64 32)
+  %.40 = bitcast ptr %.39 to ptr
+  %.41 = getelementptr %bigint, ptr %.40, i32 0, i32 0
+  %.42 = getelementptr %meteor.header, ptr %.41, i32 0, i32 0
+  store i32 1, ptr %.42, align 4
+  %.44 = getelementptr %meteor.header, ptr %.41, i32 0, i32 1
+  store i32 0, ptr %.44, align 4
+  %.46 = getelementptr %meteor.header, ptr %.41, i32 0, i32 2
+  store i8 0, ptr %.46, align 1
+  %.48 = getelementptr %meteor.header, ptr %.41, i32 0, i32 3
+  store i8 5, ptr %.48, align 1
+  %.50 = call ptr @malloc(i64 32)
+  %.51 = bitcast ptr %.50 to ptr
+  call void @i64.array.init(ptr %.51)
+  %.53 = getelementptr %bigint, ptr %.40, i32 0, i32 2
+  store ptr %.51, ptr %.53, align 8
+  %.55 = getelementptr %bigint, ptr %.40, i32 0, i32 1
+  store i1 false, ptr %.55, align 1
+  %.57 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.58 = load ptr, ptr %.57, align 8
+  %.59 = call i64 @i64.array.length(ptr %.58)
+  %.60 = alloca i64, align 8
+  store i64 0, ptr %.60, align 4
   br label %fill_q_cond
 
 fill_q_cond:                                      ; preds = %fill_q_body, %start_div
-  %.62 = load i64, ptr %.59, align 4
-  %.63 = icmp slt i64 %.62, %.58
-  br i1 %.63, label %fill_q_body, label %fill_q_end
+  %.63 = load i64, ptr %.60, align 4
+  %.64 = icmp slt i64 %.63, %.59
+  br i1 %.64, label %fill_q_body, label %fill_q_end
 
 fill_q_body:                                      ; preds = %fill_q_cond
-  call void @i64.array.append(ptr %.50, i64 0)
-  %.66 = add i64 %.62, 1
-  store i64 %.66, ptr %.59, align 4
+  call void @i64.array.append(ptr %.51, i64 0)
+  %.67 = add i64 %.63, 1
+  store i64 %.67, ptr %.60, align 4
   br label %fill_q_cond
 
 fill_q_end:                                       ; preds = %fill_q_cond
-  %.69 = alloca i64, align 8
   %.70 = alloca i64, align 8
   %.71 = alloca i64, align 8
-  %.72 = mul i64 %.58, 64
-  %.73 = sub i64 %.72, 1
-  store i64 %.73, ptr %.69, align 4
+  %.72 = alloca i64, align 8
+  %.73 = mul i64 %.59, 64
+  %.74 = sub i64 %.73, 1
+  store i64 %.74, ptr %.70, align 4
   br label %loop_div_cond
 
 loop_div_cond:                                    ; preds = %next_iter, %fill_q_end
-  %.76 = load i64, ptr %.69, align 4
-  %.77 = icmp sge i64 %.76, 0
-  br i1 %.77, label %loop_div_body, label %loop_div_end
+  %.77 = load i64, ptr %.70, align 4
+  %.78 = icmp sge i64 %.77, 0
+  br i1 %.78, label %loop_div_body, label %loop_div_end
 
 loop_div_body:                                    ; preds = %loop_div_cond
-  %.79 = sdiv i64 %.76, 64
-  %.80 = srem i64 %.76, 64
-  %.81 = call i64 @i64.array.get(ptr %.57, i64 %.79)
-  %.82 = lshr i64 %.81, %.80
-  %.83 = and i64 %.82, 1
-  %.84 = load ptr, ptr %.32, align 8
-  %.85 = call i64 @i64.array.length(ptr %.84)
-  store i64 %.83, ptr %.70, align 4
-  store i64 0, ptr %.71, align 4
+  %.80 = sdiv i64 %.77, 64
+  %.81 = srem i64 %.77, 64
+  %.82 = call i64 @i64.array.get(ptr %.58, i64 %.80)
+  %.83 = lshr i64 %.82, %.81
+  %.84 = and i64 %.83, 1
+  %.85 = load ptr, ptr %.33, align 8
+  %.86 = call i64 @i64.array.length(ptr %.85)
+  store i64 %.84, ptr %.71, align 4
+  store i64 0, ptr %.72, align 4
   br label %shift_loop_cond
 
 loop_div_end:                                     ; preds = %loop_div_cond
   br label %div_trim_cond
 
 shift_loop_cond:                                  ; preds = %shift_loop_body, %loop_div_body
-  %.89 = load i64, ptr %.71, align 4
-  %.90 = icmp slt i64 %.89, %.85
-  br i1 %.90, label %shift_loop_body, label %shift_loop_end
+  %.90 = load i64, ptr %.72, align 4
+  %.91 = icmp slt i64 %.90, %.86
+  br i1 %.91, label %shift_loop_body, label %shift_loop_end
 
 shift_loop_body:                                  ; preds = %shift_loop_cond
-  %.92 = call i64 @i64.array.get(ptr %.84, i64 %.89)
-  %.93 = load i64, ptr %.70, align 4
-  %.94 = shl i64 %.92, 1
-  %.95 = or i64 %.94, %.93
-  %.96 = lshr i64 %.92, 63
-  call void @i64.array.set(ptr %.84, i64 %.89, i64 %.95)
-  store i64 %.96, ptr %.70, align 4
-  %.99 = add i64 %.89, 1
-  store i64 %.99, ptr %.71, align 4
+  %.93 = call i64 @i64.array.get(ptr %.85, i64 %.90)
+  %.94 = load i64, ptr %.71, align 4
+  %.95 = shl i64 %.93, 1
+  %.96 = or i64 %.95, %.94
+  %.97 = lshr i64 %.93, 63
+  call void @i64.array.set(ptr %.85, i64 %.90, i64 %.96)
+  store i64 %.97, ptr %.71, align 4
+  %.100 = add i64 %.90, 1
+  store i64 %.100, ptr %.72, align 4
   br label %shift_loop_cond
 
 shift_loop_end:                                   ; preds = %shift_loop_cond
-  %.102 = load i64, ptr %.70, align 4
-  %.103 = icmp ne i64 %.102, 0
-  br i1 %.103, label %shift_loop_end.if, label %shift_loop_end.endif
+  %.103 = load i64, ptr %.71, align 4
+  %.104 = icmp ne i64 %.103, 0
+  br i1 %.104, label %shift_loop_end.if, label %shift_loop_end.endif
 
 shift_loop_end.if:                                ; preds = %shift_loop_end
-  call void @i64.array.append(ptr %.84, i64 %.102)
+  call void @i64.array.append(ptr %.85, i64 %.103)
   br label %shift_loop_end.endif
 
 shift_loop_end.endif:                             ; preds = %shift_loop_end.if, %shift_loop_end
-  %.107 = call i32 @bigint_cmp(ptr %.29, ptr %.24)
-  %.108 = icmp sge i32 %.107, 0
-  br i1 %.108, label %sub_block, label %next_iter
+  %.108 = call i32 @bigint_cmp(ptr %.30, ptr %.25)
+  %.109 = icmp sge i32 %.108, 0
+  br i1 %.109, label %sub_block, label %next_iter
 
 sub_block:                                        ; preds = %shift_loop_end.endif
-  %.110 = call ptr @bigint_sub(ptr %.29, ptr %.24)
-  %.111 = getelementptr %bigint, ptr %.110, i32 0, i32 2
-  %.112 = load ptr, ptr %.111, align 8
-  %.113 = getelementptr %bigint, ptr %.110, i32 0, i32 1
-  %.114 = load i1, ptr %.113, align 1
-  call void @free_bigint(ptr %.29)
-  store ptr %.112, ptr %.32, align 8
-  store i1 %.114, ptr %.30, align 1
-  %.118 = call i64 @i64.array.get(ptr %.50, i64 %.79)
-  %.119 = shl i64 1, %.80
-  %.120 = or i64 %.118, %.119
-  call void @i64.array.set(ptr %.50, i64 %.79, i64 %.120)
+  %.111 = call ptr @bigint_sub(ptr %.30, ptr %.25)
+  %.112 = getelementptr %bigint, ptr %.111, i32 0, i32 2
+  %.113 = load ptr, ptr %.112, align 8
+  %.114 = getelementptr %bigint, ptr %.111, i32 0, i32 1
+  %.115 = load i1, ptr %.114, align 1
+  call void @free_bigint(ptr %.30)
+  store ptr %.113, ptr %.33, align 8
+  store i1 %.115, ptr %.31, align 1
+  %.119 = call i64 @i64.array.get(ptr %.51, i64 %.80)
+  %.120 = shl i64 1, %.81
+  %.121 = or i64 %.119, %.120
+  call void @i64.array.set(ptr %.51, i64 %.80, i64 %.121)
   br label %next_iter
 
 next_iter:                                        ; preds = %sub_block, %shift_loop_end.endif
-  %.123 = sub i64 %.76, 1
-  store i64 %.123, ptr %.69, align 4
+  %.124 = sub i64 %.77, 1
+  store i64 %.124, ptr %.70, align 4
   br label %loop_div_cond
 
 div_trim_cond:                                    ; preds = %div_trim_body, %loop_div_end
-  %.127 = call i64 @i64.array.length(ptr %.50)
-  %.128 = icmp sgt i64 %.127, 1
-  br i1 %.128, label %div_check_zero, label %div_trim_end
+  %.128 = call i64 @i64.array.length(ptr %.51)
+  %.129 = icmp sgt i64 %.128, 1
+  br i1 %.129, label %div_check_zero, label %div_trim_end
 
 div_trim_body:                                    ; preds = %div_check_zero
-  %.134 = getelementptr %i64.array, ptr %.50, i32 0, i32 1
-  %.135 = sub i64 %.127, 1
-  store i64 %.135, ptr %.134, align 4
+  %.135 = getelementptr %i64.array, ptr %.51, i32 0, i32 1
+  %.136 = sub i64 %.128, 1
+  store i64 %.136, ptr %.135, align 4
   br label %div_trim_cond
 
 div_trim_end:                                     ; preds = %div_check_zero, %div_trim_cond
-  store i1 %.23, ptr %.54, align 1
-  %.139 = call i64 @i64.array.length(ptr %.50)
-  %.140 = icmp eq i64 %.139, 1
-  %.141 = call i64 @i64.array.get(ptr %.50, i64 0)
-  %.142 = icmp eq i64 %.141, 0
-  %.143 = and i1 %.140, %.142
-  br i1 %.143, label %div_trim_end.if, label %div_trim_end.endif
+  store i1 %.24, ptr %.55, align 1
+  %.140 = call i64 @i64.array.length(ptr %.51)
+  %.141 = icmp eq i64 %.140, 1
+  %.142 = call i64 @i64.array.get(ptr %.51, i64 0)
+  %.143 = icmp eq i64 %.142, 0
+  %.144 = and i1 %.141, %.143
+  br i1 %.144, label %div_trim_end.if, label %div_trim_end.endif
 
 div_check_zero:                                   ; preds = %div_trim_cond
-  %.130 = sub i64 %.127, 1
-  %.131 = call i64 @i64.array.get(ptr %.50, i64 %.130)
-  %.132 = icmp eq i64 %.131, 0
-  br i1 %.132, label %div_trim_body, label %div_trim_end
+  %.131 = sub i64 %.128, 1
+  %.132 = call i64 @i64.array.get(ptr %.51, i64 %.131)
+  %.133 = icmp eq i64 %.132, 0
+  br i1 %.133, label %div_trim_body, label %div_trim_end
 
 div_trim_end.if:                                  ; preds = %div_trim_end
-  store i1 false, ptr %.54, align 1
+  store i1 false, ptr %.55, align 1
   br label %div_trim_end.endif
 
 div_trim_end.endif:                               ; preds = %div_trim_end.if, %div_trim_end
-  call void @free_bigint(ptr %.29)
-  ret ptr %.39
+  call void @free_bigint(ptr %.30)
+  ret ptr %.40
 }
 
 define ptr @bigint_mod(ptr %.1, ptr %.2) {
@@ -2456,127 +2740,128 @@ div_zero:                                         ; preds = %entry
   %.14 = getelementptr [15 x i8], ptr %.12, i64 0, i64 0
   %.15 = bitcast ptr %.14 to ptr
   %.16 = call i64 @puts(ptr %.15)
+  %.17 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 start_div:                                        ; preds = %entry
-  %.19 = getelementptr %bigint, ptr %.1, i32 0, i32 1
-  %.20 = load i1, ptr %.19, align 1
-  %.21 = alloca %bigint, align 8
-  %.22 = getelementptr %bigint, ptr %.21, i32 0, i32 1
-  store i1 false, ptr %.22, align 1
-  %.24 = getelementptr %bigint, ptr %.21, i32 0, i32 2
-  store ptr %.5, ptr %.24, align 8
-  %.26 = call ptr @malloc(i64 32)
-  %.27 = bitcast ptr %.26 to ptr
-  %.28 = getelementptr %bigint, ptr %.27, i32 0, i32 0
-  %.29 = getelementptr %meteor.header, ptr %.28, i32 0, i32 0
-  store i32 1, ptr %.29, align 4
-  %.31 = getelementptr %meteor.header, ptr %.28, i32 0, i32 1
-  store i32 0, ptr %.31, align 4
-  %.33 = getelementptr %meteor.header, ptr %.28, i32 0, i32 2
-  store i8 0, ptr %.33, align 1
-  %.35 = getelementptr %meteor.header, ptr %.28, i32 0, i32 3
-  store i8 5, ptr %.35, align 1
-  %.37 = getelementptr %bigint, ptr %.27, i32 0, i32 1
-  store i1 false, ptr %.37, align 1
-  %.39 = getelementptr %bigint, ptr %.27, i32 0, i32 2
-  %.40 = call ptr @malloc(i64 32)
-  %.41 = bitcast ptr %.40 to ptr
-  call void @i64.array.init(ptr %.41)
-  call void @i64.array.append(ptr %.41, i64 0)
-  store ptr %.41, ptr %.39, align 8
-  %.45 = getelementptr %bigint, ptr %.1, i32 0, i32 2
-  %.46 = load ptr, ptr %.45, align 8
-  %.47 = call i64 @i64.array.length(ptr %.46)
-  %.48 = alloca i64, align 8
+  %.20 = getelementptr %bigint, ptr %.1, i32 0, i32 1
+  %.21 = load i1, ptr %.20, align 1
+  %.22 = alloca %bigint, align 8
+  %.23 = getelementptr %bigint, ptr %.22, i32 0, i32 1
+  store i1 false, ptr %.23, align 1
+  %.25 = getelementptr %bigint, ptr %.22, i32 0, i32 2
+  store ptr %.5, ptr %.25, align 8
+  %.27 = call ptr @malloc(i64 32)
+  %.28 = bitcast ptr %.27 to ptr
+  %.29 = getelementptr %bigint, ptr %.28, i32 0, i32 0
+  %.30 = getelementptr %meteor.header, ptr %.29, i32 0, i32 0
+  store i32 1, ptr %.30, align 4
+  %.32 = getelementptr %meteor.header, ptr %.29, i32 0, i32 1
+  store i32 0, ptr %.32, align 4
+  %.34 = getelementptr %meteor.header, ptr %.29, i32 0, i32 2
+  store i8 0, ptr %.34, align 1
+  %.36 = getelementptr %meteor.header, ptr %.29, i32 0, i32 3
+  store i8 5, ptr %.36, align 1
+  %.38 = getelementptr %bigint, ptr %.28, i32 0, i32 1
+  store i1 false, ptr %.38, align 1
+  %.40 = getelementptr %bigint, ptr %.28, i32 0, i32 2
+  %.41 = call ptr @malloc(i64 32)
+  %.42 = bitcast ptr %.41 to ptr
+  call void @i64.array.init(ptr %.42)
+  call void @i64.array.append(ptr %.42, i64 0)
+  store ptr %.42, ptr %.40, align 8
+  %.46 = getelementptr %bigint, ptr %.1, i32 0, i32 2
+  %.47 = load ptr, ptr %.46, align 8
+  %.48 = call i64 @i64.array.length(ptr %.47)
   %.49 = alloca i64, align 8
   %.50 = alloca i64, align 8
-  %.51 = mul i64 %.47, 64
-  %.52 = sub i64 %.51, 1
-  store i64 %.52, ptr %.48, align 4
+  %.51 = alloca i64, align 8
+  %.52 = mul i64 %.48, 64
+  %.53 = sub i64 %.52, 1
+  store i64 %.53, ptr %.49, align 4
   br label %loop_mod_cond
 
 loop_mod_cond:                                    ; preds = %next_iter, %start_div
-  %.55 = load i64, ptr %.48, align 4
-  %.56 = icmp sge i64 %.55, 0
-  br i1 %.56, label %loop_mod_body, label %loop_mod_end
+  %.56 = load i64, ptr %.49, align 4
+  %.57 = icmp sge i64 %.56, 0
+  br i1 %.57, label %loop_mod_body, label %loop_mod_end
 
 loop_mod_body:                                    ; preds = %loop_mod_cond
-  %.58 = sdiv i64 %.55, 64
-  %.59 = srem i64 %.55, 64
-  %.60 = call i64 @i64.array.get(ptr %.46, i64 %.58)
-  %.61 = lshr i64 %.60, %.59
-  %.62 = and i64 %.61, 1
-  %.63 = load ptr, ptr %.39, align 8
-  %.64 = call i64 @i64.array.length(ptr %.63)
-  store i64 %.62, ptr %.49, align 4
-  store i64 0, ptr %.50, align 4
+  %.59 = sdiv i64 %.56, 64
+  %.60 = srem i64 %.56, 64
+  %.61 = call i64 @i64.array.get(ptr %.47, i64 %.59)
+  %.62 = lshr i64 %.61, %.60
+  %.63 = and i64 %.62, 1
+  %.64 = load ptr, ptr %.40, align 8
+  %.65 = call i64 @i64.array.length(ptr %.64)
+  store i64 %.63, ptr %.50, align 4
+  store i64 0, ptr %.51, align 4
   br label %shift_loop_cond
 
 loop_mod_end:                                     ; preds = %loop_mod_cond
-  %.101 = load ptr, ptr %.39, align 8
-  store i1 %.20, ptr %.37, align 1
-  %.103 = call i64 @i64.array.length(ptr %.101)
-  %.104 = icmp eq i64 %.103, 1
-  %.105 = call i64 @i64.array.get(ptr %.101, i64 0)
-  %.106 = icmp eq i64 %.105, 0
-  %.107 = and i1 %.104, %.106
-  br i1 %.107, label %loop_mod_end.if, label %loop_mod_end.endif
+  %.102 = load ptr, ptr %.40, align 8
+  store i1 %.21, ptr %.38, align 1
+  %.104 = call i64 @i64.array.length(ptr %.102)
+  %.105 = icmp eq i64 %.104, 1
+  %.106 = call i64 @i64.array.get(ptr %.102, i64 0)
+  %.107 = icmp eq i64 %.106, 0
+  %.108 = and i1 %.105, %.107
+  br i1 %.108, label %loop_mod_end.if, label %loop_mod_end.endif
 
 shift_loop_cond:                                  ; preds = %shift_loop_body, %loop_mod_body
-  %.68 = load i64, ptr %.50, align 4
-  %.69 = icmp slt i64 %.68, %.64
-  br i1 %.69, label %shift_loop_body, label %shift_loop_end
+  %.69 = load i64, ptr %.51, align 4
+  %.70 = icmp slt i64 %.69, %.65
+  br i1 %.70, label %shift_loop_body, label %shift_loop_end
 
 shift_loop_body:                                  ; preds = %shift_loop_cond
-  %.71 = call i64 @i64.array.get(ptr %.63, i64 %.68)
-  %.72 = load i64, ptr %.49, align 4
-  %.73 = shl i64 %.71, 1
-  %.74 = or i64 %.73, %.72
-  %.75 = lshr i64 %.71, 63
-  call void @i64.array.set(ptr %.63, i64 %.68, i64 %.74)
-  store i64 %.75, ptr %.49, align 4
-  %.78 = add i64 %.68, 1
-  store i64 %.78, ptr %.50, align 4
+  %.72 = call i64 @i64.array.get(ptr %.64, i64 %.69)
+  %.73 = load i64, ptr %.50, align 4
+  %.74 = shl i64 %.72, 1
+  %.75 = or i64 %.74, %.73
+  %.76 = lshr i64 %.72, 63
+  call void @i64.array.set(ptr %.64, i64 %.69, i64 %.75)
+  store i64 %.76, ptr %.50, align 4
+  %.79 = add i64 %.69, 1
+  store i64 %.79, ptr %.51, align 4
   br label %shift_loop_cond
 
 shift_loop_end:                                   ; preds = %shift_loop_cond
-  %.81 = load i64, ptr %.49, align 4
-  %.82 = icmp ne i64 %.81, 0
-  br i1 %.82, label %shift_loop_end.if, label %shift_loop_end.endif
+  %.82 = load i64, ptr %.50, align 4
+  %.83 = icmp ne i64 %.82, 0
+  br i1 %.83, label %shift_loop_end.if, label %shift_loop_end.endif
 
 shift_loop_end.if:                                ; preds = %shift_loop_end
-  call void @i64.array.append(ptr %.63, i64 %.81)
+  call void @i64.array.append(ptr %.64, i64 %.82)
   br label %shift_loop_end.endif
 
 shift_loop_end.endif:                             ; preds = %shift_loop_end.if, %shift_loop_end
-  %.86 = call i32 @bigint_cmp(ptr %.27, ptr %.21)
-  %.87 = icmp sge i32 %.86, 0
-  br i1 %.87, label %sub_block, label %next_iter
+  %.87 = call i32 @bigint_cmp(ptr %.28, ptr %.22)
+  %.88 = icmp sge i32 %.87, 0
+  br i1 %.88, label %sub_block, label %next_iter
 
 sub_block:                                        ; preds = %shift_loop_end.endif
-  %.89 = call ptr @bigint_sub(ptr %.27, ptr %.21)
-  %.90 = getelementptr %bigint, ptr %.89, i32 0, i32 2
-  %.91 = load ptr, ptr %.90, align 8
-  %.92 = getelementptr %bigint, ptr %.89, i32 0, i32 1
-  %.93 = load i1, ptr %.92, align 1
-  call void @free_bigint(ptr %.27)
-  store ptr %.91, ptr %.39, align 8
-  store i1 %.93, ptr %.37, align 1
+  %.90 = call ptr @bigint_sub(ptr %.28, ptr %.22)
+  %.91 = getelementptr %bigint, ptr %.90, i32 0, i32 2
+  %.92 = load ptr, ptr %.91, align 8
+  %.93 = getelementptr %bigint, ptr %.90, i32 0, i32 1
+  %.94 = load i1, ptr %.93, align 1
+  call void @free_bigint(ptr %.28)
+  store ptr %.92, ptr %.40, align 8
+  store i1 %.94, ptr %.38, align 1
   br label %next_iter
 
 next_iter:                                        ; preds = %sub_block, %shift_loop_end.endif
-  %.98 = sub i64 %.55, 1
-  store i64 %.98, ptr %.48, align 4
+  %.99 = sub i64 %.56, 1
+  store i64 %.99, ptr %.49, align 4
   br label %loop_mod_cond
 
 loop_mod_end.if:                                  ; preds = %loop_mod_end
-  store i1 false, ptr %.37, align 1
+  store i1 false, ptr %.38, align 1
   br label %loop_mod_end.endif
 
 loop_mod_end.endif:                               ; preds = %loop_mod_end.if, %loop_mod_end
-  ret ptr %.27
+  ret ptr %.28
 }
 
 define %decimal @decimal_add(ptr %.1, ptr %.2) {
@@ -3064,122 +3349,161 @@ define i64 @main() {
 entry:
   %.2 = call i32 @mi_version()
   %.3 = call ptr @malloc(i64 40)
-  %.4 = bitcast ptr %.3 to ptr
-  call void @i64.array.init(ptr %.4)
-  %.6 = call ptr @malloc(i64 40)
-  %.7 = bitcast ptr %.6 to ptr
-  call void @i64.array.init(ptr %.7)
-  %.9 = call ptr @malloc(i64 40)
-  %.10 = bitcast ptr %.9 to ptr
-  call void @i64.array.init(ptr %.10)
-  %.12 = call ptr @malloc(i64 40)
-  %.13 = bitcast ptr %.12 to ptr
+  %.4 = call ptr @memset(ptr %.3, i32 0, i64 40)
+  %.5 = bitcast ptr %.3 to ptr
+  call void @i64.array.init(ptr %.5)
+  %.7 = call ptr @malloc(i64 40)
+  %.8 = call ptr @memset(ptr %.7, i32 0, i64 40)
+  %.9 = bitcast ptr %.7 to ptr
+  call void @i64.array.init(ptr %.9)
+  %.11 = call ptr @malloc(i64 40)
+  %.12 = call ptr @memset(ptr %.11, i32 0, i64 40)
+  %.13 = bitcast ptr %.11 to ptr
   call void @i64.array.init(ptr %.13)
   %.15 = call ptr @malloc(i64 40)
-  %.16 = bitcast ptr %.15 to ptr
-  call void @i64.array.init(ptr %.16)
-  %.18 = call ptr @malloc(i64 40)
-  %.19 = bitcast ptr %.18 to ptr
-  call void @i64.array.init(ptr %.19)
-  %.21 = call ptr @malloc(i64 40)
-  %.22 = bitcast ptr %.21 to ptr
-  call void @i64.array.init(ptr %.22)
-  %.24 = call ptr @malloc(i64 40)
-  %.25 = bitcast ptr %.24 to ptr
-  call void @Header.array.init(ptr %.25)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 40)
+  %.17 = bitcast ptr %.15 to ptr
+  call void @i64.array.init(ptr %.17)
+  %.19 = call ptr @malloc(i64 40)
+  %.20 = call ptr @memset(ptr %.19, i32 0, i64 40)
+  %.21 = bitcast ptr %.19 to ptr
+  call void @i64.array.init(ptr %.21)
+  %.23 = call ptr @malloc(i64 40)
+  %.24 = call ptr @memset(ptr %.23, i32 0, i64 40)
+  %.25 = bitcast ptr %.23 to ptr
+  call void @i64.array.init(ptr %.25)
   %.27 = call ptr @malloc(i64 40)
-  %.28 = bitcast ptr %.27 to ptr
-  call void @Header.array.init(ptr %.28)
-  %.30 = call ptr @malloc(i64 40)
-  %.31 = bitcast ptr %.30 to ptr
-  call void @i64.array.init(ptr %.31)
-  %.33 = call ptr @malloc(i64 40)
-  %.34 = bitcast ptr %.33 to ptr
-  call void @i64.array.init(ptr %.34)
-  %.36 = call ptr @malloc(i64 40)
-  %.37 = bitcast ptr %.36 to ptr
-  call void @i64.array.init(ptr %.37)
+  %.28 = call ptr @memset(ptr %.27, i32 0, i64 40)
+  %.29 = bitcast ptr %.27 to ptr
+  call void @i64.array.init(ptr %.29)
+  %.31 = call ptr @malloc(i64 40)
+  %.32 = call ptr @memset(ptr %.31, i32 0, i64 40)
+  %.33 = bitcast ptr %.31 to ptr
+  call void @Header.array.init(ptr %.33)
+  %.35 = call ptr @malloc(i64 40)
+  %.36 = call ptr @memset(ptr %.35, i32 0, i64 40)
+  %.37 = bitcast ptr %.35 to ptr
+  call void @Header.array.init(ptr %.37)
   %.39 = call ptr @malloc(i64 40)
-  %.40 = bitcast ptr %.39 to ptr
-  call void @i64.array.init(ptr %.40)
-  %.42 = call ptr @malloc(i64 40)
-  %.43 = bitcast ptr %.42 to ptr
-  call void @i64.array.init(ptr %.43)
-  %.45 = call ptr @malloc(i64 40)
-  %.46 = bitcast ptr %.45 to ptr
-  call void @Header.array.init(ptr %.46)
-  %.48 = call ptr @malloc(i64 40)
-  %.49 = bitcast ptr %.48 to ptr
+  %.40 = call ptr @memset(ptr %.39, i32 0, i64 40)
+  %.41 = bitcast ptr %.39 to ptr
+  call void @i64.array.init(ptr %.41)
+  %.43 = call ptr @malloc(i64 40)
+  %.44 = call ptr @memset(ptr %.43, i32 0, i64 40)
+  %.45 = bitcast ptr %.43 to ptr
+  call void @i64.array.init(ptr %.45)
+  %.47 = call ptr @malloc(i64 40)
+  %.48 = call ptr @memset(ptr %.47, i32 0, i64 40)
+  %.49 = bitcast ptr %.47 to ptr
   call void @i64.array.init(ptr %.49)
   %.51 = call ptr @malloc(i64 40)
-  %.52 = bitcast ptr %.51 to ptr
-  call void @i64.array.init(ptr %.52)
-  %.54 = call ptr @malloc(i64 40)
-  %.55 = bitcast ptr %.54 to ptr
-  call void @i64.array.init(ptr %.55)
-  %.57 = call ptr @malloc(i64 40)
-  %.58 = bitcast ptr %.57 to ptr
-  call void @i64.array.init(ptr %.58)
-  %.60 = call ptr @malloc(i64 40)
-  %.61 = bitcast ptr %.60 to ptr
-  call void @i64.array.init(ptr %.61)
+  %.52 = call ptr @memset(ptr %.51, i32 0, i64 40)
+  %.53 = bitcast ptr %.51 to ptr
+  call void @i64.array.init(ptr %.53)
+  %.55 = call ptr @malloc(i64 40)
+  %.56 = call ptr @memset(ptr %.55, i32 0, i64 40)
+  %.57 = bitcast ptr %.55 to ptr
+  call void @i64.array.init(ptr %.57)
+  %.59 = call ptr @malloc(i64 40)
+  %.60 = call ptr @memset(ptr %.59, i32 0, i64 40)
+  %.61 = bitcast ptr %.59 to ptr
+  call void @Header.array.init(ptr %.61)
   %.63 = call ptr @malloc(i64 40)
-  %.64 = bitcast ptr %.63 to ptr
-  call void @i64.array.init(ptr %.64)
-  %.66 = call ptr @malloc(i64 40)
-  %.67 = bitcast ptr %.66 to ptr
-  call void @i64.array.init(ptr %.67)
-  %.69 = call ptr @malloc(i64 40)
-  %.70 = bitcast ptr %.69 to ptr
-  call void @i64.array.init(ptr %.70)
-  %.72 = call ptr @malloc(i64 40)
-  %.73 = bitcast ptr %.72 to ptr
+  %.64 = call ptr @memset(ptr %.63, i32 0, i64 40)
+  %.65 = bitcast ptr %.63 to ptr
+  call void @i64.array.init(ptr %.65)
+  %.67 = call ptr @malloc(i64 40)
+  %.68 = call ptr @memset(ptr %.67, i32 0, i64 40)
+  %.69 = bitcast ptr %.67 to ptr
+  call void @i64.array.init(ptr %.69)
+  %.71 = call ptr @malloc(i64 40)
+  %.72 = call ptr @memset(ptr %.71, i32 0, i64 40)
+  %.73 = bitcast ptr %.71 to ptr
   call void @i64.array.init(ptr %.73)
   %.75 = call ptr @malloc(i64 40)
-  %.76 = bitcast ptr %.75 to ptr
-  call void @i64.array.init(ptr %.76)
-  %.78 = call ptr @malloc(i64 40)
-  %.79 = bitcast ptr %.78 to ptr
-  call void @i64.array.init(ptr %.79)
-  %.81 = call ptr @malloc(i64 40)
-  %.82 = bitcast ptr %.81 to ptr
-  call void @i64.array.init(ptr %.82)
-  %.84 = call ptr @malloc(i64 40)
-  %.85 = bitcast ptr %.84 to ptr
+  %.76 = call ptr @memset(ptr %.75, i32 0, i64 40)
+  %.77 = bitcast ptr %.75 to ptr
+  call void @i64.array.init(ptr %.77)
+  %.79 = call ptr @malloc(i64 40)
+  %.80 = call ptr @memset(ptr %.79, i32 0, i64 40)
+  %.81 = bitcast ptr %.79 to ptr
+  call void @i64.array.init(ptr %.81)
+  %.83 = call ptr @malloc(i64 40)
+  %.84 = call ptr @memset(ptr %.83, i32 0, i64 40)
+  %.85 = bitcast ptr %.83 to ptr
   call void @i64.array.init(ptr %.85)
   %.87 = call ptr @malloc(i64 40)
-  %.88 = bitcast ptr %.87 to ptr
-  call void @Route.array.init(ptr %.88)
-  %.90 = call ptr @malloc(i64 40)
-  %.91 = bitcast ptr %.90 to ptr
-  call void @Middleware.array.init(ptr %.91)
-  %.93 = call ptr @malloc(i64 40)
-  %.94 = bitcast ptr %.93 to ptr
-  call void @i64.array.init(ptr %.94)
-  %.96 = call ptr @malloc(i64 40)
-  %.97 = bitcast ptr %.96 to ptr
+  %.88 = call ptr @memset(ptr %.87, i32 0, i64 40)
+  %.89 = bitcast ptr %.87 to ptr
+  call void @i64.array.init(ptr %.89)
+  %.91 = call ptr @malloc(i64 40)
+  %.92 = call ptr @memset(ptr %.91, i32 0, i64 40)
+  %.93 = bitcast ptr %.91 to ptr
+  call void @i64.array.init(ptr %.93)
+  %.95 = call ptr @malloc(i64 40)
+  %.96 = call ptr @memset(ptr %.95, i32 0, i64 40)
+  %.97 = bitcast ptr %.95 to ptr
   call void @i64.array.init(ptr %.97)
   %.99 = call ptr @malloc(i64 40)
-  %.100 = bitcast ptr %.99 to ptr
-  call void @i64.array.init(ptr %.100)
-  %.102 = call ptr @malloc(i64 40)
-  %.103 = bitcast ptr %.102 to ptr
-  call void @i64.array.init(ptr %.103)
-  %.105 = call ptr @malloc(i64 40)
-  %.106 = bitcast ptr %.105 to ptr
-  call void @i64.array.init(ptr %.106)
-  %.108 = call ptr @malloc(i64 40)
-  %.109 = bitcast ptr %.108 to ptr
+  %.100 = call ptr @memset(ptr %.99, i32 0, i64 40)
+  %.101 = bitcast ptr %.99 to ptr
+  call void @i64.array.init(ptr %.101)
+  %.103 = call ptr @malloc(i64 40)
+  %.104 = call ptr @memset(ptr %.103, i32 0, i64 40)
+  %.105 = bitcast ptr %.103 to ptr
+  call void @i64.array.init(ptr %.105)
+  %.107 = call ptr @malloc(i64 40)
+  %.108 = call ptr @memset(ptr %.107, i32 0, i64 40)
+  %.109 = bitcast ptr %.107 to ptr
   call void @i64.array.init(ptr %.109)
   %.111 = call ptr @malloc(i64 40)
-  %.112 = bitcast ptr %.111 to ptr
-  call void @i64.array.init(ptr %.112)
-  %.114 = call ptr @malloc(i64 40)
-  %.115 = bitcast ptr %.114 to ptr
-  call void @i64.array.init(ptr %.115)
-  %.117 = call ptr @malloc(i64 40)
-  %.118 = bitcast ptr %.117 to ptr
-  call void @i64.array.init(ptr %.118)
+  %.112 = call ptr @memset(ptr %.111, i32 0, i64 40)
+  %.113 = bitcast ptr %.111 to ptr
+  call void @i64.array.init(ptr %.113)
+  %.115 = call ptr @malloc(i64 40)
+  %.116 = call ptr @memset(ptr %.115, i32 0, i64 40)
+  %.117 = bitcast ptr %.115 to ptr
+  call void @Route.array.init(ptr %.117)
+  %.119 = call ptr @malloc(i64 40)
+  %.120 = call ptr @memset(ptr %.119, i32 0, i64 40)
+  %.121 = bitcast ptr %.119 to ptr
+  call void @Middleware.array.init(ptr %.121)
+  %.123 = call ptr @malloc(i64 40)
+  %.124 = call ptr @memset(ptr %.123, i32 0, i64 40)
+  %.125 = bitcast ptr %.123 to ptr
+  call void @i64.array.init(ptr %.125)
+  %.127 = call ptr @malloc(i64 40)
+  %.128 = call ptr @memset(ptr %.127, i32 0, i64 40)
+  %.129 = bitcast ptr %.127 to ptr
+  call void @i64.array.init(ptr %.129)
+  %.131 = call ptr @malloc(i64 40)
+  %.132 = call ptr @memset(ptr %.131, i32 0, i64 40)
+  %.133 = bitcast ptr %.131 to ptr
+  call void @i64.array.init(ptr %.133)
+  %.135 = call ptr @malloc(i64 40)
+  %.136 = call ptr @memset(ptr %.135, i32 0, i64 40)
+  %.137 = bitcast ptr %.135 to ptr
+  call void @i64.array.init(ptr %.137)
+  %.139 = call ptr @malloc(i64 40)
+  %.140 = call ptr @memset(ptr %.139, i32 0, i64 40)
+  %.141 = bitcast ptr %.139 to ptr
+  call void @i64.array.init(ptr %.141)
+  %.143 = call ptr @malloc(i64 40)
+  %.144 = call ptr @memset(ptr %.143, i32 0, i64 40)
+  %.145 = bitcast ptr %.143 to ptr
+  call void @i64.array.init(ptr %.145)
+  %.147 = call ptr @malloc(i64 40)
+  %.148 = call ptr @memset(ptr %.147, i32 0, i64 40)
+  %.149 = bitcast ptr %.147 to ptr
+  call void @i64.array.init(ptr %.149)
+  %.151 = call ptr @malloc(i64 40)
+  %.152 = call ptr @memset(ptr %.151, i32 0, i64 40)
+  %.153 = bitcast ptr %.151 to ptr
+  call void @i64.array.init(ptr %.153)
+  %.155 = call ptr @malloc(i64 40)
+  %.156 = call ptr @memset(ptr %.155, i32 0, i64 40)
+  %.157 = bitcast ptr %.155 to ptr
+  call void @i64.array.init(ptr %.157)
   call void @mymain()
   br label %exit
 
@@ -3454,8 +3778,6 @@ declare i32 @memcmp(ptr, ptr, i64)
 declare ptr @memcpy(ptr, ptr, i64)
 
 declare ptr @memmove(ptr, ptr, i64)
-
-declare ptr @memset(ptr, i32, i64)
 
 declare ptr @strchr(ptr, i32)
 
@@ -12537,8 +12859,6 @@ declare i64 @GetPrintOutputInfo(ptr, ptr, ptr, ptr)
 
 declare ptr @_calloc_base(i64, i64)
 
-declare ptr @calloc(i64, i64)
-
 declare i32 @_callnewh(i64)
 
 declare ptr @_expand(ptr, i64)
@@ -16350,26 +16670,27 @@ index_out_of_bounds:                              ; preds = %entry
   %.19 = getelementptr [26 x i8], ptr %.17, i64 0, i64 0
   %.20 = bitcast ptr %.19 to ptr
   %.21 = call i64 @puts(ptr %.20)
+  %.22 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 is_index_less_than_zero:                          ; preds = %entry
-  %.24 = icmp slt i64 %.11, 0
-  br i1 %.24, label %negative_index, label %set
+  %.25 = icmp slt i64 %.11, 0
+  br i1 %.25, label %negative_index, label %set
 
 negative_index:                                   ; preds = %is_index_less_than_zero
-  %.26 = add i64 %.14, %.11
-  store i64 %.26, ptr %.7, align 4
+  %.27 = add i64 %.14, %.11
+  store i64 %.27, ptr %.7, align 4
   br label %set
 
 set:                                              ; preds = %negative_index, %is_index_less_than_zero
-  %.29 = load ptr, ptr %.5, align 8
-  %.30 = getelementptr inbounds %Header.array, ptr %.29, i32 0, i32 3
-  %.31 = load i64, ptr %.7, align 4
-  %.32 = load ptr, ptr %.30, align 8
-  %.33 = getelementptr inbounds ptr, ptr %.32, i64 %.31
-  %.34 = load ptr, ptr %.9, align 8
-  store ptr %.34, ptr %.33, align 8
+  %.30 = load ptr, ptr %.5, align 8
+  %.31 = getelementptr inbounds %Header.array, ptr %.30, i32 0, i32 3
+  %.32 = load i64, ptr %.7, align 4
+  %.33 = load ptr, ptr %.31, align 8
+  %.34 = getelementptr inbounds ptr, ptr %.33, i64 %.32
+  %.35 = load ptr, ptr %.9, align 8
+  store ptr %.35, ptr %.34, align 8
   br label %exit
 }
 
@@ -16443,203 +16764,213 @@ entry:
   store i8 0, ptr %.10, align 1
   store ptr %.9, ptr %.8, align 8
   %.13 = call ptr @malloc(i64 40)
-  %.14 = bitcast ptr %.13 to ptr
-  call void @i64.array.init(ptr %.14)
-  call void @i64.array.append(ptr %.14, i64 47)
-  %.17 = load ptr, ptr %self.1, align 8
-  %.18 = getelementptr inbounds %Request, ptr %.17, i32 0, i32 1
-  %.19 = call ptr @malloc(i64 40)
-  %.20 = bitcast ptr %.19 to ptr
-  call void @i64.array.init(ptr %.20)
-  call void @i64.array.append(ptr %.20, i64 47)
-  %.23 = load ptr, ptr %.18, align 8
-  %.24 = icmp ne ptr %.23, null
-  br i1 %.24, label %entry.if, label %entry.endif
+  %.14 = call ptr @memset(ptr %.13, i32 0, i64 40)
+  %.15 = bitcast ptr %.13 to ptr
+  call void @i64.array.init(ptr %.15)
+  call void @i64.array.append(ptr %.15, i64 47)
+  %.18 = load ptr, ptr %self.1, align 8
+  %.19 = getelementptr inbounds %Request, ptr %.18, i32 0, i32 1
+  %.20 = call ptr @malloc(i64 40)
+  %.21 = call ptr @memset(ptr %.20, i32 0, i64 40)
+  %.22 = bitcast ptr %.20 to ptr
+  call void @i64.array.init(ptr %.22)
+  call void @i64.array.append(ptr %.22, i64 47)
+  %.25 = load ptr, ptr %.19, align 8
+  %.26 = icmp ne ptr %.25, null
+  br i1 %.26, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.5.endif.endif
   ret void
 
 entry.if:                                         ; preds = %entry
-  %.26 = icmp eq ptr %.23, null
-  br i1 %.26, label %rc_release_continue, label %rc_release
+  %.28 = icmp eq ptr %.25, null
+  br i1 %.28, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  %.32 = bitcast ptr %.20 to ptr
-  call void @meteor_retain(ptr %.32)
-  store ptr %.20, ptr %.18, align 8
-  %.35 = icmp eq ptr %.20, null
-  br i1 %.35, label %rc_release_continue.1, label %rc_release.1
+  %.34 = bitcast ptr %.22 to ptr
+  call void @meteor_retain(ptr %.34)
+  store ptr %.22, ptr %.19, align 8
+  %.37 = icmp eq ptr %.22, null
+  br i1 %.37, label %rc_release_continue.1, label %rc_release.1
 
 rc_release:                                       ; preds = %entry.if
-  %.28 = bitcast ptr %.23 to ptr
-  call void @meteor_release(ptr %.28)
+  %.30 = bitcast ptr %.25 to ptr
+  call void @meteor_release(ptr %.30)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
 
 rc_release.1:                                     ; preds = %entry.endif
-  %.37 = bitcast ptr %.20 to ptr
-  call void @meteor_release(ptr %.37)
+  %.39 = bitcast ptr %.22 to ptr
+  call void @meteor_release(ptr %.39)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif
-  %.40 = call ptr @malloc(i64 40)
-  %.41 = bitcast ptr %.40 to ptr
-  call void @i64.array.init(ptr %.41)
-  %.43 = load ptr, ptr %self.1, align 8
-  %.44 = getelementptr inbounds %Request, ptr %.43, i32 0, i32 2
-  %.45 = call ptr @malloc(i64 40)
-  %.46 = bitcast ptr %.45 to ptr
-  call void @i64.array.init(ptr %.46)
-  %.48 = load ptr, ptr %.44, align 8
-  %.49 = icmp ne ptr %.48, null
-  br i1 %.49, label %rc_release_continue.1.if, label %rc_release_continue.1.endif
+  %.42 = call ptr @malloc(i64 40)
+  %.43 = call ptr @memset(ptr %.42, i32 0, i64 40)
+  %.44 = bitcast ptr %.42 to ptr
+  call void @i64.array.init(ptr %.44)
+  %.46 = load ptr, ptr %self.1, align 8
+  %.47 = getelementptr inbounds %Request, ptr %.46, i32 0, i32 2
+  %.48 = call ptr @malloc(i64 40)
+  %.49 = call ptr @memset(ptr %.48, i32 0, i64 40)
+  %.50 = bitcast ptr %.48 to ptr
+  call void @i64.array.init(ptr %.50)
+  %.52 = load ptr, ptr %.47, align 8
+  %.53 = icmp ne ptr %.52, null
+  br i1 %.53, label %rc_release_continue.1.if, label %rc_release_continue.1.endif
 
 rc_release_continue.1.if:                         ; preds = %rc_release_continue.1
-  %.51 = icmp eq ptr %.48, null
-  br i1 %.51, label %rc_release_continue.2, label %rc_release.2
+  %.55 = icmp eq ptr %.52, null
+  br i1 %.55, label %rc_release_continue.2, label %rc_release.2
 
 rc_release_continue.1.endif:                      ; preds = %rc_release_continue.2, %rc_release_continue.1
-  %.57 = bitcast ptr %.46 to ptr
-  call void @meteor_retain(ptr %.57)
-  store ptr %.46, ptr %.44, align 8
-  %.60 = icmp eq ptr %.46, null
-  br i1 %.60, label %rc_release_continue.3, label %rc_release.3
+  %.61 = bitcast ptr %.50 to ptr
+  call void @meteor_retain(ptr %.61)
+  store ptr %.50, ptr %.47, align 8
+  %.64 = icmp eq ptr %.50, null
+  br i1 %.64, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.2:                                     ; preds = %rc_release_continue.1.if
-  %.53 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.53)
+  %.57 = bitcast ptr %.52 to ptr
+  call void @meteor_release(ptr %.57)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %rc_release_continue.1.if
   br label %rc_release_continue.1.endif
 
 rc_release.3:                                     ; preds = %rc_release_continue.1.endif
-  %.62 = bitcast ptr %.46 to ptr
-  call void @meteor_release(ptr %.62)
+  %.66 = bitcast ptr %.50 to ptr
+  call void @meteor_release(ptr %.66)
   br label %rc_release_continue.3
 
 rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.1.endif
-  %.65 = call ptr @malloc(i64 40)
-  %.66 = bitcast ptr %.65 to ptr
-  call void @i64.array.init(ptr %.66)
-  %.68 = load ptr, ptr %self.1, align 8
-  %.69 = getelementptr inbounds %Request, ptr %.68, i32 0, i32 3
-  %.70 = call ptr @malloc(i64 40)
-  %.71 = bitcast ptr %.70 to ptr
+  %.69 = call ptr @malloc(i64 40)
+  %.70 = call ptr @memset(ptr %.69, i32 0, i64 40)
+  %.71 = bitcast ptr %.69 to ptr
   call void @i64.array.init(ptr %.71)
-  %.73 = load ptr, ptr %.69, align 8
-  %.74 = icmp ne ptr %.73, null
-  br i1 %.74, label %rc_release_continue.3.if, label %rc_release_continue.3.endif
+  %.73 = load ptr, ptr %self.1, align 8
+  %.74 = getelementptr inbounds %Request, ptr %.73, i32 0, i32 3
+  %.75 = call ptr @malloc(i64 40)
+  %.76 = call ptr @memset(ptr %.75, i32 0, i64 40)
+  %.77 = bitcast ptr %.75 to ptr
+  call void @i64.array.init(ptr %.77)
+  %.79 = load ptr, ptr %.74, align 8
+  %.80 = icmp ne ptr %.79, null
+  br i1 %.80, label %rc_release_continue.3.if, label %rc_release_continue.3.endif
 
 rc_release_continue.3.if:                         ; preds = %rc_release_continue.3
-  %.76 = icmp eq ptr %.73, null
-  br i1 %.76, label %rc_release_continue.4, label %rc_release.4
+  %.82 = icmp eq ptr %.79, null
+  br i1 %.82, label %rc_release_continue.4, label %rc_release.4
 
 rc_release_continue.3.endif:                      ; preds = %rc_release_continue.4, %rc_release_continue.3
-  %.82 = bitcast ptr %.71 to ptr
-  call void @meteor_retain(ptr %.82)
-  store ptr %.71, ptr %.69, align 8
-  %.85 = icmp eq ptr %.71, null
-  br i1 %.85, label %rc_release_continue.5, label %rc_release.5
+  %.88 = bitcast ptr %.77 to ptr
+  call void @meteor_retain(ptr %.88)
+  store ptr %.77, ptr %.74, align 8
+  %.91 = icmp eq ptr %.77, null
+  br i1 %.91, label %rc_release_continue.5, label %rc_release.5
 
 rc_release.4:                                     ; preds = %rc_release_continue.3.if
-  %.78 = bitcast ptr %.73 to ptr
-  call void @meteor_release(ptr %.78)
+  %.84 = bitcast ptr %.79 to ptr
+  call void @meteor_release(ptr %.84)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3.if
   br label %rc_release_continue.3.endif
 
 rc_release.5:                                     ; preds = %rc_release_continue.3.endif
-  %.87 = bitcast ptr %.71 to ptr
-  call void @meteor_release(ptr %.87)
+  %.93 = bitcast ptr %.77 to ptr
+  call void @meteor_release(ptr %.93)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %rc_release_continue.3.endif
-  %.90 = call ptr @malloc(i64 40)
-  %.91 = bitcast ptr %.90 to ptr
-  call void @i64.array.init(ptr %.91)
-  %.93 = load ptr, ptr %self.1, align 8
-  %.94 = getelementptr inbounds %Request, ptr %.93, i32 0, i32 4
-  %.95 = call ptr @malloc(i64 40)
-  %.96 = bitcast ptr %.95 to ptr
-  call void @Header.array.init(ptr %.96)
-  %.98 = load ptr, ptr %.94, align 8
-  %.99 = icmp ne ptr %.98, null
-  br i1 %.99, label %rc_release_continue.5.if, label %rc_release_continue.5.endif
+  %.96 = call ptr @malloc(i64 40)
+  %.97 = call ptr @memset(ptr %.96, i32 0, i64 40)
+  %.98 = bitcast ptr %.96 to ptr
+  call void @i64.array.init(ptr %.98)
+  %.100 = load ptr, ptr %self.1, align 8
+  %.101 = getelementptr inbounds %Request, ptr %.100, i32 0, i32 4
+  %.102 = call ptr @malloc(i64 40)
+  %.103 = call ptr @memset(ptr %.102, i32 0, i64 40)
+  %.104 = bitcast ptr %.102 to ptr
+  call void @Header.array.init(ptr %.104)
+  %.106 = load ptr, ptr %.101, align 8
+  %.107 = icmp ne ptr %.106, null
+  br i1 %.107, label %rc_release_continue.5.if, label %rc_release_continue.5.endif
 
 rc_release_continue.5.if:                         ; preds = %rc_release_continue.5
-  %.101 = icmp eq ptr %.98, null
-  br i1 %.101, label %rc_release_continue.6, label %rc_release.6
+  %.109 = icmp eq ptr %.106, null
+  br i1 %.109, label %rc_release_continue.6, label %rc_release.6
 
 rc_release_continue.5.endif:                      ; preds = %rc_release_continue.6, %rc_release_continue.5
-  %.116 = bitcast ptr %.96 to ptr
-  call void @meteor_retain(ptr %.116)
-  store ptr %.96, ptr %.94, align 8
-  %.119 = call ptr @malloc(i64 40)
-  %.120 = bitcast ptr %.119 to ptr
-  call void @i64.array.init(ptr %.120)
-  %.122 = load ptr, ptr %self.1, align 8
-  %.123 = getelementptr inbounds %Request, ptr %.122, i32 0, i32 5
-  %.124 = call ptr @malloc(i64 40)
-  %.125 = bitcast ptr %.124 to ptr
-  call void @Header.array.init(ptr %.125)
-  %.127 = load ptr, ptr %.123, align 8
-  %.128 = icmp ne ptr %.127, null
-  br i1 %.128, label %rc_release_continue.5.endif.if, label %rc_release_continue.5.endif.endif
+  %.124 = bitcast ptr %.104 to ptr
+  call void @meteor_retain(ptr %.124)
+  store ptr %.104, ptr %.101, align 8
+  %.127 = call ptr @malloc(i64 40)
+  %.128 = call ptr @memset(ptr %.127, i32 0, i64 40)
+  %.129 = bitcast ptr %.127 to ptr
+  call void @i64.array.init(ptr %.129)
+  %.131 = load ptr, ptr %self.1, align 8
+  %.132 = getelementptr inbounds %Request, ptr %.131, i32 0, i32 5
+  %.133 = call ptr @malloc(i64 40)
+  %.134 = call ptr @memset(ptr %.133, i32 0, i64 40)
+  %.135 = bitcast ptr %.133 to ptr
+  call void @Header.array.init(ptr %.135)
+  %.137 = load ptr, ptr %.132, align 8
+  %.138 = icmp ne ptr %.137, null
+  br i1 %.138, label %rc_release_continue.5.endif.if, label %rc_release_continue.5.endif.endif
 
 rc_release.6:                                     ; preds = %rc_release_continue.5.if
-  %.103 = bitcast ptr %.98 to ptr
-  %.104 = getelementptr %meteor.header, ptr %.103, i64 0, i32 0
-  %.105 = load i32, ptr %.104, align 4
-  %.106 = icmp eq i32 %.105, 1
-  br i1 %.106, label %rc_array_destroy, label %rc_array_release_only
+  %.111 = bitcast ptr %.106 to ptr
+  %.112 = getelementptr %meteor.header, ptr %.111, i64 0, i32 0
+  %.113 = load i32, ptr %.112, align 4
+  %.114 = icmp eq i32 %.113, 1
+  br i1 %.114, label %rc_destroy_arr, label %rc_release_only_arr
 
-rc_release_continue.6:                            ; preds = %rc_array_release_only, %rc_array_destroy, %rc_release_continue.5.if
+rc_release_continue.6:                            ; preds = %rc_release_only_arr, %rc_destroy_arr, %rc_release_continue.5.if
   br label %rc_release_continue.5.endif
 
-rc_array_destroy:                                 ; preds = %rc_release.6
-  call void @Header.array.destroy(ptr %.98)
-  %.109 = bitcast ptr %.98 to ptr
-  call void @meteor_release(ptr %.109)
+rc_destroy_arr:                                   ; preds = %rc_release.6
+  call void @Header.array.destroy(ptr %.106)
+  %.117 = bitcast ptr %.106 to ptr
+  call void @meteor_release(ptr %.117)
   br label %rc_release_continue.6
 
-rc_array_release_only:                            ; preds = %rc_release.6
-  %.112 = bitcast ptr %.98 to ptr
-  call void @meteor_release(ptr %.112)
+rc_release_only_arr:                              ; preds = %rc_release.6
+  %.120 = bitcast ptr %.106 to ptr
+  call void @meteor_release(ptr %.120)
   br label %rc_release_continue.6
 
 rc_release_continue.5.endif.if:                   ; preds = %rc_release_continue.5.endif
-  %.130 = icmp eq ptr %.127, null
-  br i1 %.130, label %rc_release_continue.7, label %rc_release.7
+  %.140 = icmp eq ptr %.137, null
+  br i1 %.140, label %rc_release_continue.7, label %rc_release.7
 
 rc_release_continue.5.endif.endif:                ; preds = %rc_release_continue.7, %rc_release_continue.5.endif
-  %.145 = bitcast ptr %.125 to ptr
-  call void @meteor_retain(ptr %.145)
-  store ptr %.125, ptr %.123, align 8
+  %.155 = bitcast ptr %.135 to ptr
+  call void @meteor_retain(ptr %.155)
+  store ptr %.135, ptr %.132, align 8
   br label %exit
 
 rc_release.7:                                     ; preds = %rc_release_continue.5.endif.if
-  %.132 = bitcast ptr %.127 to ptr
-  %.133 = getelementptr %meteor.header, ptr %.132, i64 0, i32 0
-  %.134 = load i32, ptr %.133, align 4
-  %.135 = icmp eq i32 %.134, 1
-  br i1 %.135, label %rc_array_destroy.1, label %rc_array_release_only.1
+  %.142 = bitcast ptr %.137 to ptr
+  %.143 = getelementptr %meteor.header, ptr %.142, i64 0, i32 0
+  %.144 = load i32, ptr %.143, align 4
+  %.145 = icmp eq i32 %.144, 1
+  br i1 %.145, label %rc_destroy_arr.1, label %rc_release_only_arr.1
 
-rc_release_continue.7:                            ; preds = %rc_array_release_only.1, %rc_array_destroy.1, %rc_release_continue.5.endif.if
+rc_release_continue.7:                            ; preds = %rc_release_only_arr.1, %rc_destroy_arr.1, %rc_release_continue.5.endif.if
   br label %rc_release_continue.5.endif.endif
 
-rc_array_destroy.1:                               ; preds = %rc_release.7
-  call void @Header.array.destroy(ptr %.127)
-  %.138 = bitcast ptr %.127 to ptr
-  call void @meteor_release(ptr %.138)
+rc_destroy_arr.1:                                 ; preds = %rc_release.7
+  call void @Header.array.destroy(ptr %.137)
+  %.148 = bitcast ptr %.137 to ptr
+  call void @meteor_release(ptr %.148)
   br label %rc_release_continue.7
 
-rc_array_release_only.1:                          ; preds = %rc_release.7
-  %.141 = bitcast ptr %.127 to ptr
-  call void @meteor_release(ptr %.141)
+rc_release_only_arr.1:                            ; preds = %rc_release.7
+  %.151 = bitcast ptr %.137 to ptr
+  call void @meteor_release(ptr %.151)
   br label %rc_release_continue.7
 }
 
@@ -16658,8 +16989,8 @@ entry:
   br label %while.cond
 
 exit:                                             ; preds = %rc_release_continue.3, %if.true.0.endif
-  %.132 = load ptr, ptr %ret_var, align 8
-  ret ptr %.132
+  %.103 = load ptr, ptr %ret_var, align 8
+  ret ptr %.103
 
 while.cond:                                       ; preds = %if.end, %entry
   %.9 = load i64, ptr %i, align 4
@@ -16685,12 +17016,13 @@ while.body:                                       ; preds = %while.cond
   br i1 %.26, label %while.body.if, label %while.body.endif
 
 while.end:                                        ; preds = %while.cond
-  %.95 = call ptr @malloc(i64 40)
-  %.96 = bitcast ptr %.95 to ptr
-  call void @i64.array.init(ptr %.96)
-  %.98 = load ptr, ptr %ret_var, align 8
-  %.99 = icmp ne ptr %.98, null
-  br i1 %.99, label %while.end.if, label %while.end.endif
+  %.80 = call ptr @malloc(i64 40)
+  %.81 = call ptr @memset(ptr %.80, i32 0, i64 40)
+  %.82 = bitcast ptr %.80 to ptr
+  call void @i64.array.init(ptr %.82)
+  %.84 = load ptr, ptr %ret_var, align 8
+  %.85 = icmp ne ptr %.84, null
+  br i1 %.85, label %while.end.if, label %while.end.endif
 
 while.body.if:                                    ; preds = %while.body
   %.28 = icmp eq ptr %.25, null
@@ -16704,56 +17036,39 @@ rc_release:                                       ; preds = %while.body.if
   %.30 = bitcast ptr %.25 to ptr
   %.31 = getelementptr i8, ptr %.30, i64 -16
   %.32 = bitcast ptr %.31 to ptr
-  %.33 = getelementptr %meteor.header, ptr %.32, i64 0, i32 0
-  %.34 = load i32, ptr %.33, align 4
-  %.35 = icmp eq i32 %.34, 1
-  br i1 %.35, label %rc_destroy, label %rc_release_only
+  call void @meteor_release(ptr %.32)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %while.body.if
+rc_release_continue:                              ; preds = %rc_release, %while.body.if
   br label %while.body.endif
 
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Header__(ptr %.25)
-  %.38 = bitcast ptr %.25 to ptr
-  %.39 = getelementptr i8, ptr %.38, i64 -16
-  %.40 = bitcast ptr %.39 to ptr
-  call void @meteor_release(ptr %.40)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.43 = bitcast ptr %.25 to ptr
-  %.44 = getelementptr i8, ptr %.43, i64 -16
-  %.45 = bitcast ptr %.44 to ptr
-  call void @meteor_release(ptr %.45)
-  br label %rc_release_continue
-
 if.start:                                         ; preds = %while.body.endif
-  %.51 = load ptr, ptr %h, align 8
-  %.52 = load %Header, ptr %.51, align 8
-  %.53 = extractvalue %Header %.52, 0
-  %.54 = load ptr, ptr %name.1, align 8
-  %left_len = call i64 @i64.array.length(ptr %.53)
-  %right_len = call i64 @i64.array.length(ptr %.54)
+  %.38 = load ptr, ptr %h, align 8
+  %.39 = load %Header, ptr %.38, align 8
+  %.40 = extractvalue %Header %.39, 0
+  %.41 = load ptr, ptr %name.1, align 8
+  %left_len = call i64 @i64.array.length(ptr %.40)
+  %right_len = call i64 @i64.array.length(ptr %.41)
   %str_eq_result = alloca i1, align 1
   br label %str_eq.len_check
 
 if.end:                                           ; preds = %str_eq.end
-  %.92 = load i64, ptr %i, align 4
-  %addtmp = add i64 %.92, 1
+  %.77 = load i64, ptr %i, align 4
+  %addtmp = add i64 %.77, 1
   store i64 %addtmp, ptr %i, align 4
   br label %while.cond
 
 if.true.0:                                        ; preds = %str_eq.end
-  %.76 = load ptr, ptr %h, align 8
-  %.77 = load %Header, ptr %.76, align 8
-  %.78 = extractvalue %Header %.77, 1
-  %.79 = load ptr, ptr %ret_var, align 8
-  %.80 = icmp ne ptr %.79, null
-  br i1 %.80, label %if.true.0.if, label %if.true.0.endif
+  %.63 = load ptr, ptr %h, align 8
+  %.64 = load %Header, ptr %.63, align 8
+  %.65 = extractvalue %Header %.64, 1
+  %.66 = load ptr, ptr %ret_var, align 8
+  %.67 = icmp ne ptr %.66, null
+  br i1 %.67, label %if.true.0.if, label %if.true.0.endif
 
 str_eq.len_check:                                 ; preds = %if.start
-  %.56 = icmp eq i64 %left_len, %right_len
-  br i1 %.56, label %str_eq.compare, label %str_eq.len_mismatch
+  %.43 = icmp eq i64 %left_len, %right_len
+  br i1 %.43, label %str_eq.compare, label %str_eq.len_mismatch
 
 str_eq.len_mismatch:                              ; preds = %str_eq.len_check
   store i1 false, ptr %str_eq_result, align 1
@@ -16765,18 +17080,18 @@ str_eq.compare:                                   ; preds = %str_eq.len_check
   br label %str_eq.loop_cond
 
 str_eq.loop_cond:                                 ; preds = %str_eq.loop_body, %str_eq.compare
-  %.62 = load i64, ptr %i_cmp, align 4
-  %.63 = icmp slt i64 %.62, %left_len
-  br i1 %.63, label %str_eq.loop_body, label %str_eq.strings_equal
+  %.49 = load i64, ptr %i_cmp, align 4
+  %.50 = icmp slt i64 %.49, %left_len
+  br i1 %.50, label %str_eq.loop_body, label %str_eq.strings_equal
 
 str_eq.loop_body:                                 ; preds = %str_eq.loop_cond
-  %.65 = load i64, ptr %i_cmp, align 4
-  %l_char = call i64 @i64.array.get(ptr %.53, i64 %.65)
-  %r_char = call i64 @i64.array.get(ptr %.54, i64 %.65)
-  %.66 = icmp eq i64 %l_char, %r_char
-  %.67 = add i64 %.65, 1
-  store i64 %.67, ptr %i_cmp, align 4
-  br i1 %.66, label %str_eq.loop_cond, label %str_eq.char_mismatch
+  %.52 = load i64, ptr %i_cmp, align 4
+  %l_char = call i64 @i64.array.get(ptr %.40, i64 %.52)
+  %r_char = call i64 @i64.array.get(ptr %.41, i64 %.52)
+  %.53 = icmp eq i64 %l_char, %r_char
+  %.54 = add i64 %.52, 1
+  store i64 %.54, ptr %i_cmp, align 4
+  br i1 %.53, label %str_eq.loop_cond, label %str_eq.char_mismatch
 
 str_eq.char_mismatch:                             ; preds = %str_eq.loop_body
   store i1 false, ptr %str_eq_result, align 1
@@ -16787,73 +17102,52 @@ str_eq.strings_equal:                             ; preds = %str_eq.loop_cond
   br label %str_eq.end
 
 str_eq.end:                                       ; preds = %str_eq.strings_equal, %str_eq.char_mismatch, %str_eq.len_mismatch
-  %.74 = load i1, ptr %str_eq_result, align 1
-  br i1 %.74, label %if.true.0, label %if.end
+  %.61 = load i1, ptr %str_eq_result, align 1
+  br i1 %.61, label %if.true.0, label %if.end
 
 if.true.0.if:                                     ; preds = %if.true.0
-  %.82 = icmp eq ptr %.79, null
-  br i1 %.82, label %rc_release_continue.1, label %rc_release.1
+  %.69 = icmp eq ptr %.66, null
+  br i1 %.69, label %rc_release_continue.1, label %rc_release.1
 
 if.true.0.endif:                                  ; preds = %rc_release_continue.1, %if.true.0
-  store ptr %.78, ptr %ret_var, align 8
-  %.89 = bitcast ptr %.78 to ptr
-  call void @meteor_retain(ptr %.89)
+  store ptr %.65, ptr %ret_var, align 8
   br label %exit
 
 rc_release.1:                                     ; preds = %if.true.0.if
-  %.84 = bitcast ptr %.79 to ptr
-  call void @meteor_release(ptr %.84)
+  %.71 = bitcast ptr %.66 to ptr
+  call void @meteor_release(ptr %.71)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %if.true.0.if
   br label %if.true.0.endif
 
 while.end.if:                                     ; preds = %while.end
-  %.101 = icmp eq ptr %.98, null
-  br i1 %.101, label %rc_release_continue.2, label %rc_release.2
+  %.87 = icmp eq ptr %.84, null
+  br i1 %.87, label %rc_release_continue.2, label %rc_release.2
 
 while.end.endif:                                  ; preds = %rc_release_continue.2, %while.end
-  store ptr %.96, ptr %ret_var, align 8
-  %.108 = bitcast ptr %.96 to ptr
-  call void @meteor_retain(ptr %.108)
-  %.110 = load ptr, ptr %h, align 8
-  %.111 = icmp eq ptr %.110, null
-  br i1 %.111, label %rc_release_continue.3, label %rc_release.3
+  store ptr %.82, ptr %ret_var, align 8
+  %.94 = load ptr, ptr %h, align 8
+  %.95 = icmp eq ptr %.94, null
+  br i1 %.95, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.2:                                     ; preds = %while.end.if
-  %.103 = bitcast ptr %.98 to ptr
-  call void @meteor_release(ptr %.103)
+  %.89 = bitcast ptr %.84 to ptr
+  call void @meteor_release(ptr %.89)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %while.end.if
   br label %while.end.endif
 
 rc_release.3:                                     ; preds = %while.end.endif
-  %.113 = bitcast ptr %.110 to ptr
-  %.114 = getelementptr i8, ptr %.113, i64 -16
-  %.115 = bitcast ptr %.114 to ptr
-  %.116 = getelementptr %meteor.header, ptr %.115, i64 0, i32 0
-  %.117 = load i32, ptr %.116, align 4
-  %.118 = icmp eq i32 %.117, 1
-  br i1 %.118, label %rc_destroy.1, label %rc_release_only.1
+  %.97 = bitcast ptr %.94 to ptr
+  %.98 = getelementptr i8, ptr %.97, i64 -16
+  %.99 = bitcast ptr %.98 to ptr
+  call void @meteor_release(ptr %.99)
+  br label %rc_release_continue.3
 
-rc_release_continue.3:                            ; preds = %rc_release_only.1, %rc_destroy.1, %while.end.endif
+rc_release_continue.3:                            ; preds = %rc_release.3, %while.end.endif
   br label %exit
-
-rc_destroy.1:                                     ; preds = %rc_release.3
-  call void @__destroy_Header__(ptr %.110)
-  %.121 = bitcast ptr %.110 to ptr
-  %.122 = getelementptr i8, ptr %.121, i64 -16
-  %.123 = bitcast ptr %.122 to ptr
-  call void @meteor_release(ptr %.123)
-  br label %rc_release_continue.3
-
-rc_release_only.1:                                ; preds = %rc_release.3
-  %.126 = bitcast ptr %.110 to ptr
-  %.127 = getelementptr i8, ptr %.126, i64 -16
-  %.128 = bitcast ptr %.127 to ptr
-  call void @meteor_release(ptr %.128)
-  br label %rc_release_continue.3
 }
 
 define ptr @Request.get_param(ptr %self, ptr %name) {
@@ -16871,8 +17165,8 @@ entry:
   br label %while.cond
 
 exit:                                             ; preds = %rc_release_continue.3, %if.true.0.endif
-  %.132 = load ptr, ptr %ret_var, align 8
-  ret ptr %.132
+  %.103 = load ptr, ptr %ret_var, align 8
+  ret ptr %.103
 
 while.cond:                                       ; preds = %if.end, %entry
   %.9 = load i64, ptr %i, align 4
@@ -16898,12 +17192,13 @@ while.body:                                       ; preds = %while.cond
   br i1 %.26, label %while.body.if, label %while.body.endif
 
 while.end:                                        ; preds = %while.cond
-  %.95 = call ptr @malloc(i64 40)
-  %.96 = bitcast ptr %.95 to ptr
-  call void @i64.array.init(ptr %.96)
-  %.98 = load ptr, ptr %ret_var, align 8
-  %.99 = icmp ne ptr %.98, null
-  br i1 %.99, label %while.end.if, label %while.end.endif
+  %.80 = call ptr @malloc(i64 40)
+  %.81 = call ptr @memset(ptr %.80, i32 0, i64 40)
+  %.82 = bitcast ptr %.80 to ptr
+  call void @i64.array.init(ptr %.82)
+  %.84 = load ptr, ptr %ret_var, align 8
+  %.85 = icmp ne ptr %.84, null
+  br i1 %.85, label %while.end.if, label %while.end.endif
 
 while.body.if:                                    ; preds = %while.body
   %.28 = icmp eq ptr %.25, null
@@ -16917,56 +17212,39 @@ rc_release:                                       ; preds = %while.body.if
   %.30 = bitcast ptr %.25 to ptr
   %.31 = getelementptr i8, ptr %.30, i64 -16
   %.32 = bitcast ptr %.31 to ptr
-  %.33 = getelementptr %meteor.header, ptr %.32, i64 0, i32 0
-  %.34 = load i32, ptr %.33, align 4
-  %.35 = icmp eq i32 %.34, 1
-  br i1 %.35, label %rc_destroy, label %rc_release_only
+  call void @meteor_release(ptr %.32)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %while.body.if
+rc_release_continue:                              ; preds = %rc_release, %while.body.if
   br label %while.body.endif
 
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Header__(ptr %.25)
-  %.38 = bitcast ptr %.25 to ptr
-  %.39 = getelementptr i8, ptr %.38, i64 -16
-  %.40 = bitcast ptr %.39 to ptr
-  call void @meteor_release(ptr %.40)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.43 = bitcast ptr %.25 to ptr
-  %.44 = getelementptr i8, ptr %.43, i64 -16
-  %.45 = bitcast ptr %.44 to ptr
-  call void @meteor_release(ptr %.45)
-  br label %rc_release_continue
-
 if.start:                                         ; preds = %while.body.endif
-  %.51 = load ptr, ptr %p, align 8
-  %.52 = load %Header, ptr %.51, align 8
-  %.53 = extractvalue %Header %.52, 0
-  %.54 = load ptr, ptr %name.1, align 8
-  %left_len = call i64 @i64.array.length(ptr %.53)
-  %right_len = call i64 @i64.array.length(ptr %.54)
+  %.38 = load ptr, ptr %p, align 8
+  %.39 = load %Header, ptr %.38, align 8
+  %.40 = extractvalue %Header %.39, 0
+  %.41 = load ptr, ptr %name.1, align 8
+  %left_len = call i64 @i64.array.length(ptr %.40)
+  %right_len = call i64 @i64.array.length(ptr %.41)
   %str_eq_result = alloca i1, align 1
   br label %str_eq.len_check
 
 if.end:                                           ; preds = %str_eq.end
-  %.92 = load i64, ptr %i, align 4
-  %addtmp = add i64 %.92, 1
+  %.77 = load i64, ptr %i, align 4
+  %addtmp = add i64 %.77, 1
   store i64 %addtmp, ptr %i, align 4
   br label %while.cond
 
 if.true.0:                                        ; preds = %str_eq.end
-  %.76 = load ptr, ptr %p, align 8
-  %.77 = load %Header, ptr %.76, align 8
-  %.78 = extractvalue %Header %.77, 1
-  %.79 = load ptr, ptr %ret_var, align 8
-  %.80 = icmp ne ptr %.79, null
-  br i1 %.80, label %if.true.0.if, label %if.true.0.endif
+  %.63 = load ptr, ptr %p, align 8
+  %.64 = load %Header, ptr %.63, align 8
+  %.65 = extractvalue %Header %.64, 1
+  %.66 = load ptr, ptr %ret_var, align 8
+  %.67 = icmp ne ptr %.66, null
+  br i1 %.67, label %if.true.0.if, label %if.true.0.endif
 
 str_eq.len_check:                                 ; preds = %if.start
-  %.56 = icmp eq i64 %left_len, %right_len
-  br i1 %.56, label %str_eq.compare, label %str_eq.len_mismatch
+  %.43 = icmp eq i64 %left_len, %right_len
+  br i1 %.43, label %str_eq.compare, label %str_eq.len_mismatch
 
 str_eq.len_mismatch:                              ; preds = %str_eq.len_check
   store i1 false, ptr %str_eq_result, align 1
@@ -16978,18 +17256,18 @@ str_eq.compare:                                   ; preds = %str_eq.len_check
   br label %str_eq.loop_cond
 
 str_eq.loop_cond:                                 ; preds = %str_eq.loop_body, %str_eq.compare
-  %.62 = load i64, ptr %i_cmp, align 4
-  %.63 = icmp slt i64 %.62, %left_len
-  br i1 %.63, label %str_eq.loop_body, label %str_eq.strings_equal
+  %.49 = load i64, ptr %i_cmp, align 4
+  %.50 = icmp slt i64 %.49, %left_len
+  br i1 %.50, label %str_eq.loop_body, label %str_eq.strings_equal
 
 str_eq.loop_body:                                 ; preds = %str_eq.loop_cond
-  %.65 = load i64, ptr %i_cmp, align 4
-  %l_char = call i64 @i64.array.get(ptr %.53, i64 %.65)
-  %r_char = call i64 @i64.array.get(ptr %.54, i64 %.65)
-  %.66 = icmp eq i64 %l_char, %r_char
-  %.67 = add i64 %.65, 1
-  store i64 %.67, ptr %i_cmp, align 4
-  br i1 %.66, label %str_eq.loop_cond, label %str_eq.char_mismatch
+  %.52 = load i64, ptr %i_cmp, align 4
+  %l_char = call i64 @i64.array.get(ptr %.40, i64 %.52)
+  %r_char = call i64 @i64.array.get(ptr %.41, i64 %.52)
+  %.53 = icmp eq i64 %l_char, %r_char
+  %.54 = add i64 %.52, 1
+  store i64 %.54, ptr %i_cmp, align 4
+  br i1 %.53, label %str_eq.loop_cond, label %str_eq.char_mismatch
 
 str_eq.char_mismatch:                             ; preds = %str_eq.loop_body
   store i1 false, ptr %str_eq_result, align 1
@@ -17000,73 +17278,52 @@ str_eq.strings_equal:                             ; preds = %str_eq.loop_cond
   br label %str_eq.end
 
 str_eq.end:                                       ; preds = %str_eq.strings_equal, %str_eq.char_mismatch, %str_eq.len_mismatch
-  %.74 = load i1, ptr %str_eq_result, align 1
-  br i1 %.74, label %if.true.0, label %if.end
+  %.61 = load i1, ptr %str_eq_result, align 1
+  br i1 %.61, label %if.true.0, label %if.end
 
 if.true.0.if:                                     ; preds = %if.true.0
-  %.82 = icmp eq ptr %.79, null
-  br i1 %.82, label %rc_release_continue.1, label %rc_release.1
+  %.69 = icmp eq ptr %.66, null
+  br i1 %.69, label %rc_release_continue.1, label %rc_release.1
 
 if.true.0.endif:                                  ; preds = %rc_release_continue.1, %if.true.0
-  store ptr %.78, ptr %ret_var, align 8
-  %.89 = bitcast ptr %.78 to ptr
-  call void @meteor_retain(ptr %.89)
+  store ptr %.65, ptr %ret_var, align 8
   br label %exit
 
 rc_release.1:                                     ; preds = %if.true.0.if
-  %.84 = bitcast ptr %.79 to ptr
-  call void @meteor_release(ptr %.84)
+  %.71 = bitcast ptr %.66 to ptr
+  call void @meteor_release(ptr %.71)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %if.true.0.if
   br label %if.true.0.endif
 
 while.end.if:                                     ; preds = %while.end
-  %.101 = icmp eq ptr %.98, null
-  br i1 %.101, label %rc_release_continue.2, label %rc_release.2
+  %.87 = icmp eq ptr %.84, null
+  br i1 %.87, label %rc_release_continue.2, label %rc_release.2
 
 while.end.endif:                                  ; preds = %rc_release_continue.2, %while.end
-  store ptr %.96, ptr %ret_var, align 8
-  %.108 = bitcast ptr %.96 to ptr
-  call void @meteor_retain(ptr %.108)
-  %.110 = load ptr, ptr %p, align 8
-  %.111 = icmp eq ptr %.110, null
-  br i1 %.111, label %rc_release_continue.3, label %rc_release.3
+  store ptr %.82, ptr %ret_var, align 8
+  %.94 = load ptr, ptr %p, align 8
+  %.95 = icmp eq ptr %.94, null
+  br i1 %.95, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.2:                                     ; preds = %while.end.if
-  %.103 = bitcast ptr %.98 to ptr
-  call void @meteor_release(ptr %.103)
+  %.89 = bitcast ptr %.84 to ptr
+  call void @meteor_release(ptr %.89)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %while.end.if
   br label %while.end.endif
 
 rc_release.3:                                     ; preds = %while.end.endif
-  %.113 = bitcast ptr %.110 to ptr
-  %.114 = getelementptr i8, ptr %.113, i64 -16
-  %.115 = bitcast ptr %.114 to ptr
-  %.116 = getelementptr %meteor.header, ptr %.115, i64 0, i32 0
-  %.117 = load i32, ptr %.116, align 4
-  %.118 = icmp eq i32 %.117, 1
-  br i1 %.118, label %rc_destroy.1, label %rc_release_only.1
+  %.97 = bitcast ptr %.94 to ptr
+  %.98 = getelementptr i8, ptr %.97, i64 -16
+  %.99 = bitcast ptr %.98 to ptr
+  call void @meteor_release(ptr %.99)
+  br label %rc_release_continue.3
 
-rc_release_continue.3:                            ; preds = %rc_release_only.1, %rc_destroy.1, %while.end.endif
+rc_release_continue.3:                            ; preds = %rc_release.3, %while.end.endif
   br label %exit
-
-rc_destroy.1:                                     ; preds = %rc_release.3
-  call void @__destroy_Header__(ptr %.110)
-  %.121 = bitcast ptr %.110 to ptr
-  %.122 = getelementptr i8, ptr %.121, i64 -16
-  %.123 = bitcast ptr %.122 to ptr
-  call void @meteor_release(ptr %.123)
-  br label %rc_release_continue.3
-
-rc_release_only.1:                                ; preds = %rc_release.3
-  %.126 = bitcast ptr %.110 to ptr
-  %.127 = getelementptr i8, ptr %.126, i64 -16
-  %.128 = bitcast ptr %.127 to ptr
-  call void @meteor_release(ptr %.128)
-  br label %rc_release_continue.3
 }
 
 define ptr @Request.content_type(ptr %self) {
@@ -17077,51 +17334,50 @@ entry:
   store ptr null, ptr %ret_var, align 8
   %.5 = load ptr, ptr %self.1, align 8
   %.6 = call ptr @malloc(i64 40)
-  %.7 = bitcast ptr %.6 to ptr
-  call void @i64.array.init(ptr %.7)
-  call void @i64.array.append(ptr %.7, i64 67)
-  call void @i64.array.append(ptr %.7, i64 111)
-  call void @i64.array.append(ptr %.7, i64 110)
-  call void @i64.array.append(ptr %.7, i64 116)
-  call void @i64.array.append(ptr %.7, i64 101)
-  call void @i64.array.append(ptr %.7, i64 110)
-  call void @i64.array.append(ptr %.7, i64 116)
-  call void @i64.array.append(ptr %.7, i64 45)
-  call void @i64.array.append(ptr %.7, i64 84)
-  call void @i64.array.append(ptr %.7, i64 121)
-  call void @i64.array.append(ptr %.7, i64 112)
-  call void @i64.array.append(ptr %.7, i64 101)
-  %.21 = call ptr @Request.get_header(ptr %.5, ptr %.7)
-  %.22 = icmp eq ptr %.7, null
-  br i1 %.22, label %rc_release_continue, label %rc_release
+  %.7 = call ptr @memset(ptr %.6, i32 0, i64 40)
+  %.8 = bitcast ptr %.6 to ptr
+  call void @i64.array.init(ptr %.8)
+  call void @i64.array.append(ptr %.8, i64 67)
+  call void @i64.array.append(ptr %.8, i64 111)
+  call void @i64.array.append(ptr %.8, i64 110)
+  call void @i64.array.append(ptr %.8, i64 116)
+  call void @i64.array.append(ptr %.8, i64 101)
+  call void @i64.array.append(ptr %.8, i64 110)
+  call void @i64.array.append(ptr %.8, i64 116)
+  call void @i64.array.append(ptr %.8, i64 45)
+  call void @i64.array.append(ptr %.8, i64 84)
+  call void @i64.array.append(ptr %.8, i64 121)
+  call void @i64.array.append(ptr %.8, i64 112)
+  call void @i64.array.append(ptr %.8, i64 101)
+  %.22 = call ptr @Request.get_header(ptr %.5, ptr %.8)
+  %.23 = icmp eq ptr %.8, null
+  br i1 %.23, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue.endif
-  %.40 = load ptr, ptr %ret_var, align 8
-  ret ptr %.40
+  %.39 = load ptr, ptr %ret_var, align 8
+  ret ptr %.39
 
 rc_release:                                       ; preds = %entry
-  %.24 = bitcast ptr %.7 to ptr
-  call void @meteor_release(ptr %.24)
+  %.25 = bitcast ptr %.8 to ptr
+  call void @meteor_release(ptr %.25)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  %.27 = load ptr, ptr %ret_var, align 8
-  %.28 = icmp ne ptr %.27, null
-  br i1 %.28, label %rc_release_continue.if, label %rc_release_continue.endif
+  %.28 = load ptr, ptr %ret_var, align 8
+  %.29 = icmp ne ptr %.28, null
+  br i1 %.29, label %rc_release_continue.if, label %rc_release_continue.endif
 
 rc_release_continue.if:                           ; preds = %rc_release_continue
-  %.30 = icmp eq ptr %.27, null
-  br i1 %.30, label %rc_release_continue.1, label %rc_release.1
+  %.31 = icmp eq ptr %.28, null
+  br i1 %.31, label %rc_release_continue.1, label %rc_release.1
 
 rc_release_continue.endif:                        ; preds = %rc_release_continue.1, %rc_release_continue
-  store ptr %.21, ptr %ret_var, align 8
-  %.37 = bitcast ptr %.21 to ptr
-  call void @meteor_retain(ptr %.37)
+  store ptr %.22, ptr %ret_var, align 8
   br label %exit
 
 rc_release.1:                                     ; preds = %rc_release_continue.if
-  %.32 = bitcast ptr %.27 to ptr
-  call void @meteor_release(ptr %.32)
+  %.33 = bitcast ptr %.28 to ptr
+  call void @meteor_release(ptr %.33)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue.if
@@ -17142,8 +17398,8 @@ entry:
   br i1 %.8, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.1
-  %.65 = load i1, ptr %ret_var, align 1
-  ret i1 %.65
+  %.66 = load i1, ptr %ret_var, align 1
+  ret i1 %.66
 
 entry.if:                                         ; preds = %entry
   %.10 = icmp eq ptr %.7, null
@@ -17153,26 +17409,27 @@ entry.endif:                                      ; preds = %rc_release_continue
   store ptr %.5, ptr %ct, align 8
   %.17 = load ptr, ptr %ct, align 8
   %.18 = call ptr @malloc(i64 40)
-  %.19 = bitcast ptr %.18 to ptr
-  call void @i64.array.init(ptr %.19)
-  call void @i64.array.append(ptr %.19, i64 97)
-  call void @i64.array.append(ptr %.19, i64 112)
-  call void @i64.array.append(ptr %.19, i64 112)
-  call void @i64.array.append(ptr %.19, i64 108)
-  call void @i64.array.append(ptr %.19, i64 105)
-  call void @i64.array.append(ptr %.19, i64 99)
-  call void @i64.array.append(ptr %.19, i64 97)
-  call void @i64.array.append(ptr %.19, i64 116)
-  call void @i64.array.append(ptr %.19, i64 105)
-  call void @i64.array.append(ptr %.19, i64 111)
-  call void @i64.array.append(ptr %.19, i64 110)
-  call void @i64.array.append(ptr %.19, i64 47)
-  call void @i64.array.append(ptr %.19, i64 106)
-  call void @i64.array.append(ptr %.19, i64 115)
-  call void @i64.array.append(ptr %.19, i64 111)
-  call void @i64.array.append(ptr %.19, i64 110)
+  %.19 = call ptr @memset(ptr %.18, i32 0, i64 40)
+  %.20 = bitcast ptr %.18 to ptr
+  call void @i64.array.init(ptr %.20)
+  call void @i64.array.append(ptr %.20, i64 97)
+  call void @i64.array.append(ptr %.20, i64 112)
+  call void @i64.array.append(ptr %.20, i64 112)
+  call void @i64.array.append(ptr %.20, i64 108)
+  call void @i64.array.append(ptr %.20, i64 105)
+  call void @i64.array.append(ptr %.20, i64 99)
+  call void @i64.array.append(ptr %.20, i64 97)
+  call void @i64.array.append(ptr %.20, i64 116)
+  call void @i64.array.append(ptr %.20, i64 105)
+  call void @i64.array.append(ptr %.20, i64 111)
+  call void @i64.array.append(ptr %.20, i64 110)
+  call void @i64.array.append(ptr %.20, i64 47)
+  call void @i64.array.append(ptr %.20, i64 106)
+  call void @i64.array.append(ptr %.20, i64 115)
+  call void @i64.array.append(ptr %.20, i64 111)
+  call void @i64.array.append(ptr %.20, i64 110)
   %left_len = call i64 @i64.array.length(ptr %.17)
-  %right_len = call i64 @i64.array.length(ptr %.19)
+  %right_len = call i64 @i64.array.length(ptr %.20)
   %str_eq_result = alloca i1, align 1
   br label %str_eq.len_check
 
@@ -17185,8 +17442,8 @@ rc_release_continue:                              ; preds = %rc_release, %entry.
   br label %entry.endif
 
 str_eq.len_check:                                 ; preds = %entry.endif
-  %.38 = icmp eq i64 %left_len, %right_len
-  br i1 %.38, label %str_eq.compare, label %str_eq.len_mismatch
+  %.39 = icmp eq i64 %left_len, %right_len
+  br i1 %.39, label %str_eq.compare, label %str_eq.len_mismatch
 
 str_eq.len_mismatch:                              ; preds = %str_eq.len_check
   store i1 false, ptr %str_eq_result, align 1
@@ -17198,18 +17455,18 @@ str_eq.compare:                                   ; preds = %str_eq.len_check
   br label %str_eq.loop_cond
 
 str_eq.loop_cond:                                 ; preds = %str_eq.loop_body, %str_eq.compare
-  %.44 = load i64, ptr %i_cmp, align 4
-  %.45 = icmp slt i64 %.44, %left_len
-  br i1 %.45, label %str_eq.loop_body, label %str_eq.strings_equal
+  %.45 = load i64, ptr %i_cmp, align 4
+  %.46 = icmp slt i64 %.45, %left_len
+  br i1 %.46, label %str_eq.loop_body, label %str_eq.strings_equal
 
 str_eq.loop_body:                                 ; preds = %str_eq.loop_cond
-  %.47 = load i64, ptr %i_cmp, align 4
-  %l_char = call i64 @i64.array.get(ptr %.17, i64 %.47)
-  %r_char = call i64 @i64.array.get(ptr %.19, i64 %.47)
-  %.48 = icmp eq i64 %l_char, %r_char
-  %.49 = add i64 %.47, 1
-  store i64 %.49, ptr %i_cmp, align 4
-  br i1 %.48, label %str_eq.loop_cond, label %str_eq.char_mismatch
+  %.48 = load i64, ptr %i_cmp, align 4
+  %l_char = call i64 @i64.array.get(ptr %.17, i64 %.48)
+  %r_char = call i64 @i64.array.get(ptr %.20, i64 %.48)
+  %.49 = icmp eq i64 %l_char, %r_char
+  %.50 = add i64 %.48, 1
+  store i64 %.50, ptr %i_cmp, align 4
+  br i1 %.49, label %str_eq.loop_cond, label %str_eq.char_mismatch
 
 str_eq.char_mismatch:                             ; preds = %str_eq.loop_body
   store i1 false, ptr %str_eq_result, align 1
@@ -17220,15 +17477,15 @@ str_eq.strings_equal:                             ; preds = %str_eq.loop_cond
   br label %str_eq.end
 
 str_eq.end:                                       ; preds = %str_eq.strings_equal, %str_eq.char_mismatch, %str_eq.len_mismatch
-  %.56 = load i1, ptr %str_eq_result, align 1
-  store i1 %.56, ptr %ret_var, align 1
-  %.58 = load ptr, ptr %ct, align 8
-  %.59 = icmp eq ptr %.58, null
-  br i1 %.59, label %rc_release_continue.1, label %rc_release.1
+  %.57 = load i1, ptr %str_eq_result, align 1
+  store i1 %.57, ptr %ret_var, align 1
+  %.59 = load ptr, ptr %ct, align 8
+  %.60 = icmp eq ptr %.59, null
+  br i1 %.60, label %rc_release_continue.1, label %rc_release.1
 
 rc_release.1:                                     ; preds = %str_eq.end
-  %.61 = bitcast ptr %.58 to ptr
-  call void @meteor_release(ptr %.61)
+  %.62 = bitcast ptr %.59 to ptr
+  call void @meteor_release(ptr %.62)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %str_eq.end
@@ -17316,83 +17573,87 @@ entry:
   store i8 0, ptr %.10, align 1
   store ptr %.9, ptr %.8, align 8
   %.13 = call ptr @malloc(i64 40)
-  %.14 = bitcast ptr %.13 to ptr
-  call void @i64.array.init(ptr %.14)
-  %.16 = load ptr, ptr %self.1, align 8
-  %.17 = getelementptr inbounds %Response, ptr %.16, i32 0, i32 1
-  %.18 = call ptr @malloc(i64 40)
-  %.19 = bitcast ptr %.18 to ptr
-  call void @Header.array.init(ptr %.19)
-  %.21 = load ptr, ptr %.17, align 8
-  %.22 = icmp ne ptr %.21, null
-  br i1 %.22, label %entry.if, label %entry.endif
+  %.14 = call ptr @memset(ptr %.13, i32 0, i64 40)
+  %.15 = bitcast ptr %.13 to ptr
+  call void @i64.array.init(ptr %.15)
+  %.17 = load ptr, ptr %self.1, align 8
+  %.18 = getelementptr inbounds %Response, ptr %.17, i32 0, i32 1
+  %.19 = call ptr @malloc(i64 40)
+  %.20 = call ptr @memset(ptr %.19, i32 0, i64 40)
+  %.21 = bitcast ptr %.19 to ptr
+  call void @Header.array.init(ptr %.21)
+  %.23 = load ptr, ptr %.18, align 8
+  %.24 = icmp ne ptr %.23, null
+  br i1 %.24, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.2
   ret void
 
 entry.if:                                         ; preds = %entry
-  %.24 = icmp eq ptr %.21, null
-  br i1 %.24, label %rc_release_continue, label %rc_release
+  %.26 = icmp eq ptr %.23, null
+  br i1 %.26, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  %.39 = bitcast ptr %.19 to ptr
-  call void @meteor_retain(ptr %.39)
-  store ptr %.19, ptr %.17, align 8
-  %.42 = call ptr @malloc(i64 40)
-  %.43 = bitcast ptr %.42 to ptr
-  call void @i64.array.init(ptr %.43)
-  %.45 = load ptr, ptr %self.1, align 8
-  %.46 = getelementptr inbounds %Response, ptr %.45, i32 0, i32 2
-  %.47 = call ptr @malloc(i64 40)
-  %.48 = bitcast ptr %.47 to ptr
-  call void @i64.array.init(ptr %.48)
-  %.50 = load ptr, ptr %.46, align 8
-  %.51 = icmp ne ptr %.50, null
-  br i1 %.51, label %entry.endif.if, label %entry.endif.endif
+  %.41 = bitcast ptr %.21 to ptr
+  call void @meteor_retain(ptr %.41)
+  store ptr %.21, ptr %.18, align 8
+  %.44 = call ptr @malloc(i64 40)
+  %.45 = call ptr @memset(ptr %.44, i32 0, i64 40)
+  %.46 = bitcast ptr %.44 to ptr
+  call void @i64.array.init(ptr %.46)
+  %.48 = load ptr, ptr %self.1, align 8
+  %.49 = getelementptr inbounds %Response, ptr %.48, i32 0, i32 2
+  %.50 = call ptr @malloc(i64 40)
+  %.51 = call ptr @memset(ptr %.50, i32 0, i64 40)
+  %.52 = bitcast ptr %.50 to ptr
+  call void @i64.array.init(ptr %.52)
+  %.54 = load ptr, ptr %.49, align 8
+  %.55 = icmp ne ptr %.54, null
+  br i1 %.55, label %entry.endif.if, label %entry.endif.endif
 
 rc_release:                                       ; preds = %entry.if
-  %.26 = bitcast ptr %.21 to ptr
-  %.27 = getelementptr %meteor.header, ptr %.26, i64 0, i32 0
-  %.28 = load i32, ptr %.27, align 4
-  %.29 = icmp eq i32 %.28, 1
-  br i1 %.29, label %rc_array_destroy, label %rc_array_release_only
+  %.28 = bitcast ptr %.23 to ptr
+  %.29 = getelementptr %meteor.header, ptr %.28, i64 0, i32 0
+  %.30 = load i32, ptr %.29, align 4
+  %.31 = icmp eq i32 %.30, 1
+  br i1 %.31, label %rc_destroy_arr, label %rc_release_only_arr
 
-rc_release_continue:                              ; preds = %rc_array_release_only, %rc_array_destroy, %entry.if
+rc_release_continue:                              ; preds = %rc_release_only_arr, %rc_destroy_arr, %entry.if
   br label %entry.endif
 
-rc_array_destroy:                                 ; preds = %rc_release
-  call void @Header.array.destroy(ptr %.21)
-  %.32 = bitcast ptr %.21 to ptr
-  call void @meteor_release(ptr %.32)
+rc_destroy_arr:                                   ; preds = %rc_release
+  call void @Header.array.destroy(ptr %.23)
+  %.34 = bitcast ptr %.23 to ptr
+  call void @meteor_release(ptr %.34)
   br label %rc_release_continue
 
-rc_array_release_only:                            ; preds = %rc_release
-  %.35 = bitcast ptr %.21 to ptr
-  call void @meteor_release(ptr %.35)
+rc_release_only_arr:                              ; preds = %rc_release
+  %.37 = bitcast ptr %.23 to ptr
+  call void @meteor_release(ptr %.37)
   br label %rc_release_continue
 
 entry.endif.if:                                   ; preds = %entry.endif
-  %.53 = icmp eq ptr %.50, null
-  br i1 %.53, label %rc_release_continue.1, label %rc_release.1
+  %.57 = icmp eq ptr %.54, null
+  br i1 %.57, label %rc_release_continue.1, label %rc_release.1
 
 entry.endif.endif:                                ; preds = %rc_release_continue.1, %entry.endif
-  %.59 = bitcast ptr %.48 to ptr
-  call void @meteor_retain(ptr %.59)
-  store ptr %.48, ptr %.46, align 8
-  %.62 = icmp eq ptr %.48, null
-  br i1 %.62, label %rc_release_continue.2, label %rc_release.2
+  %.63 = bitcast ptr %.52 to ptr
+  call void @meteor_retain(ptr %.63)
+  store ptr %.52, ptr %.49, align 8
+  %.66 = icmp eq ptr %.52, null
+  br i1 %.66, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.1:                                     ; preds = %entry.endif.if
-  %.55 = bitcast ptr %.50 to ptr
-  call void @meteor_release(ptr %.55)
+  %.59 = bitcast ptr %.54 to ptr
+  call void @meteor_release(ptr %.59)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif.if
   br label %entry.endif.endif
 
 rc_release.2:                                     ; preds = %entry.endif.endif
-  %.64 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.64)
+  %.68 = bitcast ptr %.52 to ptr
+  call void @meteor_release(ptr %.68)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %entry.endif.endif
@@ -17434,61 +17695,50 @@ entry:
   %.9 = load ptr, ptr %self.1, align 8
   %.10 = load %Response, ptr %.9, align 8
   %.11 = extractvalue %Response %.10, 1
-  %.12 = call ptr @malloc(i64 32)
-  %.13 = bitcast ptr %.12 to ptr
-  %.14 = getelementptr %meteor.header, ptr %.13, i64 0, i32 0
-  store i32 1, ptr %.14, align 4
-  %.16 = getelementptr %meteor.header, ptr %.13, i64 0, i32 1
-  store i32 0, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.13, i64 0, i32 2
-  store i8 0, ptr %.18, align 1
-  %.20 = getelementptr %meteor.header, ptr %.13, i64 0, i32 3
-  store i8 10, ptr %.20, align 1
-  %.22 = getelementptr i8, ptr %.12, i64 16
-  %.23 = bitcast ptr %.22 to ptr
-  %.24 = getelementptr inbounds %Header, ptr %.23, i32 0, i32 0
-  store ptr null, ptr %.24, align 8
-  %.26 = getelementptr inbounds %Header, ptr %.23, i32 0, i32 1
-  store ptr null, ptr %.26, align 8
-  %.28 = load ptr, ptr %name.1, align 8
-  %.29 = load ptr, ptr %value.1, align 8
-  call void @Header.new(ptr %.23, ptr %.28, ptr %.29)
-  call void @Header.array.append(ptr %.11, ptr %.23)
-  %.32 = icmp eq ptr %.23, null
-  br i1 %.32, label %rc_release_continue, label %rc_release
+  %.12 = getelementptr %Header, ptr null, i64 1
+  %.13 = ptrtoint ptr %.12 to i64
+  %.14 = add i64 16, %.13
+  %.15 = call ptr @malloc(i64 %.14)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 %.14)
+  %.17 = bitcast ptr %.15 to ptr
+  %.18 = getelementptr %meteor.header, ptr %.17, i64 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i64 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i64 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i64 0, i32 3
+  store i8 10, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.17, i64 0, i32 5
+  store i32 1, ptr %.26, align 4
+  %.28 = getelementptr i8, ptr %.15, i64 16
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = getelementptr inbounds %Header, ptr %.29, i32 0, i32 0
+  store ptr null, ptr %.30, align 8
+  %.32 = getelementptr inbounds %Header, ptr %.29, i32 0, i32 1
+  store ptr null, ptr %.32, align 8
+  %.34 = load ptr, ptr %name.1, align 8
+  %.35 = load ptr, ptr %value.1, align 8
+  call void @Header.new(ptr %.29, ptr %.34, ptr %.35)
+  call void @Header.array.append(ptr %.11, ptr %.29)
+  %.38 = icmp eq ptr %.29, null
+  br i1 %.38, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.55 = load ptr, ptr %ret_var, align 8
-  ret ptr %.55
+  %.48 = load ptr, ptr %ret_var, align 8
+  ret ptr %.48
 
 rc_release:                                       ; preds = %entry
-  %.34 = bitcast ptr %.23 to ptr
-  %.35 = getelementptr i8, ptr %.34, i64 -16
-  %.36 = bitcast ptr %.35 to ptr
-  %.37 = getelementptr %meteor.header, ptr %.36, i64 0, i32 0
-  %.38 = load i32, ptr %.37, align 4
-  %.39 = icmp eq i32 %.38, 1
-  br i1 %.39, label %rc_destroy, label %rc_release_only
+  %.40 = bitcast ptr %.29 to ptr
+  %.41 = getelementptr i8, ptr %.40, i64 -16
+  %.42 = bitcast ptr %.41 to ptr
+  call void @meteor_release(ptr %.42)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.52 = load ptr, ptr %self.1, align 8
-  store ptr %.52, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.45 = load ptr, ptr %self.1, align 8
+  store ptr %.45, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Header__(ptr %.23)
-  %.42 = bitcast ptr %.23 to ptr
-  %.43 = getelementptr i8, ptr %.42, i64 -16
-  %.44 = bitcast ptr %.43 to ptr
-  call void @meteor_release(ptr %.44)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.47 = bitcast ptr %.23 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
 }
 
 define ptr @Response.set_body(ptr %self, ptr %body) {
@@ -17542,36 +17792,37 @@ entry:
   store ptr null, ptr %ret_var, align 8
   %.7 = load ptr, ptr %self.1, align 8
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 67)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 110)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 110)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 45)
-  call void @i64.array.append(ptr %.9, i64 84)
-  call void @i64.array.append(ptr %.9, i64 121)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 101)
-  %.23 = load ptr, ptr %ct.1, align 8
-  %.24 = call ptr @Response.set_header(ptr %.7, ptr %.9, ptr %.23)
-  %.25 = icmp eq ptr %.9, null
-  br i1 %.25, label %rc_release_continue, label %rc_release
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 67)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 110)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 110)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 45)
+  call void @i64.array.append(ptr %.10, i64 84)
+  call void @i64.array.append(ptr %.10, i64 121)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 101)
+  %.24 = load ptr, ptr %ct.1, align 8
+  %.25 = call ptr @Response.set_header(ptr %.7, ptr %.10, ptr %.24)
+  %.26 = icmp eq ptr %.10, null
+  br i1 %.26, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.32 = load ptr, ptr %ret_var, align 8
-  ret ptr %.32
+  %.33 = load ptr, ptr %ret_var, align 8
+  ret ptr %.33
 
 rc_release:                                       ; preds = %entry
-  %.27 = bitcast ptr %.9 to ptr
-  call void @meteor_release(ptr %.27)
+  %.28 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.28)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  store ptr %.24, ptr %ret_var, align 8
+  store ptr %.25, ptr %ret_var, align 8
   br label %exit
 }
 
@@ -17585,114 +17836,35 @@ entry:
   store ptr null, ptr %ret_var, align 8
   %.7 = load ptr, ptr %self.1, align 8
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 120)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 47)
-  call void @i64.array.append(ptr %.9, i64 104)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 109)
-  call void @i64.array.append(ptr %.9, i64 108)
-  call void @i64.array.append(ptr %.9, i64 59)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 99)
-  call void @i64.array.append(ptr %.9, i64 104)
-  call void @i64.array.append(ptr %.9, i64 97)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 115)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 61)
-  call void @i64.array.append(ptr %.9, i64 117)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 102)
-  call void @i64.array.append(ptr %.9, i64 45)
-  call void @i64.array.append(ptr %.9, i64 56)
-  %.35 = call ptr @Response.content_type(ptr %.7, ptr %.9)
-  %.36 = icmp eq ptr %.9, null
-  br i1 %.36, label %rc_release_continue, label %rc_release
-
-exit:                                             ; preds = %rc_release_continue.endif
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
-
-rc_release:                                       ; preds = %entry
-  %.38 = bitcast ptr %.9 to ptr
-  call void @meteor_release(ptr %.38)
-  br label %rc_release_continue
-
-rc_release_continue:                              ; preds = %rc_release, %entry
-  %.41 = load ptr, ptr %content.1, align 8
-  %.42 = load ptr, ptr %self.1, align 8
-  %.43 = getelementptr inbounds %Response, ptr %.42, i32 0, i32 2
-  %.44 = load ptr, ptr %content.1, align 8
-  %.45 = load ptr, ptr %.43, align 8
-  %.46 = icmp ne ptr %.45, null
-  br i1 %.46, label %rc_release_continue.if, label %rc_release_continue.endif
-
-rc_release_continue.if:                           ; preds = %rc_release_continue
-  %.48 = icmp eq ptr %.45, null
-  br i1 %.48, label %rc_release_continue.1, label %rc_release.1
-
-rc_release_continue.endif:                        ; preds = %rc_release_continue.1, %rc_release_continue
-  %.54 = bitcast ptr %.44 to ptr
-  call void @meteor_retain(ptr %.54)
-  store ptr %.44, ptr %.43, align 8
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
-  br label %exit
-
-rc_release.1:                                     ; preds = %rc_release_continue.if
-  %.50 = bitcast ptr %.45 to ptr
-  call void @meteor_release(ptr %.50)
-  br label %rc_release_continue.1
-
-rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue.if
-  br label %rc_release_continue.endif
-}
-
-define ptr @Response.text(ptr %self, ptr %content) {
-entry:
-  %self.1 = alloca ptr, align 8
-  store ptr %self, ptr %self.1, align 8
-  %content.1 = alloca ptr, align 8
-  store ptr %content, ptr %content.1, align 8
-  %ret_var = alloca ptr, align 8
-  store ptr null, ptr %ret_var, align 8
-  %.7 = load ptr, ptr %self.1, align 8
-  %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 120)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 47)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 108)
-  call void @i64.array.append(ptr %.9, i64 97)
-  call void @i64.array.append(ptr %.9, i64 105)
-  call void @i64.array.append(ptr %.9, i64 110)
-  call void @i64.array.append(ptr %.9, i64 59)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 99)
-  call void @i64.array.append(ptr %.9, i64 104)
-  call void @i64.array.append(ptr %.9, i64 97)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 115)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 61)
-  call void @i64.array.append(ptr %.9, i64 117)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 102)
-  call void @i64.array.append(ptr %.9, i64 45)
-  call void @i64.array.append(ptr %.9, i64 56)
-  %.36 = call ptr @Response.content_type(ptr %.7, ptr %.9)
-  %.37 = icmp eq ptr %.9, null
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 120)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 47)
+  call void @i64.array.append(ptr %.10, i64 104)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 109)
+  call void @i64.array.append(ptr %.10, i64 108)
+  call void @i64.array.append(ptr %.10, i64 59)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 99)
+  call void @i64.array.append(ptr %.10, i64 104)
+  call void @i64.array.append(ptr %.10, i64 97)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 115)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 61)
+  call void @i64.array.append(ptr %.10, i64 117)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 102)
+  call void @i64.array.append(ptr %.10, i64 45)
+  call void @i64.array.append(ptr %.10, i64 56)
+  %.36 = call ptr @Response.content_type(ptr %.7, ptr %.10)
+  %.37 = icmp eq ptr %.10, null
   br i1 %.37, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue.endif
@@ -17700,7 +17872,7 @@ exit:                                             ; preds = %rc_release_continue
   ret ptr %.61
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.9 to ptr
+  %.39 = bitcast ptr %.10 to ptr
   call void @meteor_release(ptr %.39)
   br label %rc_release_continue
 
@@ -17734,6 +17906,87 @@ rc_release_continue.1:                            ; preds = %rc_release.1, %rc_r
   br label %rc_release_continue.endif
 }
 
+define ptr @Response.text(ptr %self, ptr %content) {
+entry:
+  %self.1 = alloca ptr, align 8
+  store ptr %self, ptr %self.1, align 8
+  %content.1 = alloca ptr, align 8
+  store ptr %content, ptr %content.1, align 8
+  %ret_var = alloca ptr, align 8
+  store ptr null, ptr %ret_var, align 8
+  %.7 = load ptr, ptr %self.1, align 8
+  %.8 = call ptr @malloc(i64 40)
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 120)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 47)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 108)
+  call void @i64.array.append(ptr %.10, i64 97)
+  call void @i64.array.append(ptr %.10, i64 105)
+  call void @i64.array.append(ptr %.10, i64 110)
+  call void @i64.array.append(ptr %.10, i64 59)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 99)
+  call void @i64.array.append(ptr %.10, i64 104)
+  call void @i64.array.append(ptr %.10, i64 97)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 115)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 61)
+  call void @i64.array.append(ptr %.10, i64 117)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 102)
+  call void @i64.array.append(ptr %.10, i64 45)
+  call void @i64.array.append(ptr %.10, i64 56)
+  %.37 = call ptr @Response.content_type(ptr %.7, ptr %.10)
+  %.38 = icmp eq ptr %.10, null
+  br i1 %.38, label %rc_release_continue, label %rc_release
+
+exit:                                             ; preds = %rc_release_continue.endif
+  %.62 = load ptr, ptr %ret_var, align 8
+  ret ptr %.62
+
+rc_release:                                       ; preds = %entry
+  %.40 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.40)
+  br label %rc_release_continue
+
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.43 = load ptr, ptr %content.1, align 8
+  %.44 = load ptr, ptr %self.1, align 8
+  %.45 = getelementptr inbounds %Response, ptr %.44, i32 0, i32 2
+  %.46 = load ptr, ptr %content.1, align 8
+  %.47 = load ptr, ptr %.45, align 8
+  %.48 = icmp ne ptr %.47, null
+  br i1 %.48, label %rc_release_continue.if, label %rc_release_continue.endif
+
+rc_release_continue.if:                           ; preds = %rc_release_continue
+  %.50 = icmp eq ptr %.47, null
+  br i1 %.50, label %rc_release_continue.1, label %rc_release.1
+
+rc_release_continue.endif:                        ; preds = %rc_release_continue.1, %rc_release_continue
+  %.56 = bitcast ptr %.46 to ptr
+  call void @meteor_retain(ptr %.56)
+  store ptr %.46, ptr %.45, align 8
+  %.59 = load ptr, ptr %self.1, align 8
+  store ptr %.59, ptr %ret_var, align 8
+  br label %exit
+
+rc_release.1:                                     ; preds = %rc_release_continue.if
+  %.52 = bitcast ptr %.47 to ptr
+  call void @meteor_release(ptr %.52)
+  br label %rc_release_continue.1
+
+rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue.if
+  br label %rc_release_continue.endif
+}
+
 define ptr @Response.json(ptr %self, ptr %content) {
 entry:
   %self.1 = alloca ptr, align 8
@@ -17744,61 +17997,62 @@ entry:
   store ptr null, ptr %ret_var, align 8
   %.7 = load ptr, ptr %self.1, align 8
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 97)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 108)
-  call void @i64.array.append(ptr %.9, i64 105)
-  call void @i64.array.append(ptr %.9, i64 99)
-  call void @i64.array.append(ptr %.9, i64 97)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 105)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 110)
-  call void @i64.array.append(ptr %.9, i64 47)
-  call void @i64.array.append(ptr %.9, i64 106)
-  call void @i64.array.append(ptr %.9, i64 115)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 110)
-  %.27 = call ptr @Response.content_type(ptr %.7, ptr %.9)
-  %.28 = icmp eq ptr %.9, null
-  br i1 %.28, label %rc_release_continue, label %rc_release
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 97)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 108)
+  call void @i64.array.append(ptr %.10, i64 105)
+  call void @i64.array.append(ptr %.10, i64 99)
+  call void @i64.array.append(ptr %.10, i64 97)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 105)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 110)
+  call void @i64.array.append(ptr %.10, i64 47)
+  call void @i64.array.append(ptr %.10, i64 106)
+  call void @i64.array.append(ptr %.10, i64 115)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 110)
+  %.28 = call ptr @Response.content_type(ptr %.7, ptr %.10)
+  %.29 = icmp eq ptr %.10, null
+  br i1 %.29, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue.endif
-  %.52 = load ptr, ptr %ret_var, align 8
-  ret ptr %.52
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.30 = bitcast ptr %.9 to ptr
-  call void @meteor_release(ptr %.30)
+  %.31 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.31)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  %.33 = load ptr, ptr %content.1, align 8
-  %.34 = load ptr, ptr %self.1, align 8
-  %.35 = getelementptr inbounds %Response, ptr %.34, i32 0, i32 2
-  %.36 = load ptr, ptr %content.1, align 8
-  %.37 = load ptr, ptr %.35, align 8
-  %.38 = icmp ne ptr %.37, null
-  br i1 %.38, label %rc_release_continue.if, label %rc_release_continue.endif
+  %.34 = load ptr, ptr %content.1, align 8
+  %.35 = load ptr, ptr %self.1, align 8
+  %.36 = getelementptr inbounds %Response, ptr %.35, i32 0, i32 2
+  %.37 = load ptr, ptr %content.1, align 8
+  %.38 = load ptr, ptr %.36, align 8
+  %.39 = icmp ne ptr %.38, null
+  br i1 %.39, label %rc_release_continue.if, label %rc_release_continue.endif
 
 rc_release_continue.if:                           ; preds = %rc_release_continue
-  %.40 = icmp eq ptr %.37, null
-  br i1 %.40, label %rc_release_continue.1, label %rc_release.1
+  %.41 = icmp eq ptr %.38, null
+  br i1 %.41, label %rc_release_continue.1, label %rc_release.1
 
 rc_release_continue.endif:                        ; preds = %rc_release_continue.1, %rc_release_continue
-  %.46 = bitcast ptr %.36 to ptr
-  call void @meteor_retain(ptr %.46)
-  store ptr %.36, ptr %.35, align 8
-  %.49 = load ptr, ptr %self.1, align 8
-  store ptr %.49, ptr %ret_var, align 8
+  %.47 = bitcast ptr %.37 to ptr
+  call void @meteor_retain(ptr %.47)
+  store ptr %.37, ptr %.36, align 8
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
 
 rc_release.1:                                     ; preds = %rc_release_continue.if
-  %.42 = bitcast ptr %.37 to ptr
-  call void @meteor_release(ptr %.42)
+  %.43 = bitcast ptr %.38 to ptr
+  call void @meteor_release(ptr %.43)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue.if
@@ -17824,33 +18078,34 @@ entry:
   store ptr %.12, ptr %.11, align 8
   %.16 = load ptr, ptr %self.1, align 8
   %.17 = call ptr @malloc(i64 40)
-  %.18 = bitcast ptr %.17 to ptr
-  call void @i64.array.init(ptr %.18)
-  call void @i64.array.append(ptr %.18, i64 76)
-  call void @i64.array.append(ptr %.18, i64 111)
-  call void @i64.array.append(ptr %.18, i64 99)
-  call void @i64.array.append(ptr %.18, i64 97)
-  call void @i64.array.append(ptr %.18, i64 116)
-  call void @i64.array.append(ptr %.18, i64 105)
-  call void @i64.array.append(ptr %.18, i64 111)
-  call void @i64.array.append(ptr %.18, i64 110)
-  %.28 = load ptr, ptr %url.1, align 8
-  %.29 = call ptr @Response.set_header(ptr %.16, ptr %.18, ptr %.28)
-  %.30 = icmp eq ptr %.18, null
-  br i1 %.30, label %rc_release_continue, label %rc_release
+  %.18 = call ptr @memset(ptr %.17, i32 0, i64 40)
+  %.19 = bitcast ptr %.17 to ptr
+  call void @i64.array.init(ptr %.19)
+  call void @i64.array.append(ptr %.19, i64 76)
+  call void @i64.array.append(ptr %.19, i64 111)
+  call void @i64.array.append(ptr %.19, i64 99)
+  call void @i64.array.append(ptr %.19, i64 97)
+  call void @i64.array.append(ptr %.19, i64 116)
+  call void @i64.array.append(ptr %.19, i64 105)
+  call void @i64.array.append(ptr %.19, i64 111)
+  call void @i64.array.append(ptr %.19, i64 110)
+  %.29 = load ptr, ptr %url.1, align 8
+  %.30 = call ptr @Response.set_header(ptr %.16, ptr %.19, ptr %.29)
+  %.31 = icmp eq ptr %.19, null
+  br i1 %.31, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.38 = load ptr, ptr %ret_var, align 8
-  ret ptr %.38
+  %.39 = load ptr, ptr %ret_var, align 8
+  ret ptr %.39
 
 rc_release:                                       ; preds = %entry
-  %.32 = bitcast ptr %.18 to ptr
-  call void @meteor_release(ptr %.32)
+  %.33 = bitcast ptr %.19 to ptr
+  call void @meteor_release(ptr %.33)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  %.35 = load ptr, ptr %self.1, align 8
-  store ptr %.35, ptr %ret_var, align 8
+  %.36 = load ptr, ptr %self.1, align 8
+  store ptr %.36, ptr %ret_var, align 8
   br label %exit
 }
 
@@ -17871,46 +18126,47 @@ entry:
   store ptr %.10, ptr %.9, align 8
   %.14 = load ptr, ptr %self.1, align 8
   %.15 = call ptr @malloc(i64 40)
-  %.16 = bitcast ptr %.15 to ptr
-  call void @i64.array.init(ptr %.16)
-  call void @i64.array.append(ptr %.16, i64 60)
-  call void @i64.array.append(ptr %.16, i64 104)
-  call void @i64.array.append(ptr %.16, i64 49)
-  call void @i64.array.append(ptr %.16, i64 62)
-  call void @i64.array.append(ptr %.16, i64 52)
-  call void @i64.array.append(ptr %.16, i64 48)
-  call void @i64.array.append(ptr %.16, i64 52)
-  call void @i64.array.append(ptr %.16, i64 32)
-  call void @i64.array.append(ptr %.16, i64 78)
-  call void @i64.array.append(ptr %.16, i64 111)
-  call void @i64.array.append(ptr %.16, i64 116)
-  call void @i64.array.append(ptr %.16, i64 32)
-  call void @i64.array.append(ptr %.16, i64 70)
-  call void @i64.array.append(ptr %.16, i64 111)
-  call void @i64.array.append(ptr %.16, i64 117)
-  call void @i64.array.append(ptr %.16, i64 110)
-  call void @i64.array.append(ptr %.16, i64 100)
-  call void @i64.array.append(ptr %.16, i64 60)
-  call void @i64.array.append(ptr %.16, i64 47)
-  call void @i64.array.append(ptr %.16, i64 104)
-  call void @i64.array.append(ptr %.16, i64 49)
-  call void @i64.array.append(ptr %.16, i64 62)
-  %.40 = call ptr @Response.html(ptr %.14, ptr %.16)
-  %.41 = icmp eq ptr %.16, null
-  br i1 %.41, label %rc_release_continue, label %rc_release
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 40)
+  %.17 = bitcast ptr %.15 to ptr
+  call void @i64.array.init(ptr %.17)
+  call void @i64.array.append(ptr %.17, i64 60)
+  call void @i64.array.append(ptr %.17, i64 104)
+  call void @i64.array.append(ptr %.17, i64 49)
+  call void @i64.array.append(ptr %.17, i64 62)
+  call void @i64.array.append(ptr %.17, i64 52)
+  call void @i64.array.append(ptr %.17, i64 48)
+  call void @i64.array.append(ptr %.17, i64 52)
+  call void @i64.array.append(ptr %.17, i64 32)
+  call void @i64.array.append(ptr %.17, i64 78)
+  call void @i64.array.append(ptr %.17, i64 111)
+  call void @i64.array.append(ptr %.17, i64 116)
+  call void @i64.array.append(ptr %.17, i64 32)
+  call void @i64.array.append(ptr %.17, i64 70)
+  call void @i64.array.append(ptr %.17, i64 111)
+  call void @i64.array.append(ptr %.17, i64 117)
+  call void @i64.array.append(ptr %.17, i64 110)
+  call void @i64.array.append(ptr %.17, i64 100)
+  call void @i64.array.append(ptr %.17, i64 60)
+  call void @i64.array.append(ptr %.17, i64 47)
+  call void @i64.array.append(ptr %.17, i64 104)
+  call void @i64.array.append(ptr %.17, i64 49)
+  call void @i64.array.append(ptr %.17, i64 62)
+  %.41 = call ptr @Response.html(ptr %.14, ptr %.17)
+  %.42 = icmp eq ptr %.17, null
+  br i1 %.42, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.49 = load ptr, ptr %ret_var, align 8
-  ret ptr %.49
+  %.50 = load ptr, ptr %ret_var, align 8
+  ret ptr %.50
 
 rc_release:                                       ; preds = %entry
-  %.43 = bitcast ptr %.16 to ptr
-  call void @meteor_release(ptr %.43)
+  %.44 = bitcast ptr %.17 to ptr
+  call void @meteor_release(ptr %.44)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  %.46 = load ptr, ptr %self.1, align 8
-  store ptr %.46, ptr %ret_var, align 8
+  %.47 = load ptr, ptr %self.1, align 8
+  store ptr %.47, ptr %ret_var, align 8
   br label %exit
 }
 
@@ -17933,72 +18189,74 @@ entry:
   store ptr %.12, ptr %.11, align 8
   %.16 = load ptr, ptr %self.1, align 8
   %.17 = call ptr @malloc(i64 40)
-  %.18 = bitcast ptr %.17 to ptr
-  call void @i64.array.init(ptr %.18)
-  call void @i64.array.append(ptr %.18, i64 60)
-  call void @i64.array.append(ptr %.18, i64 104)
-  call void @i64.array.append(ptr %.18, i64 49)
-  call void @i64.array.append(ptr %.18, i64 62)
-  call void @i64.array.append(ptr %.18, i64 53)
-  call void @i64.array.append(ptr %.18, i64 48)
-  call void @i64.array.append(ptr %.18, i64 48)
-  call void @i64.array.append(ptr %.18, i64 32)
-  call void @i64.array.append(ptr %.18, i64 73)
-  call void @i64.array.append(ptr %.18, i64 110)
-  call void @i64.array.append(ptr %.18, i64 116)
-  call void @i64.array.append(ptr %.18, i64 101)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 110)
-  call void @i64.array.append(ptr %.18, i64 97)
-  call void @i64.array.append(ptr %.18, i64 108)
-  call void @i64.array.append(ptr %.18, i64 32)
-  call void @i64.array.append(ptr %.18, i64 83)
-  call void @i64.array.append(ptr %.18, i64 101)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 118)
-  call void @i64.array.append(ptr %.18, i64 101)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 32)
-  call void @i64.array.append(ptr %.18, i64 69)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 111)
-  call void @i64.array.append(ptr %.18, i64 114)
-  call void @i64.array.append(ptr %.18, i64 60)
-  call void @i64.array.append(ptr %.18, i64 47)
-  call void @i64.array.append(ptr %.18, i64 104)
-  call void @i64.array.append(ptr %.18, i64 49)
-  call void @i64.array.append(ptr %.18, i64 62)
-  call void @i64.array.append(ptr %.18, i64 60)
-  call void @i64.array.append(ptr %.18, i64 112)
-  call void @i64.array.append(ptr %.18, i64 62)
-  %.57 = load ptr, ptr %message.1, align 8
-  %.58 = bitcast ptr %.57 to ptr
-  call void @meteor_retain(ptr %.58)
-  %.60 = call ptr @malloc(i64 40)
-  %.61 = bitcast ptr %.60 to ptr
-  call void @i64.array.init(ptr %.61)
-  %left_len = call i64 @i64.array.length(ptr %.18)
-  %right_len = call i64 @i64.array.length(ptr %.57)
+  %.18 = call ptr @memset(ptr %.17, i32 0, i64 40)
+  %.19 = bitcast ptr %.17 to ptr
+  call void @i64.array.init(ptr %.19)
+  call void @i64.array.append(ptr %.19, i64 60)
+  call void @i64.array.append(ptr %.19, i64 104)
+  call void @i64.array.append(ptr %.19, i64 49)
+  call void @i64.array.append(ptr %.19, i64 62)
+  call void @i64.array.append(ptr %.19, i64 53)
+  call void @i64.array.append(ptr %.19, i64 48)
+  call void @i64.array.append(ptr %.19, i64 48)
+  call void @i64.array.append(ptr %.19, i64 32)
+  call void @i64.array.append(ptr %.19, i64 73)
+  call void @i64.array.append(ptr %.19, i64 110)
+  call void @i64.array.append(ptr %.19, i64 116)
+  call void @i64.array.append(ptr %.19, i64 101)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 110)
+  call void @i64.array.append(ptr %.19, i64 97)
+  call void @i64.array.append(ptr %.19, i64 108)
+  call void @i64.array.append(ptr %.19, i64 32)
+  call void @i64.array.append(ptr %.19, i64 83)
+  call void @i64.array.append(ptr %.19, i64 101)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 118)
+  call void @i64.array.append(ptr %.19, i64 101)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 32)
+  call void @i64.array.append(ptr %.19, i64 69)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 111)
+  call void @i64.array.append(ptr %.19, i64 114)
+  call void @i64.array.append(ptr %.19, i64 60)
+  call void @i64.array.append(ptr %.19, i64 47)
+  call void @i64.array.append(ptr %.19, i64 104)
+  call void @i64.array.append(ptr %.19, i64 49)
+  call void @i64.array.append(ptr %.19, i64 62)
+  call void @i64.array.append(ptr %.19, i64 60)
+  call void @i64.array.append(ptr %.19, i64 112)
+  call void @i64.array.append(ptr %.19, i64 62)
+  %.58 = load ptr, ptr %message.1, align 8
+  %.59 = bitcast ptr %.58 to ptr
+  call void @meteor_retain(ptr %.59)
+  %.61 = call ptr @malloc(i64 40)
+  %.62 = call ptr @memset(ptr %.61, i32 0, i64 40)
+  %.63 = bitcast ptr %.61 to ptr
+  call void @i64.array.init(ptr %.63)
+  %left_len = call i64 @i64.array.length(ptr %.19)
+  %right_len = call i64 @i64.array.length(ptr %.58)
   %i_left = alloca i64, align 8
   store i64 0, ptr %i_left, align 4
   br label %str_concat.left.cond
 
 exit:                                             ; preds = %rc_release_continue.4
-  %.142 = load ptr, ptr %ret_var, align 8
-  ret ptr %.142
+  %.146 = load ptr, ptr %ret_var, align 8
+  ret ptr %.146
 
 str_concat.left.cond:                             ; preds = %str_concat.left.body, %entry
-  %.65 = load i64, ptr %i_left, align 4
-  %.66 = icmp slt i64 %.65, %left_len
-  br i1 %.66, label %str_concat.left.body, label %str_concat.left.end
+  %.67 = load i64, ptr %i_left, align 4
+  %.68 = icmp slt i64 %.67, %left_len
+  br i1 %.68, label %str_concat.left.body, label %str_concat.left.end
 
 str_concat.left.body:                             ; preds = %str_concat.left.cond
-  %.68 = load i64, ptr %i_left, align 4
-  %left_char = call i64 @i64.array.get(ptr %.18, i64 %.68)
-  call void @i64.array.append(ptr %.61, i64 %left_char)
-  %.70 = add i64 %.68, 1
-  store i64 %.70, ptr %i_left, align 4
+  %.70 = load i64, ptr %i_left, align 4
+  %left_char = call i64 @i64.array.get(ptr %.19, i64 %.70)
+  call void @i64.array.append(ptr %.63, i64 %left_char)
+  %.72 = add i64 %.70, 1
+  store i64 %.72, ptr %i_left, align 4
   br label %str_concat.left.cond
 
 str_concat.left.end:                              ; preds = %str_concat.left.cond
@@ -18007,64 +18265,66 @@ str_concat.left.end:                              ; preds = %str_concat.left.con
   br label %str_concat.right.cond
 
 str_concat.right.cond:                            ; preds = %str_concat.right.body, %str_concat.left.end
-  %.75 = load i64, ptr %i_right, align 4
-  %.76 = icmp slt i64 %.75, %right_len
-  br i1 %.76, label %str_concat.right.body, label %str_concat.right.end
+  %.77 = load i64, ptr %i_right, align 4
+  %.78 = icmp slt i64 %.77, %right_len
+  br i1 %.78, label %str_concat.right.body, label %str_concat.right.end
 
 str_concat.right.body:                            ; preds = %str_concat.right.cond
-  %.78 = load i64, ptr %i_right, align 4
-  %right_char = call i64 @i64.array.get(ptr %.57, i64 %.78)
-  call void @i64.array.append(ptr %.61, i64 %right_char)
-  %.80 = add i64 %.78, 1
-  store i64 %.80, ptr %i_right, align 4
+  %.80 = load i64, ptr %i_right, align 4
+  %right_char = call i64 @i64.array.get(ptr %.58, i64 %.80)
+  call void @i64.array.append(ptr %.63, i64 %right_char)
+  %.82 = add i64 %.80, 1
+  store i64 %.82, ptr %i_right, align 4
   br label %str_concat.right.cond
 
 str_concat.right.end:                             ; preds = %str_concat.right.cond
-  %.83 = icmp eq ptr %.18, null
-  br i1 %.83, label %rc_release_continue, label %rc_release
+  %.85 = icmp eq ptr %.19, null
+  br i1 %.85, label %rc_release_continue, label %rc_release
 
 rc_release:                                       ; preds = %str_concat.right.end
-  %.85 = bitcast ptr %.18 to ptr
-  call void @meteor_release(ptr %.85)
+  %.87 = bitcast ptr %.19 to ptr
+  call void @meteor_release(ptr %.87)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %str_concat.right.end
-  %.88 = icmp eq ptr %.57, null
-  br i1 %.88, label %rc_release_continue.1, label %rc_release.1
+  %.90 = icmp eq ptr %.58, null
+  br i1 %.90, label %rc_release_continue.1, label %rc_release.1
 
 rc_release.1:                                     ; preds = %rc_release_continue
-  %.90 = bitcast ptr %.57 to ptr
-  call void @meteor_release(ptr %.90)
+  %.92 = bitcast ptr %.58 to ptr
+  call void @meteor_release(ptr %.92)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue
-  %.93 = call ptr @malloc(i64 40)
-  %.94 = bitcast ptr %.93 to ptr
-  call void @i64.array.init(ptr %.94)
-  call void @i64.array.append(ptr %.94, i64 60)
-  call void @i64.array.append(ptr %.94, i64 47)
-  call void @i64.array.append(ptr %.94, i64 112)
-  call void @i64.array.append(ptr %.94, i64 62)
-  %.100 = call ptr @malloc(i64 40)
-  %.101 = bitcast ptr %.100 to ptr
-  call void @i64.array.init(ptr %.101)
-  %left_len.1 = call i64 @i64.array.length(ptr %.61)
-  %right_len.1 = call i64 @i64.array.length(ptr %.94)
+  %.95 = call ptr @malloc(i64 40)
+  %.96 = call ptr @memset(ptr %.95, i32 0, i64 40)
+  %.97 = bitcast ptr %.95 to ptr
+  call void @i64.array.init(ptr %.97)
+  call void @i64.array.append(ptr %.97, i64 60)
+  call void @i64.array.append(ptr %.97, i64 47)
+  call void @i64.array.append(ptr %.97, i64 112)
+  call void @i64.array.append(ptr %.97, i64 62)
+  %.103 = call ptr @malloc(i64 40)
+  %.104 = call ptr @memset(ptr %.103, i32 0, i64 40)
+  %.105 = bitcast ptr %.103 to ptr
+  call void @i64.array.init(ptr %.105)
+  %left_len.1 = call i64 @i64.array.length(ptr %.63)
+  %right_len.1 = call i64 @i64.array.length(ptr %.97)
   %i_left.1 = alloca i64, align 8
   store i64 0, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 str_concat.left.cond.1:                           ; preds = %str_concat.left.body.1, %rc_release_continue.1
-  %.105 = load i64, ptr %i_left.1, align 4
-  %.106 = icmp slt i64 %.105, %left_len.1
-  br i1 %.106, label %str_concat.left.body.1, label %str_concat.left.end.1
+  %.109 = load i64, ptr %i_left.1, align 4
+  %.110 = icmp slt i64 %.109, %left_len.1
+  br i1 %.110, label %str_concat.left.body.1, label %str_concat.left.end.1
 
 str_concat.left.body.1:                           ; preds = %str_concat.left.cond.1
-  %.108 = load i64, ptr %i_left.1, align 4
-  %left_char.1 = call i64 @i64.array.get(ptr %.61, i64 %.108)
-  call void @i64.array.append(ptr %.101, i64 %left_char.1)
-  %.110 = add i64 %.108, 1
-  store i64 %.110, ptr %i_left.1, align 4
+  %.112 = load i64, ptr %i_left.1, align 4
+  %left_char.1 = call i64 @i64.array.get(ptr %.63, i64 %.112)
+  call void @i64.array.append(ptr %.105, i64 %left_char.1)
+  %.114 = add i64 %.112, 1
+  store i64 %.114, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 str_concat.left.end.1:                            ; preds = %str_concat.left.cond.1
@@ -18073,49 +18333,49 @@ str_concat.left.end.1:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.1
 
 str_concat.right.cond.1:                          ; preds = %str_concat.right.body.1, %str_concat.left.end.1
-  %.115 = load i64, ptr %i_right.1, align 4
-  %.116 = icmp slt i64 %.115, %right_len.1
-  br i1 %.116, label %str_concat.right.body.1, label %str_concat.right.end.1
+  %.119 = load i64, ptr %i_right.1, align 4
+  %.120 = icmp slt i64 %.119, %right_len.1
+  br i1 %.120, label %str_concat.right.body.1, label %str_concat.right.end.1
 
 str_concat.right.body.1:                          ; preds = %str_concat.right.cond.1
-  %.118 = load i64, ptr %i_right.1, align 4
-  %right_char.1 = call i64 @i64.array.get(ptr %.94, i64 %.118)
-  call void @i64.array.append(ptr %.101, i64 %right_char.1)
-  %.120 = add i64 %.118, 1
-  store i64 %.120, ptr %i_right.1, align 4
+  %.122 = load i64, ptr %i_right.1, align 4
+  %right_char.1 = call i64 @i64.array.get(ptr %.97, i64 %.122)
+  call void @i64.array.append(ptr %.105, i64 %right_char.1)
+  %.124 = add i64 %.122, 1
+  store i64 %.124, ptr %i_right.1, align 4
   br label %str_concat.right.cond.1
 
 str_concat.right.end.1:                           ; preds = %str_concat.right.cond.1
-  %.123 = icmp eq ptr %.61, null
-  br i1 %.123, label %rc_release_continue.2, label %rc_release.2
+  %.127 = icmp eq ptr %.63, null
+  br i1 %.127, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.2:                                     ; preds = %str_concat.right.end.1
-  %.125 = bitcast ptr %.61 to ptr
-  call void @meteor_release(ptr %.125)
+  %.129 = bitcast ptr %.63 to ptr
+  call void @meteor_release(ptr %.129)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %str_concat.right.end.1
-  %.128 = icmp eq ptr %.94, null
-  br i1 %.128, label %rc_release_continue.3, label %rc_release.3
+  %.132 = icmp eq ptr %.97, null
+  br i1 %.132, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.3:                                     ; preds = %rc_release_continue.2
-  %.130 = bitcast ptr %.94 to ptr
-  call void @meteor_release(ptr %.130)
+  %.134 = bitcast ptr %.97 to ptr
+  call void @meteor_release(ptr %.134)
   br label %rc_release_continue.3
 
 rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.2
-  %.133 = call ptr @Response.html(ptr %.16, ptr %.101)
-  %.134 = icmp eq ptr %.101, null
-  br i1 %.134, label %rc_release_continue.4, label %rc_release.4
+  %.137 = call ptr @Response.html(ptr %.16, ptr %.105)
+  %.138 = icmp eq ptr %.105, null
+  br i1 %.138, label %rc_release_continue.4, label %rc_release.4
 
 rc_release.4:                                     ; preds = %rc_release_continue.3
-  %.136 = bitcast ptr %.101 to ptr
-  call void @meteor_release(ptr %.136)
+  %.140 = bitcast ptr %.105 to ptr
+  call void @meteor_release(ptr %.140)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3
-  %.139 = load ptr, ptr %self.1, align 8
-  store ptr %.139, ptr %ret_var, align 8
+  %.143 = load ptr, ptr %self.1, align 8
+  store ptr %.143, ptr %ret_var, align 8
   br label %exit
 }
 
@@ -18420,26 +18680,27 @@ index_out_of_bounds:                              ; preds = %entry
   %.19 = getelementptr [26 x i8], ptr %.17, i64 0, i64 0
   %.20 = bitcast ptr %.19 to ptr
   %.21 = call i64 @puts(ptr %.20)
+  %.22 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 is_index_less_than_zero:                          ; preds = %entry
-  %.24 = icmp slt i64 %.11, 0
-  br i1 %.24, label %negative_index, label %set
+  %.25 = icmp slt i64 %.11, 0
+  br i1 %.25, label %negative_index, label %set
 
 negative_index:                                   ; preds = %is_index_less_than_zero
-  %.26 = add i64 %.14, %.11
-  store i64 %.26, ptr %.7, align 4
+  %.27 = add i64 %.14, %.11
+  store i64 %.27, ptr %.7, align 4
   br label %set
 
 set:                                              ; preds = %negative_index, %is_index_less_than_zero
-  %.29 = load ptr, ptr %.5, align 8
-  %.30 = getelementptr inbounds %Route.array, ptr %.29, i32 0, i32 3
-  %.31 = load i64, ptr %.7, align 4
-  %.32 = load ptr, ptr %.30, align 8
-  %.33 = getelementptr inbounds ptr, ptr %.32, i64 %.31
-  %.34 = load ptr, ptr %.9, align 8
-  store ptr %.34, ptr %.33, align 8
+  %.30 = load ptr, ptr %.5, align 8
+  %.31 = getelementptr inbounds %Route.array, ptr %.30, i32 0, i32 3
+  %.32 = load i64, ptr %.7, align 4
+  %.33 = load ptr, ptr %.31, align 8
+  %.34 = getelementptr inbounds ptr, ptr %.33, i64 %.32
+  %.35 = load ptr, ptr %.9, align 8
+  store ptr %.35, ptr %.34, align 8
   br label %exit
 }
 
@@ -18664,26 +18925,27 @@ index_out_of_bounds:                              ; preds = %entry
   %.19 = getelementptr [26 x i8], ptr %.17, i64 0, i64 0
   %.20 = bitcast ptr %.19 to ptr
   %.21 = call i64 @puts(ptr %.20)
+  %.22 = call i32 @fflush(ptr null)
   call void @exit(i32 1)
   unreachable
 
 is_index_less_than_zero:                          ; preds = %entry
-  %.24 = icmp slt i64 %.11, 0
-  br i1 %.24, label %negative_index, label %set
+  %.25 = icmp slt i64 %.11, 0
+  br i1 %.25, label %negative_index, label %set
 
 negative_index:                                   ; preds = %is_index_less_than_zero
-  %.26 = add i64 %.14, %.11
-  store i64 %.26, ptr %.7, align 4
+  %.27 = add i64 %.14, %.11
+  store i64 %.27, ptr %.7, align 4
   br label %set
 
 set:                                              ; preds = %negative_index, %is_index_less_than_zero
-  %.29 = load ptr, ptr %.5, align 8
-  %.30 = getelementptr inbounds %Middleware.array, ptr %.29, i32 0, i32 3
-  %.31 = load i64, ptr %.7, align 4
-  %.32 = load ptr, ptr %.30, align 8
-  %.33 = getelementptr inbounds ptr, ptr %.32, i64 %.31
-  %.34 = load ptr, ptr %.9, align 8
-  store ptr %.34, ptr %.33, align 8
+  %.30 = load ptr, ptr %.5, align 8
+  %.31 = getelementptr inbounds %Middleware.array, ptr %.30, i32 0, i32 3
+  %.32 = load i64, ptr %.7, align 4
+  %.33 = load ptr, ptr %.31, align 8
+  %.34 = getelementptr inbounds ptr, ptr %.33, i64 %.32
+  %.35 = load ptr, ptr %.9, align 8
+  store ptr %.35, ptr %.34, align 8
   br label %exit
 }
 
@@ -18753,182 +19015,190 @@ entry:
   %.7 = call ptr @meteor_http_server_create()
   store ptr %.7, ptr %.6, align 8
   %.9 = call ptr @malloc(i64 40)
-  %.10 = bitcast ptr %.9 to ptr
-  call void @i64.array.init(ptr %.10)
-  call void @i64.array.append(ptr %.10, i64 49)
-  call void @i64.array.append(ptr %.10, i64 50)
-  call void @i64.array.append(ptr %.10, i64 55)
-  call void @i64.array.append(ptr %.10, i64 46)
-  call void @i64.array.append(ptr %.10, i64 48)
-  call void @i64.array.append(ptr %.10, i64 46)
-  call void @i64.array.append(ptr %.10, i64 48)
-  call void @i64.array.append(ptr %.10, i64 46)
-  call void @i64.array.append(ptr %.10, i64 49)
-  %.21 = load ptr, ptr %self.1, align 8
-  %.22 = getelementptr inbounds %Server, ptr %.21, i32 0, i32 1
-  %.23 = call ptr @malloc(i64 40)
-  %.24 = bitcast ptr %.23 to ptr
-  call void @i64.array.init(ptr %.24)
-  call void @i64.array.append(ptr %.24, i64 49)
-  call void @i64.array.append(ptr %.24, i64 50)
-  call void @i64.array.append(ptr %.24, i64 55)
-  call void @i64.array.append(ptr %.24, i64 46)
-  call void @i64.array.append(ptr %.24, i64 48)
-  call void @i64.array.append(ptr %.24, i64 46)
-  call void @i64.array.append(ptr %.24, i64 48)
-  call void @i64.array.append(ptr %.24, i64 46)
-  call void @i64.array.append(ptr %.24, i64 49)
-  %.35 = load ptr, ptr %.22, align 8
-  %.36 = icmp ne ptr %.35, null
-  br i1 %.36, label %entry.if, label %entry.endif
+  %.10 = call ptr @memset(ptr %.9, i32 0, i64 40)
+  %.11 = bitcast ptr %.9 to ptr
+  call void @i64.array.init(ptr %.11)
+  call void @i64.array.append(ptr %.11, i64 49)
+  call void @i64.array.append(ptr %.11, i64 50)
+  call void @i64.array.append(ptr %.11, i64 55)
+  call void @i64.array.append(ptr %.11, i64 46)
+  call void @i64.array.append(ptr %.11, i64 48)
+  call void @i64.array.append(ptr %.11, i64 46)
+  call void @i64.array.append(ptr %.11, i64 48)
+  call void @i64.array.append(ptr %.11, i64 46)
+  call void @i64.array.append(ptr %.11, i64 49)
+  %.22 = load ptr, ptr %self.1, align 8
+  %.23 = getelementptr inbounds %Server, ptr %.22, i32 0, i32 1
+  %.24 = call ptr @malloc(i64 40)
+  %.25 = call ptr @memset(ptr %.24, i32 0, i64 40)
+  %.26 = bitcast ptr %.24 to ptr
+  call void @i64.array.init(ptr %.26)
+  call void @i64.array.append(ptr %.26, i64 49)
+  call void @i64.array.append(ptr %.26, i64 50)
+  call void @i64.array.append(ptr %.26, i64 55)
+  call void @i64.array.append(ptr %.26, i64 46)
+  call void @i64.array.append(ptr %.26, i64 48)
+  call void @i64.array.append(ptr %.26, i64 46)
+  call void @i64.array.append(ptr %.26, i64 48)
+  call void @i64.array.append(ptr %.26, i64 46)
+  call void @i64.array.append(ptr %.26, i64 49)
+  %.37 = load ptr, ptr %.23, align 8
+  %.38 = icmp ne ptr %.37, null
+  br i1 %.38, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.5
   ret void
 
 entry.if:                                         ; preds = %entry
-  %.38 = icmp eq ptr %.35, null
-  br i1 %.38, label %rc_release_continue, label %rc_release
+  %.40 = icmp eq ptr %.37, null
+  br i1 %.40, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  %.44 = bitcast ptr %.24 to ptr
-  call void @meteor_retain(ptr %.44)
-  store ptr %.24, ptr %.22, align 8
-  %.47 = icmp eq ptr %.24, null
-  br i1 %.47, label %rc_release_continue.1, label %rc_release.1
+  %.46 = bitcast ptr %.26 to ptr
+  call void @meteor_retain(ptr %.46)
+  store ptr %.26, ptr %.23, align 8
+  %.49 = icmp eq ptr %.26, null
+  br i1 %.49, label %rc_release_continue.1, label %rc_release.1
 
 rc_release:                                       ; preds = %entry.if
-  %.40 = bitcast ptr %.35 to ptr
-  call void @meteor_release(ptr %.40)
+  %.42 = bitcast ptr %.37 to ptr
+  call void @meteor_release(ptr %.42)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
 
 rc_release.1:                                     ; preds = %entry.endif
-  %.49 = bitcast ptr %.24 to ptr
-  call void @meteor_release(ptr %.49)
+  %.51 = bitcast ptr %.26 to ptr
+  call void @meteor_release(ptr %.51)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif
-  %.52 = load ptr, ptr %self.1, align 8
-  %.53 = getelementptr inbounds %Server, ptr %.52, i32 0, i32 2
-  store i64 8080, ptr %.53, align 4
-  %.55 = call ptr @malloc(i64 40)
-  %.56 = bitcast ptr %.55 to ptr
-  call void @i64.array.init(ptr %.56)
-  %.58 = load ptr, ptr %self.1, align 8
-  %.59 = getelementptr inbounds %Server, ptr %.58, i32 0, i32 3
-  %.60 = call ptr @malloc(i64 40)
-  %.61 = bitcast ptr %.60 to ptr
-  call void @Route.array.init(ptr %.61)
-  %.63 = load ptr, ptr %.59, align 8
-  %.64 = icmp ne ptr %.63, null
-  br i1 %.64, label %rc_release_continue.1.if, label %rc_release_continue.1.endif
+  %.54 = load ptr, ptr %self.1, align 8
+  %.55 = getelementptr inbounds %Server, ptr %.54, i32 0, i32 2
+  store i64 8080, ptr %.55, align 4
+  %.57 = call ptr @malloc(i64 40)
+  %.58 = call ptr @memset(ptr %.57, i32 0, i64 40)
+  %.59 = bitcast ptr %.57 to ptr
+  call void @i64.array.init(ptr %.59)
+  %.61 = load ptr, ptr %self.1, align 8
+  %.62 = getelementptr inbounds %Server, ptr %.61, i32 0, i32 3
+  %.63 = call ptr @malloc(i64 40)
+  %.64 = call ptr @memset(ptr %.63, i32 0, i64 40)
+  %.65 = bitcast ptr %.63 to ptr
+  call void @Route.array.init(ptr %.65)
+  %.67 = load ptr, ptr %.62, align 8
+  %.68 = icmp ne ptr %.67, null
+  br i1 %.68, label %rc_release_continue.1.if, label %rc_release_continue.1.endif
 
 rc_release_continue.1.if:                         ; preds = %rc_release_continue.1
-  %.66 = icmp eq ptr %.63, null
-  br i1 %.66, label %rc_release_continue.2, label %rc_release.2
+  %.70 = icmp eq ptr %.67, null
+  br i1 %.70, label %rc_release_continue.2, label %rc_release.2
 
 rc_release_continue.1.endif:                      ; preds = %rc_release_continue.2, %rc_release_continue.1
-  %.81 = bitcast ptr %.61 to ptr
-  call void @meteor_retain(ptr %.81)
-  store ptr %.61, ptr %.59, align 8
-  %.84 = call ptr @malloc(i64 40)
-  %.85 = bitcast ptr %.84 to ptr
-  call void @i64.array.init(ptr %.85)
-  %.87 = load ptr, ptr %self.1, align 8
-  %.88 = getelementptr inbounds %Server, ptr %.87, i32 0, i32 4
-  %.89 = call ptr @malloc(i64 40)
-  %.90 = bitcast ptr %.89 to ptr
-  call void @Middleware.array.init(ptr %.90)
-  %.92 = load ptr, ptr %.88, align 8
-  %.93 = icmp ne ptr %.92, null
-  br i1 %.93, label %rc_release_continue.1.endif.if, label %rc_release_continue.1.endif.endif
+  %.85 = bitcast ptr %.65 to ptr
+  call void @meteor_retain(ptr %.85)
+  store ptr %.65, ptr %.62, align 8
+  %.88 = call ptr @malloc(i64 40)
+  %.89 = call ptr @memset(ptr %.88, i32 0, i64 40)
+  %.90 = bitcast ptr %.88 to ptr
+  call void @i64.array.init(ptr %.90)
+  %.92 = load ptr, ptr %self.1, align 8
+  %.93 = getelementptr inbounds %Server, ptr %.92, i32 0, i32 4
+  %.94 = call ptr @malloc(i64 40)
+  %.95 = call ptr @memset(ptr %.94, i32 0, i64 40)
+  %.96 = bitcast ptr %.94 to ptr
+  call void @Middleware.array.init(ptr %.96)
+  %.98 = load ptr, ptr %.93, align 8
+  %.99 = icmp ne ptr %.98, null
+  br i1 %.99, label %rc_release_continue.1.endif.if, label %rc_release_continue.1.endif.endif
 
 rc_release.2:                                     ; preds = %rc_release_continue.1.if
-  %.68 = bitcast ptr %.63 to ptr
-  %.69 = getelementptr %meteor.header, ptr %.68, i64 0, i32 0
-  %.70 = load i32, ptr %.69, align 4
-  %.71 = icmp eq i32 %.70, 1
-  br i1 %.71, label %rc_array_destroy, label %rc_array_release_only
+  %.72 = bitcast ptr %.67 to ptr
+  %.73 = getelementptr %meteor.header, ptr %.72, i64 0, i32 0
+  %.74 = load i32, ptr %.73, align 4
+  %.75 = icmp eq i32 %.74, 1
+  br i1 %.75, label %rc_destroy_arr, label %rc_release_only_arr
 
-rc_release_continue.2:                            ; preds = %rc_array_release_only, %rc_array_destroy, %rc_release_continue.1.if
+rc_release_continue.2:                            ; preds = %rc_release_only_arr, %rc_destroy_arr, %rc_release_continue.1.if
   br label %rc_release_continue.1.endif
 
-rc_array_destroy:                                 ; preds = %rc_release.2
-  call void @Route.array.destroy(ptr %.63)
-  %.74 = bitcast ptr %.63 to ptr
-  call void @meteor_release(ptr %.74)
+rc_destroy_arr:                                   ; preds = %rc_release.2
+  call void @Route.array.destroy(ptr %.67)
+  %.78 = bitcast ptr %.67 to ptr
+  call void @meteor_release(ptr %.78)
   br label %rc_release_continue.2
 
-rc_array_release_only:                            ; preds = %rc_release.2
-  %.77 = bitcast ptr %.63 to ptr
-  call void @meteor_release(ptr %.77)
+rc_release_only_arr:                              ; preds = %rc_release.2
+  %.81 = bitcast ptr %.67 to ptr
+  call void @meteor_release(ptr %.81)
   br label %rc_release_continue.2
 
 rc_release_continue.1.endif.if:                   ; preds = %rc_release_continue.1.endif
-  %.95 = icmp eq ptr %.92, null
-  br i1 %.95, label %rc_release_continue.3, label %rc_release.3
+  %.101 = icmp eq ptr %.98, null
+  br i1 %.101, label %rc_release_continue.3, label %rc_release.3
 
 rc_release_continue.1.endif.endif:                ; preds = %rc_release_continue.3, %rc_release_continue.1.endif
-  %.110 = bitcast ptr %.90 to ptr
-  call void @meteor_retain(ptr %.110)
-  store ptr %.90, ptr %.88, align 8
-  %.113 = call ptr @malloc(i64 40)
-  %.114 = bitcast ptr %.113 to ptr
-  call void @i64.array.init(ptr %.114)
-  %.116 = load ptr, ptr %self.1, align 8
-  %.117 = getelementptr inbounds %Server, ptr %.116, i32 0, i32 5
-  %.118 = call ptr @malloc(i64 40)
-  %.119 = bitcast ptr %.118 to ptr
-  call void @i64.array.init(ptr %.119)
-  %.121 = load ptr, ptr %.117, align 8
-  %.122 = icmp ne ptr %.121, null
-  br i1 %.122, label %rc_release_continue.1.endif.endif.if, label %rc_release_continue.1.endif.endif.endif
+  %.116 = bitcast ptr %.96 to ptr
+  call void @meteor_retain(ptr %.116)
+  store ptr %.96, ptr %.93, align 8
+  %.119 = call ptr @malloc(i64 40)
+  %.120 = call ptr @memset(ptr %.119, i32 0, i64 40)
+  %.121 = bitcast ptr %.119 to ptr
+  call void @i64.array.init(ptr %.121)
+  %.123 = load ptr, ptr %self.1, align 8
+  %.124 = getelementptr inbounds %Server, ptr %.123, i32 0, i32 5
+  %.125 = call ptr @malloc(i64 40)
+  %.126 = call ptr @memset(ptr %.125, i32 0, i64 40)
+  %.127 = bitcast ptr %.125 to ptr
+  call void @i64.array.init(ptr %.127)
+  %.129 = load ptr, ptr %.124, align 8
+  %.130 = icmp ne ptr %.129, null
+  br i1 %.130, label %rc_release_continue.1.endif.endif.if, label %rc_release_continue.1.endif.endif.endif
 
 rc_release.3:                                     ; preds = %rc_release_continue.1.endif.if
-  %.97 = bitcast ptr %.92 to ptr
-  %.98 = getelementptr %meteor.header, ptr %.97, i64 0, i32 0
-  %.99 = load i32, ptr %.98, align 4
-  %.100 = icmp eq i32 %.99, 1
-  br i1 %.100, label %rc_array_destroy.1, label %rc_array_release_only.1
+  %.103 = bitcast ptr %.98 to ptr
+  %.104 = getelementptr %meteor.header, ptr %.103, i64 0, i32 0
+  %.105 = load i32, ptr %.104, align 4
+  %.106 = icmp eq i32 %.105, 1
+  br i1 %.106, label %rc_destroy_arr.1, label %rc_release_only_arr.1
 
-rc_release_continue.3:                            ; preds = %rc_array_release_only.1, %rc_array_destroy.1, %rc_release_continue.1.endif.if
+rc_release_continue.3:                            ; preds = %rc_release_only_arr.1, %rc_destroy_arr.1, %rc_release_continue.1.endif.if
   br label %rc_release_continue.1.endif.endif
 
-rc_array_destroy.1:                               ; preds = %rc_release.3
-  call void @Middleware.array.destroy(ptr %.92)
-  %.103 = bitcast ptr %.92 to ptr
-  call void @meteor_release(ptr %.103)
+rc_destroy_arr.1:                                 ; preds = %rc_release.3
+  call void @Middleware.array.destroy(ptr %.98)
+  %.109 = bitcast ptr %.98 to ptr
+  call void @meteor_release(ptr %.109)
   br label %rc_release_continue.3
 
-rc_array_release_only.1:                          ; preds = %rc_release.3
-  %.106 = bitcast ptr %.92 to ptr
-  call void @meteor_release(ptr %.106)
+rc_release_only_arr.1:                            ; preds = %rc_release.3
+  %.112 = bitcast ptr %.98 to ptr
+  call void @meteor_release(ptr %.112)
   br label %rc_release_continue.3
 
 rc_release_continue.1.endif.endif.if:             ; preds = %rc_release_continue.1.endif.endif
-  %.124 = icmp eq ptr %.121, null
-  br i1 %.124, label %rc_release_continue.4, label %rc_release.4
+  %.132 = icmp eq ptr %.129, null
+  br i1 %.132, label %rc_release_continue.4, label %rc_release.4
 
 rc_release_continue.1.endif.endif.endif:          ; preds = %rc_release_continue.4, %rc_release_continue.1.endif.endif
-  %.130 = bitcast ptr %.119 to ptr
-  call void @meteor_retain(ptr %.130)
-  store ptr %.119, ptr %.117, align 8
-  %.133 = icmp eq ptr %.119, null
-  br i1 %.133, label %rc_release_continue.5, label %rc_release.5
+  %.138 = bitcast ptr %.127 to ptr
+  call void @meteor_retain(ptr %.138)
+  store ptr %.127, ptr %.124, align 8
+  %.141 = icmp eq ptr %.127, null
+  br i1 %.141, label %rc_release_continue.5, label %rc_release.5
 
 rc_release.4:                                     ; preds = %rc_release_continue.1.endif.endif.if
-  %.126 = bitcast ptr %.121 to ptr
-  call void @meteor_release(ptr %.126)
+  %.134 = bitcast ptr %.129 to ptr
+  call void @meteor_release(ptr %.134)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.1.endif.endif.if
   br label %rc_release_continue.1.endif.endif.endif
 
 rc_release.5:                                     ; preds = %rc_release_continue.1.endif.endif.endif
-  %.135 = bitcast ptr %.119 to ptr
-  call void @meteor_release(ptr %.135)
+  %.143 = bitcast ptr %.127 to ptr
+  call void @meteor_release(ptr %.143)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %rc_release_continue.1.endif.endif.endif
@@ -19037,66 +19307,55 @@ entry:
   %.9 = load ptr, ptr %self.1, align 8
   %.10 = load %Server, ptr %.9, align 8
   %.11 = extractvalue %Server %.10, 3
-  %.12 = call ptr @malloc(i64 40)
-  %.13 = bitcast ptr %.12 to ptr
-  %.14 = getelementptr %meteor.header, ptr %.13, i64 0, i32 0
-  store i32 1, ptr %.14, align 4
-  %.16 = getelementptr %meteor.header, ptr %.13, i64 0, i32 1
-  store i32 0, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.13, i64 0, i32 2
-  store i8 0, ptr %.18, align 1
-  %.20 = getelementptr %meteor.header, ptr %.13, i64 0, i32 3
-  store i8 10, ptr %.20, align 1
-  %.22 = getelementptr i8, ptr %.12, i64 16
-  %.23 = bitcast ptr %.22 to ptr
-  %.24 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 0
-  store ptr null, ptr %.24, align 8
-  %.26 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 1
-  store ptr null, ptr %.26, align 8
-  %.28 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 2
-  store ptr null, ptr %.28, align 8
-  %.30 = alloca %HttpMethod, align 8
-  %.31 = getelementptr inbounds %HttpMethod, ptr %.30, i32 0, i32 0
-  store i8 0, ptr %.31, align 1
-  %.33 = load ptr, ptr %pattern.1, align 8
-  %.34 = load ptr, ptr %handler.1, align 8
-  call void @Route.new(ptr %.23, ptr %.30, ptr %.33, ptr %.34)
-  call void @Route.array.append(ptr %.11, ptr %.23)
-  %.37 = icmp eq ptr %.23, null
-  br i1 %.37, label %rc_release_continue, label %rc_release
+  %.12 = getelementptr %Route, ptr null, i64 1
+  %.13 = ptrtoint ptr %.12 to i64
+  %.14 = add i64 16, %.13
+  %.15 = call ptr @malloc(i64 %.14)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 %.14)
+  %.17 = bitcast ptr %.15 to ptr
+  %.18 = getelementptr %meteor.header, ptr %.17, i64 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i64 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i64 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i64 0, i32 3
+  store i8 10, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.17, i64 0, i32 5
+  store i32 4, ptr %.26, align 4
+  %.28 = getelementptr i8, ptr %.15, i64 16
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 0
+  store ptr null, ptr %.30, align 8
+  %.32 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 1
+  store ptr null, ptr %.32, align 8
+  %.34 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 2
+  store ptr null, ptr %.34, align 8
+  %.36 = alloca %HttpMethod, align 8
+  %.37 = getelementptr inbounds %HttpMethod, ptr %.36, i32 0, i32 0
+  store i8 0, ptr %.37, align 1
+  %.39 = load ptr, ptr %pattern.1, align 8
+  %.40 = load ptr, ptr %handler.1, align 8
+  call void @Route.new(ptr %.29, ptr %.36, ptr %.39, ptr %.40)
+  call void @Route.array.append(ptr %.11, ptr %.29)
+  %.43 = icmp eq ptr %.29, null
+  br i1 %.43, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.23 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  %.42 = getelementptr %meteor.header, ptr %.41, i64 0, i32 0
-  %.43 = load i32, ptr %.42, align 4
-  %.44 = icmp eq i32 %.43, 1
-  br i1 %.44, label %rc_destroy, label %rc_release_only
+  %.45 = bitcast ptr %.29 to ptr
+  %.46 = getelementptr i8, ptr %.45, i64 -16
+  %.47 = bitcast ptr %.46 to ptr
+  call void @meteor_release(ptr %.47)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Route__(ptr %.23)
-  %.47 = bitcast ptr %.23 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.52 = bitcast ptr %.23 to ptr
-  %.53 = getelementptr i8, ptr %.52, i64 -16
-  %.54 = bitcast ptr %.53 to ptr
-  call void @meteor_release(ptr %.54)
-  br label %rc_release_continue
 }
 
 define ptr @Server.post(ptr %self, ptr %pattern, ptr %handler) {
@@ -19112,66 +19371,55 @@ entry:
   %.9 = load ptr, ptr %self.1, align 8
   %.10 = load %Server, ptr %.9, align 8
   %.11 = extractvalue %Server %.10, 3
-  %.12 = call ptr @malloc(i64 40)
-  %.13 = bitcast ptr %.12 to ptr
-  %.14 = getelementptr %meteor.header, ptr %.13, i64 0, i32 0
-  store i32 1, ptr %.14, align 4
-  %.16 = getelementptr %meteor.header, ptr %.13, i64 0, i32 1
-  store i32 0, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.13, i64 0, i32 2
-  store i8 0, ptr %.18, align 1
-  %.20 = getelementptr %meteor.header, ptr %.13, i64 0, i32 3
-  store i8 10, ptr %.20, align 1
-  %.22 = getelementptr i8, ptr %.12, i64 16
-  %.23 = bitcast ptr %.22 to ptr
-  %.24 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 0
-  store ptr null, ptr %.24, align 8
-  %.26 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 1
-  store ptr null, ptr %.26, align 8
-  %.28 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 2
-  store ptr null, ptr %.28, align 8
-  %.30 = alloca %HttpMethod, align 8
-  %.31 = getelementptr inbounds %HttpMethod, ptr %.30, i32 0, i32 0
-  store i8 1, ptr %.31, align 1
-  %.33 = load ptr, ptr %pattern.1, align 8
-  %.34 = load ptr, ptr %handler.1, align 8
-  call void @Route.new(ptr %.23, ptr %.30, ptr %.33, ptr %.34)
-  call void @Route.array.append(ptr %.11, ptr %.23)
-  %.37 = icmp eq ptr %.23, null
-  br i1 %.37, label %rc_release_continue, label %rc_release
+  %.12 = getelementptr %Route, ptr null, i64 1
+  %.13 = ptrtoint ptr %.12 to i64
+  %.14 = add i64 16, %.13
+  %.15 = call ptr @malloc(i64 %.14)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 %.14)
+  %.17 = bitcast ptr %.15 to ptr
+  %.18 = getelementptr %meteor.header, ptr %.17, i64 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i64 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i64 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i64 0, i32 3
+  store i8 10, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.17, i64 0, i32 5
+  store i32 4, ptr %.26, align 4
+  %.28 = getelementptr i8, ptr %.15, i64 16
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 0
+  store ptr null, ptr %.30, align 8
+  %.32 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 1
+  store ptr null, ptr %.32, align 8
+  %.34 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 2
+  store ptr null, ptr %.34, align 8
+  %.36 = alloca %HttpMethod, align 8
+  %.37 = getelementptr inbounds %HttpMethod, ptr %.36, i32 0, i32 0
+  store i8 1, ptr %.37, align 1
+  %.39 = load ptr, ptr %pattern.1, align 8
+  %.40 = load ptr, ptr %handler.1, align 8
+  call void @Route.new(ptr %.29, ptr %.36, ptr %.39, ptr %.40)
+  call void @Route.array.append(ptr %.11, ptr %.29)
+  %.43 = icmp eq ptr %.29, null
+  br i1 %.43, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.23 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  %.42 = getelementptr %meteor.header, ptr %.41, i64 0, i32 0
-  %.43 = load i32, ptr %.42, align 4
-  %.44 = icmp eq i32 %.43, 1
-  br i1 %.44, label %rc_destroy, label %rc_release_only
+  %.45 = bitcast ptr %.29 to ptr
+  %.46 = getelementptr i8, ptr %.45, i64 -16
+  %.47 = bitcast ptr %.46 to ptr
+  call void @meteor_release(ptr %.47)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Route__(ptr %.23)
-  %.47 = bitcast ptr %.23 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.52 = bitcast ptr %.23 to ptr
-  %.53 = getelementptr i8, ptr %.52, i64 -16
-  %.54 = bitcast ptr %.53 to ptr
-  call void @meteor_release(ptr %.54)
-  br label %rc_release_continue
 }
 
 define ptr @Server.put(ptr %self, ptr %pattern, ptr %handler) {
@@ -19187,66 +19435,55 @@ entry:
   %.9 = load ptr, ptr %self.1, align 8
   %.10 = load %Server, ptr %.9, align 8
   %.11 = extractvalue %Server %.10, 3
-  %.12 = call ptr @malloc(i64 40)
-  %.13 = bitcast ptr %.12 to ptr
-  %.14 = getelementptr %meteor.header, ptr %.13, i64 0, i32 0
-  store i32 1, ptr %.14, align 4
-  %.16 = getelementptr %meteor.header, ptr %.13, i64 0, i32 1
-  store i32 0, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.13, i64 0, i32 2
-  store i8 0, ptr %.18, align 1
-  %.20 = getelementptr %meteor.header, ptr %.13, i64 0, i32 3
-  store i8 10, ptr %.20, align 1
-  %.22 = getelementptr i8, ptr %.12, i64 16
-  %.23 = bitcast ptr %.22 to ptr
-  %.24 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 0
-  store ptr null, ptr %.24, align 8
-  %.26 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 1
-  store ptr null, ptr %.26, align 8
-  %.28 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 2
-  store ptr null, ptr %.28, align 8
-  %.30 = alloca %HttpMethod, align 8
-  %.31 = getelementptr inbounds %HttpMethod, ptr %.30, i32 0, i32 0
-  store i8 2, ptr %.31, align 1
-  %.33 = load ptr, ptr %pattern.1, align 8
-  %.34 = load ptr, ptr %handler.1, align 8
-  call void @Route.new(ptr %.23, ptr %.30, ptr %.33, ptr %.34)
-  call void @Route.array.append(ptr %.11, ptr %.23)
-  %.37 = icmp eq ptr %.23, null
-  br i1 %.37, label %rc_release_continue, label %rc_release
+  %.12 = getelementptr %Route, ptr null, i64 1
+  %.13 = ptrtoint ptr %.12 to i64
+  %.14 = add i64 16, %.13
+  %.15 = call ptr @malloc(i64 %.14)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 %.14)
+  %.17 = bitcast ptr %.15 to ptr
+  %.18 = getelementptr %meteor.header, ptr %.17, i64 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i64 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i64 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i64 0, i32 3
+  store i8 10, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.17, i64 0, i32 5
+  store i32 4, ptr %.26, align 4
+  %.28 = getelementptr i8, ptr %.15, i64 16
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 0
+  store ptr null, ptr %.30, align 8
+  %.32 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 1
+  store ptr null, ptr %.32, align 8
+  %.34 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 2
+  store ptr null, ptr %.34, align 8
+  %.36 = alloca %HttpMethod, align 8
+  %.37 = getelementptr inbounds %HttpMethod, ptr %.36, i32 0, i32 0
+  store i8 2, ptr %.37, align 1
+  %.39 = load ptr, ptr %pattern.1, align 8
+  %.40 = load ptr, ptr %handler.1, align 8
+  call void @Route.new(ptr %.29, ptr %.36, ptr %.39, ptr %.40)
+  call void @Route.array.append(ptr %.11, ptr %.29)
+  %.43 = icmp eq ptr %.29, null
+  br i1 %.43, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.23 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  %.42 = getelementptr %meteor.header, ptr %.41, i64 0, i32 0
-  %.43 = load i32, ptr %.42, align 4
-  %.44 = icmp eq i32 %.43, 1
-  br i1 %.44, label %rc_destroy, label %rc_release_only
+  %.45 = bitcast ptr %.29 to ptr
+  %.46 = getelementptr i8, ptr %.45, i64 -16
+  %.47 = bitcast ptr %.46 to ptr
+  call void @meteor_release(ptr %.47)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Route__(ptr %.23)
-  %.47 = bitcast ptr %.23 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.52 = bitcast ptr %.23 to ptr
-  %.53 = getelementptr i8, ptr %.52, i64 -16
-  %.54 = bitcast ptr %.53 to ptr
-  call void @meteor_release(ptr %.54)
-  br label %rc_release_continue
 }
 
 define ptr @Server.delete(ptr %self, ptr %pattern, ptr %handler) {
@@ -19262,66 +19499,55 @@ entry:
   %.9 = load ptr, ptr %self.1, align 8
   %.10 = load %Server, ptr %.9, align 8
   %.11 = extractvalue %Server %.10, 3
-  %.12 = call ptr @malloc(i64 40)
-  %.13 = bitcast ptr %.12 to ptr
-  %.14 = getelementptr %meteor.header, ptr %.13, i64 0, i32 0
-  store i32 1, ptr %.14, align 4
-  %.16 = getelementptr %meteor.header, ptr %.13, i64 0, i32 1
-  store i32 0, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.13, i64 0, i32 2
-  store i8 0, ptr %.18, align 1
-  %.20 = getelementptr %meteor.header, ptr %.13, i64 0, i32 3
-  store i8 10, ptr %.20, align 1
-  %.22 = getelementptr i8, ptr %.12, i64 16
-  %.23 = bitcast ptr %.22 to ptr
-  %.24 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 0
-  store ptr null, ptr %.24, align 8
-  %.26 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 1
-  store ptr null, ptr %.26, align 8
-  %.28 = getelementptr inbounds %Route, ptr %.23, i32 0, i32 2
-  store ptr null, ptr %.28, align 8
-  %.30 = alloca %HttpMethod, align 8
-  %.31 = getelementptr inbounds %HttpMethod, ptr %.30, i32 0, i32 0
-  store i8 3, ptr %.31, align 1
-  %.33 = load ptr, ptr %pattern.1, align 8
-  %.34 = load ptr, ptr %handler.1, align 8
-  call void @Route.new(ptr %.23, ptr %.30, ptr %.33, ptr %.34)
-  call void @Route.array.append(ptr %.11, ptr %.23)
-  %.37 = icmp eq ptr %.23, null
-  br i1 %.37, label %rc_release_continue, label %rc_release
+  %.12 = getelementptr %Route, ptr null, i64 1
+  %.13 = ptrtoint ptr %.12 to i64
+  %.14 = add i64 16, %.13
+  %.15 = call ptr @malloc(i64 %.14)
+  %.16 = call ptr @memset(ptr %.15, i32 0, i64 %.14)
+  %.17 = bitcast ptr %.15 to ptr
+  %.18 = getelementptr %meteor.header, ptr %.17, i64 0, i32 0
+  store i32 1, ptr %.18, align 4
+  %.20 = getelementptr %meteor.header, ptr %.17, i64 0, i32 1
+  store i32 0, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.17, i64 0, i32 2
+  store i8 0, ptr %.22, align 1
+  %.24 = getelementptr %meteor.header, ptr %.17, i64 0, i32 3
+  store i8 10, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.17, i64 0, i32 5
+  store i32 4, ptr %.26, align 4
+  %.28 = getelementptr i8, ptr %.15, i64 16
+  %.29 = bitcast ptr %.28 to ptr
+  %.30 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 0
+  store ptr null, ptr %.30, align 8
+  %.32 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 1
+  store ptr null, ptr %.32, align 8
+  %.34 = getelementptr inbounds %Route, ptr %.29, i32 0, i32 2
+  store ptr null, ptr %.34, align 8
+  %.36 = alloca %HttpMethod, align 8
+  %.37 = getelementptr inbounds %HttpMethod, ptr %.36, i32 0, i32 0
+  store i8 3, ptr %.37, align 1
+  %.39 = load ptr, ptr %pattern.1, align 8
+  %.40 = load ptr, ptr %handler.1, align 8
+  call void @Route.new(ptr %.29, ptr %.36, ptr %.39, ptr %.40)
+  call void @Route.array.append(ptr %.11, ptr %.29)
+  %.43 = icmp eq ptr %.29, null
+  br i1 %.43, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.23 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  %.42 = getelementptr %meteor.header, ptr %.41, i64 0, i32 0
-  %.43 = load i32, ptr %.42, align 4
-  %.44 = icmp eq i32 %.43, 1
-  br i1 %.44, label %rc_destroy, label %rc_release_only
+  %.45 = bitcast ptr %.29 to ptr
+  %.46 = getelementptr i8, ptr %.45, i64 -16
+  %.47 = bitcast ptr %.46 to ptr
+  call void @meteor_release(ptr %.47)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Route__(ptr %.23)
-  %.47 = bitcast ptr %.23 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.52 = bitcast ptr %.23 to ptr
-  %.53 = getelementptr i8, ptr %.52, i64 -16
-  %.54 = bitcast ptr %.53 to ptr
-  call void @meteor_release(ptr %.54)
-  br label %rc_release_continue
 }
 
 define ptr @Server.route(ptr %self, ptr %method, ptr %pattern, ptr %handler) {
@@ -19339,64 +19565,53 @@ entry:
   %.11 = load ptr, ptr %self.1, align 8
   %.12 = load %Server, ptr %.11, align 8
   %.13 = extractvalue %Server %.12, 3
-  %.14 = call ptr @malloc(i64 40)
-  %.15 = bitcast ptr %.14 to ptr
-  %.16 = getelementptr %meteor.header, ptr %.15, i64 0, i32 0
-  store i32 1, ptr %.16, align 4
-  %.18 = getelementptr %meteor.header, ptr %.15, i64 0, i32 1
-  store i32 0, ptr %.18, align 4
-  %.20 = getelementptr %meteor.header, ptr %.15, i64 0, i32 2
-  store i8 0, ptr %.20, align 1
-  %.22 = getelementptr %meteor.header, ptr %.15, i64 0, i32 3
-  store i8 10, ptr %.22, align 1
-  %.24 = getelementptr i8, ptr %.14, i64 16
-  %.25 = bitcast ptr %.24 to ptr
-  %.26 = getelementptr inbounds %Route, ptr %.25, i32 0, i32 0
-  store ptr null, ptr %.26, align 8
-  %.28 = getelementptr inbounds %Route, ptr %.25, i32 0, i32 1
-  store ptr null, ptr %.28, align 8
-  %.30 = getelementptr inbounds %Route, ptr %.25, i32 0, i32 2
-  store ptr null, ptr %.30, align 8
-  %.32 = load ptr, ptr %method.1, align 8
-  %.33 = load ptr, ptr %pattern.1, align 8
-  %.34 = load ptr, ptr %handler.1, align 8
-  call void @Route.new(ptr %.25, ptr %.32, ptr %.33, ptr %.34)
-  call void @Route.array.append(ptr %.13, ptr %.25)
-  %.37 = icmp eq ptr %.25, null
-  br i1 %.37, label %rc_release_continue, label %rc_release
+  %.14 = getelementptr %Route, ptr null, i64 1
+  %.15 = ptrtoint ptr %.14 to i64
+  %.16 = add i64 16, %.15
+  %.17 = call ptr @malloc(i64 %.16)
+  %.18 = call ptr @memset(ptr %.17, i32 0, i64 %.16)
+  %.19 = bitcast ptr %.17 to ptr
+  %.20 = getelementptr %meteor.header, ptr %.19, i64 0, i32 0
+  store i32 1, ptr %.20, align 4
+  %.22 = getelementptr %meteor.header, ptr %.19, i64 0, i32 1
+  store i32 0, ptr %.22, align 4
+  %.24 = getelementptr %meteor.header, ptr %.19, i64 0, i32 2
+  store i8 0, ptr %.24, align 1
+  %.26 = getelementptr %meteor.header, ptr %.19, i64 0, i32 3
+  store i8 10, ptr %.26, align 1
+  %.28 = getelementptr %meteor.header, ptr %.19, i64 0, i32 5
+  store i32 4, ptr %.28, align 4
+  %.30 = getelementptr i8, ptr %.17, i64 16
+  %.31 = bitcast ptr %.30 to ptr
+  %.32 = getelementptr inbounds %Route, ptr %.31, i32 0, i32 0
+  store ptr null, ptr %.32, align 8
+  %.34 = getelementptr inbounds %Route, ptr %.31, i32 0, i32 1
+  store ptr null, ptr %.34, align 8
+  %.36 = getelementptr inbounds %Route, ptr %.31, i32 0, i32 2
+  store ptr null, ptr %.36, align 8
+  %.38 = load ptr, ptr %method.1, align 8
+  %.39 = load ptr, ptr %pattern.1, align 8
+  %.40 = load ptr, ptr %handler.1, align 8
+  call void @Route.new(ptr %.31, ptr %.38, ptr %.39, ptr %.40)
+  call void @Route.array.append(ptr %.13, ptr %.31)
+  %.43 = icmp eq ptr %.31, null
+  br i1 %.43, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue
-  %.60 = load ptr, ptr %ret_var, align 8
-  ret ptr %.60
+  %.53 = load ptr, ptr %ret_var, align 8
+  ret ptr %.53
 
 rc_release:                                       ; preds = %entry
-  %.39 = bitcast ptr %.25 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  %.42 = getelementptr %meteor.header, ptr %.41, i64 0, i32 0
-  %.43 = load i32, ptr %.42, align 4
-  %.44 = icmp eq i32 %.43, 1
-  br i1 %.44, label %rc_destroy, label %rc_release_only
+  %.45 = bitcast ptr %.31 to ptr
+  %.46 = getelementptr i8, ptr %.45, i64 -16
+  %.47 = bitcast ptr %.46 to ptr
+  call void @meteor_release(ptr %.47)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry
-  %.57 = load ptr, ptr %self.1, align 8
-  store ptr %.57, ptr %ret_var, align 8
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.50 = load ptr, ptr %self.1, align 8
+  store ptr %.50, ptr %ret_var, align 8
   br label %exit
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Route__(ptr %.25)
-  %.47 = bitcast ptr %.25 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_release(ptr %.49)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.52 = bitcast ptr %.25 to ptr
-  %.53 = getelementptr i8, ptr %.52, i64 -16
-  %.54 = bitcast ptr %.53 to ptr
-  call void @meteor_release(ptr %.54)
-  br label %rc_release_continue
 }
 
 define ptr @Server.use(ptr %self, ptr %middleware) {
@@ -19527,8 +19742,8 @@ entry:
   br label %while.cond
 
 exit:                                             ; preds = %while.end
-  %.861 = load i64, ptr %ret_var, align 4
-  ret i64 %.861
+  %.772 = load i64, ptr %ret_var, align 4
+  ret i64 %.772
 
 while.cond:                                       ; preds = %if.end.1, %if.true.0, %entry
   br i1 true, label %while.body, label %while.end
@@ -19565,121 +19780,112 @@ if.start.1:                                       ; preds = %if.end
   br i1 %.25, label %if.true.0.1, label %if.end.1
 
 if.end.1:                                         ; preds = %rc_release_continue.17, %if.start.1
-  %.856 = load ptr, ptr %conn, align 8
-  call void @meteor_http_connection_close(ptr %.856)
+  %.767 = load ptr, ptr %conn, align 8
+  call void @meteor_http_connection_close(ptr %.767)
   br label %while.cond
 
 if.true.0.1:                                      ; preds = %if.start.1
-  %.27 = call ptr @malloc(i64 64)
-  %.28 = bitcast ptr %.27 to ptr
-  %.29 = getelementptr %meteor.header, ptr %.28, i64 0, i32 0
-  store i32 1, ptr %.29, align 4
-  %.31 = getelementptr %meteor.header, ptr %.28, i64 0, i32 1
-  store i32 0, ptr %.31, align 4
-  %.33 = getelementptr %meteor.header, ptr %.28, i64 0, i32 2
-  store i8 0, ptr %.33, align 1
-  %.35 = getelementptr %meteor.header, ptr %.28, i64 0, i32 3
-  store i8 10, ptr %.35, align 1
-  %.37 = getelementptr i8, ptr %.27, i64 16
-  %.38 = bitcast ptr %.37 to ptr
-  %.39 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 0
-  store ptr null, ptr %.39, align 8
-  %.41 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 1
-  store ptr null, ptr %.41, align 8
-  %.43 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 2
-  store ptr null, ptr %.43, align 8
-  %.45 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 3
+  %.27 = getelementptr %Request, ptr null, i64 1
+  %.28 = ptrtoint ptr %.27 to i64
+  %.29 = add i64 16, %.28
+  %.30 = call ptr @malloc(i64 %.29)
+  %.31 = call ptr @memset(ptr %.30, i32 0, i64 %.29)
+  %.32 = bitcast ptr %.30 to ptr
+  %.33 = getelementptr %meteor.header, ptr %.32, i64 0, i32 0
+  store i32 1, ptr %.33, align 4
+  %.35 = getelementptr %meteor.header, ptr %.32, i64 0, i32 1
+  store i32 0, ptr %.35, align 4
+  %.37 = getelementptr %meteor.header, ptr %.32, i64 0, i32 2
+  store i8 0, ptr %.37, align 1
+  %.39 = getelementptr %meteor.header, ptr %.32, i64 0, i32 3
+  store i8 10, ptr %.39, align 1
+  %.41 = getelementptr %meteor.header, ptr %.32, i64 0, i32 5
+  store i32 2, ptr %.41, align 4
+  %.43 = getelementptr i8, ptr %.30, i64 16
+  %.44 = bitcast ptr %.43 to ptr
+  %.45 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 0
   store ptr null, ptr %.45, align 8
-  %.47 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 4
+  %.47 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 1
   store ptr null, ptr %.47, align 8
-  %.49 = getelementptr inbounds %Request, ptr %.38, i32 0, i32 5
+  %.49 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 2
   store ptr null, ptr %.49, align 8
-  call void @Request.new(ptr %.38)
-  %.53 = load ptr, ptr %req, align 8
-  %.54 = icmp ne ptr %.53, null
-  br i1 %.54, label %if.true.0.1.if, label %if.true.0.1.endif
+  %.51 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 3
+  store ptr null, ptr %.51, align 8
+  %.53 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 4
+  store ptr null, ptr %.53, align 8
+  %.55 = getelementptr inbounds %Request, ptr %.44, i32 0, i32 5
+  store ptr null, ptr %.55, align 8
+  call void @Request.new(ptr %.44)
+  %.59 = load ptr, ptr %req, align 8
+  %.60 = icmp ne ptr %.59, null
+  br i1 %.60, label %if.true.0.1.if, label %if.true.0.1.endif
 
 if.true.0.1.if:                                   ; preds = %if.true.0.1
-  %.56 = icmp eq ptr %.53, null
-  br i1 %.56, label %rc_release_continue, label %rc_release
+  %.62 = icmp eq ptr %.59, null
+  br i1 %.62, label %rc_release_continue, label %rc_release
 
 if.true.0.1.endif:                                ; preds = %rc_release_continue, %if.true.0.1
-  store ptr %.38, ptr %req, align 8
-  %.78 = load ptr, ptr %req_ptr, align 8
-  %.79 = call i32 @meteor_request_get_method(ptr %.78)
-  store i32 %.79, ptr %m_int, align 4
+  store ptr %.44, ptr %req, align 8
+  %.71 = load ptr, ptr %req_ptr, align 8
+  %.72 = call i32 @meteor_request_get_method(ptr %.71)
+  store i32 %.72, ptr %m_int, align 4
   br label %if.start.2
 
 rc_release:                                       ; preds = %if.true.0.1.if
-  %.58 = bitcast ptr %.53 to ptr
-  %.59 = getelementptr i8, ptr %.58, i64 -16
-  %.60 = bitcast ptr %.59 to ptr
-  %.61 = getelementptr %meteor.header, ptr %.60, i64 0, i32 0
-  %.62 = load i32, ptr %.61, align 4
-  %.63 = icmp eq i32 %.62, 1
-  br i1 %.63, label %rc_destroy, label %rc_release_only
+  %.64 = bitcast ptr %.59 to ptr
+  %.65 = getelementptr i8, ptr %.64, i64 -16
+  %.66 = bitcast ptr %.65 to ptr
+  call void @meteor_release(ptr %.66)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %if.true.0.1.if
+rc_release_continue:                              ; preds = %rc_release, %if.true.0.1.if
   br label %if.true.0.1.endif
 
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Request__(ptr %.53)
-  %.66 = bitcast ptr %.53 to ptr
-  %.67 = getelementptr i8, ptr %.66, i64 -16
-  %.68 = bitcast ptr %.67 to ptr
-  call void @meteor_release(ptr %.68)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.71 = bitcast ptr %.53 to ptr
-  %.72 = getelementptr i8, ptr %.71, i64 -16
-  %.73 = bitcast ptr %.72 to ptr
-  call void @meteor_release(ptr %.73)
-  br label %rc_release_continue
-
 if.start.2:                                       ; preds = %if.true.0.1.endif
-  %.82 = load i32, ptr %m_int, align 4
-  %.83 = sext i32 %.82 to i64
-  %cmptmp = icmp eq i64 %.83, 0
+  %.75 = load i32, ptr %m_int, align 4
+  %.76 = sext i32 %.75 to i64
+  %cmptmp = icmp eq i64 %.76, 0
   br i1 %cmptmp, label %if.true.0.2, label %if.false.0
 
 if.end.2:                                         ; preds = %frozen.continue.3, %frozen.continue.2, %if.false.2, %frozen.continue.1, %frozen.continue
-  %.174 = load ptr, ptr %req_ptr, align 8
-  %.175 = call ptr @meteor_request_get_path(ptr %.174)
-  %.176 = load ptr, ptr %req, align 8
-  %.177 = getelementptr inbounds %Request, ptr %.176, i32 0, i32 1
-  %.178 = load ptr, ptr %req_ptr, align 8
-  %.179 = call ptr @meteor_request_get_path(ptr %.178)
-  %.180 = call i64 @strlen(ptr %.179)
-  %.181 = call ptr @malloc(i64 40)
-  %.182 = bitcast ptr %.181 to ptr
-  call void @i64.array.init(ptr %.182)
-  %.184 = alloca i64, align 8
-  store i64 0, ptr %.184, align 4
+  %.167 = load ptr, ptr %req_ptr, align 8
+  %.168 = call ptr @meteor_request_get_path(ptr %.167)
+  %.169 = load ptr, ptr %req, align 8
+  %.170 = getelementptr inbounds %Request, ptr %.169, i32 0, i32 1
+  %.171 = load ptr, ptr %req_ptr, align 8
+  %.172 = call ptr @meteor_request_get_path(ptr %.171)
+  %.173 = call i64 @strlen(ptr %.172)
+  %.174 = call ptr @malloc(i64 40)
+  %.175 = call ptr @memset(ptr %.174, i32 0, i64 40)
+  %.176 = bitcast ptr %.174 to ptr
+  call void @i64.array.init(ptr %.176)
+  call void @i64.array.init(ptr %.176)
+  %.179 = alloca i64, align 8
+  store i64 0, ptr %.179, align 4
   br label %cstr_conv_cond
 
 if.true.0.2:                                      ; preds = %if.start.2
-  %.85 = alloca %HttpMethod, align 8
-  %.86 = getelementptr inbounds %HttpMethod, ptr %.85, i32 0, i32 0
-  store i8 0, ptr %.86, align 1
-  %.88 = load ptr, ptr %req, align 8
-  %.89 = getelementptr inbounds %Request, ptr %.88, i32 0, i32 0
-  %.90 = alloca %HttpMethod, align 8
-  %.91 = getelementptr inbounds %HttpMethod, ptr %.90, i32 0, i32 0
-  store i8 0, ptr %.91, align 1
-  %.93 = bitcast ptr %.88 to ptr
-  %.94 = getelementptr i8, ptr %.93, i64 -16
-  %.95 = bitcast ptr %.94 to ptr
-  %.96 = getelementptr %meteor.header, ptr %.95, i64 0, i32 2
-  %.97 = load i8, ptr %.96, align 1
-  %.98 = and i8 %.97, 1
-  %.99 = icmp ne i8 %.98, 0
-  br i1 %.99, label %frozen.abort, label %frozen.continue
+  %.78 = alloca %HttpMethod, align 8
+  %.79 = getelementptr inbounds %HttpMethod, ptr %.78, i32 0, i32 0
+  store i8 0, ptr %.79, align 1
+  %.81 = load ptr, ptr %req, align 8
+  %.82 = getelementptr inbounds %Request, ptr %.81, i32 0, i32 0
+  %.83 = alloca %HttpMethod, align 8
+  %.84 = getelementptr inbounds %HttpMethod, ptr %.83, i32 0, i32 0
+  store i8 0, ptr %.84, align 1
+  %.86 = bitcast ptr %.81 to ptr
+  %.87 = getelementptr i8, ptr %.86, i64 -16
+  %.88 = bitcast ptr %.87 to ptr
+  %.89 = getelementptr %meteor.header, ptr %.88, i64 0, i32 2
+  %.90 = load i8, ptr %.89, align 1
+  %.91 = and i8 %.90, 1
+  %.92 = icmp ne i8 %.91, 0
+  br i1 %.92, label %frozen.abort, label %frozen.continue
 
 if.false.0:                                       ; preds = %if.start.2
-  %.105 = load i32, ptr %m_int, align 4
-  %.106 = sext i32 %.105 to i64
-  %cmptmp.1 = icmp eq i64 %.106, 1
+  %.98 = load i32, ptr %m_int, align 4
+  %.99 = sext i32 %.98 to i64
+  %cmptmp.1 = icmp eq i64 %.99, 1
   br i1 %cmptmp.1, label %if.true.1, label %if.false.1
 
 frozen.abort:                                     ; preds = %if.true.0.2
@@ -19687,31 +19893,31 @@ frozen.abort:                                     ; preds = %if.true.0.2
   unreachable
 
 frozen.continue:                                  ; preds = %if.true.0.2
-  store ptr %.90, ptr %.89, align 8
+  store ptr %.83, ptr %.82, align 8
   br label %if.end.2
 
 if.true.1:                                        ; preds = %if.false.0
-  %.108 = alloca %HttpMethod, align 8
-  %.109 = getelementptr inbounds %HttpMethod, ptr %.108, i32 0, i32 0
-  store i8 1, ptr %.109, align 1
-  %.111 = load ptr, ptr %req, align 8
-  %.112 = getelementptr inbounds %Request, ptr %.111, i32 0, i32 0
-  %.113 = alloca %HttpMethod, align 8
-  %.114 = getelementptr inbounds %HttpMethod, ptr %.113, i32 0, i32 0
-  store i8 1, ptr %.114, align 1
-  %.116 = bitcast ptr %.111 to ptr
-  %.117 = getelementptr i8, ptr %.116, i64 -16
-  %.118 = bitcast ptr %.117 to ptr
-  %.119 = getelementptr %meteor.header, ptr %.118, i64 0, i32 2
-  %.120 = load i8, ptr %.119, align 1
-  %.121 = and i8 %.120, 1
-  %.122 = icmp ne i8 %.121, 0
-  br i1 %.122, label %frozen.abort.1, label %frozen.continue.1
+  %.101 = alloca %HttpMethod, align 8
+  %.102 = getelementptr inbounds %HttpMethod, ptr %.101, i32 0, i32 0
+  store i8 1, ptr %.102, align 1
+  %.104 = load ptr, ptr %req, align 8
+  %.105 = getelementptr inbounds %Request, ptr %.104, i32 0, i32 0
+  %.106 = alloca %HttpMethod, align 8
+  %.107 = getelementptr inbounds %HttpMethod, ptr %.106, i32 0, i32 0
+  store i8 1, ptr %.107, align 1
+  %.109 = bitcast ptr %.104 to ptr
+  %.110 = getelementptr i8, ptr %.109, i64 -16
+  %.111 = bitcast ptr %.110 to ptr
+  %.112 = getelementptr %meteor.header, ptr %.111, i64 0, i32 2
+  %.113 = load i8, ptr %.112, align 1
+  %.114 = and i8 %.113, 1
+  %.115 = icmp ne i8 %.114, 0
+  br i1 %.115, label %frozen.abort.1, label %frozen.continue.1
 
 if.false.1:                                       ; preds = %if.false.0
-  %.128 = load i32, ptr %m_int, align 4
-  %.129 = sext i32 %.128 to i64
-  %cmptmp.2 = icmp eq i64 %.129, 2
+  %.121 = load i32, ptr %m_int, align 4
+  %.122 = sext i32 %.121 to i64
+  %cmptmp.2 = icmp eq i64 %.122, 2
   br i1 %cmptmp.2, label %if.true.2, label %if.false.2
 
 frozen.abort.1:                                   ; preds = %if.true.1
@@ -19719,31 +19925,31 @@ frozen.abort.1:                                   ; preds = %if.true.1
   unreachable
 
 frozen.continue.1:                                ; preds = %if.true.1
-  store ptr %.113, ptr %.112, align 8
+  store ptr %.106, ptr %.105, align 8
   br label %if.end.2
 
 if.true.2:                                        ; preds = %if.false.1
-  %.131 = alloca %HttpMethod, align 8
-  %.132 = getelementptr inbounds %HttpMethod, ptr %.131, i32 0, i32 0
-  store i8 2, ptr %.132, align 1
-  %.134 = load ptr, ptr %req, align 8
-  %.135 = getelementptr inbounds %Request, ptr %.134, i32 0, i32 0
-  %.136 = alloca %HttpMethod, align 8
-  %.137 = getelementptr inbounds %HttpMethod, ptr %.136, i32 0, i32 0
-  store i8 2, ptr %.137, align 1
-  %.139 = bitcast ptr %.134 to ptr
-  %.140 = getelementptr i8, ptr %.139, i64 -16
-  %.141 = bitcast ptr %.140 to ptr
-  %.142 = getelementptr %meteor.header, ptr %.141, i64 0, i32 2
-  %.143 = load i8, ptr %.142, align 1
-  %.144 = and i8 %.143, 1
-  %.145 = icmp ne i8 %.144, 0
-  br i1 %.145, label %frozen.abort.2, label %frozen.continue.2
+  %.124 = alloca %HttpMethod, align 8
+  %.125 = getelementptr inbounds %HttpMethod, ptr %.124, i32 0, i32 0
+  store i8 2, ptr %.125, align 1
+  %.127 = load ptr, ptr %req, align 8
+  %.128 = getelementptr inbounds %Request, ptr %.127, i32 0, i32 0
+  %.129 = alloca %HttpMethod, align 8
+  %.130 = getelementptr inbounds %HttpMethod, ptr %.129, i32 0, i32 0
+  store i8 2, ptr %.130, align 1
+  %.132 = bitcast ptr %.127 to ptr
+  %.133 = getelementptr i8, ptr %.132, i64 -16
+  %.134 = bitcast ptr %.133 to ptr
+  %.135 = getelementptr %meteor.header, ptr %.134, i64 0, i32 2
+  %.136 = load i8, ptr %.135, align 1
+  %.137 = and i8 %.136, 1
+  %.138 = icmp ne i8 %.137, 0
+  br i1 %.138, label %frozen.abort.2, label %frozen.continue.2
 
 if.false.2:                                       ; preds = %if.false.1
-  %.151 = load i32, ptr %m_int, align 4
-  %.152 = sext i32 %.151 to i64
-  %cmptmp.3 = icmp eq i64 %.152, 3
+  %.144 = load i32, ptr %m_int, align 4
+  %.145 = sext i32 %.144 to i64
+  %cmptmp.3 = icmp eq i64 %.145, 3
   br i1 %cmptmp.3, label %if.true.3, label %if.end.2
 
 frozen.abort.2:                                   ; preds = %if.true.2
@@ -19751,295 +19957,311 @@ frozen.abort.2:                                   ; preds = %if.true.2
   unreachable
 
 frozen.continue.2:                                ; preds = %if.true.2
-  store ptr %.136, ptr %.135, align 8
+  store ptr %.129, ptr %.128, align 8
   br label %if.end.2
 
 if.true.3:                                        ; preds = %if.false.2
-  %.154 = alloca %HttpMethod, align 8
-  %.155 = getelementptr inbounds %HttpMethod, ptr %.154, i32 0, i32 0
-  store i8 3, ptr %.155, align 1
-  %.157 = load ptr, ptr %req, align 8
-  %.158 = getelementptr inbounds %Request, ptr %.157, i32 0, i32 0
-  %.159 = alloca %HttpMethod, align 8
-  %.160 = getelementptr inbounds %HttpMethod, ptr %.159, i32 0, i32 0
-  store i8 3, ptr %.160, align 1
-  %.162 = bitcast ptr %.157 to ptr
-  %.163 = getelementptr i8, ptr %.162, i64 -16
-  %.164 = bitcast ptr %.163 to ptr
-  %.165 = getelementptr %meteor.header, ptr %.164, i64 0, i32 2
-  %.166 = load i8, ptr %.165, align 1
-  %.167 = and i8 %.166, 1
-  %.168 = icmp ne i8 %.167, 0
-  br i1 %.168, label %frozen.abort.3, label %frozen.continue.3
+  %.147 = alloca %HttpMethod, align 8
+  %.148 = getelementptr inbounds %HttpMethod, ptr %.147, i32 0, i32 0
+  store i8 3, ptr %.148, align 1
+  %.150 = load ptr, ptr %req, align 8
+  %.151 = getelementptr inbounds %Request, ptr %.150, i32 0, i32 0
+  %.152 = alloca %HttpMethod, align 8
+  %.153 = getelementptr inbounds %HttpMethod, ptr %.152, i32 0, i32 0
+  store i8 3, ptr %.153, align 1
+  %.155 = bitcast ptr %.150 to ptr
+  %.156 = getelementptr i8, ptr %.155, i64 -16
+  %.157 = bitcast ptr %.156 to ptr
+  %.158 = getelementptr %meteor.header, ptr %.157, i64 0, i32 2
+  %.159 = load i8, ptr %.158, align 1
+  %.160 = and i8 %.159, 1
+  %.161 = icmp ne i8 %.160, 0
+  br i1 %.161, label %frozen.abort.3, label %frozen.continue.3
 
 frozen.abort.3:                                   ; preds = %if.true.3
   call void @abort()
   unreachable
 
 frozen.continue.3:                                ; preds = %if.true.3
-  store ptr %.159, ptr %.158, align 8
+  store ptr %.152, ptr %.151, align 8
   br label %if.end.2
 
 cstr_conv_cond:                                   ; preds = %cstr_conv_body, %if.end.2
-  %.187 = load i64, ptr %.184, align 4
-  %.188 = icmp slt i64 %.187, %.180
-  br i1 %.188, label %cstr_conv_body, label %cstr_conv_end
+  %.182 = load i64, ptr %.179, align 4
+  %.183 = icmp slt i64 %.182, %.173
+  br i1 %.183, label %cstr_conv_body, label %cstr_conv_end
 
 cstr_conv_body:                                   ; preds = %cstr_conv_cond
-  %.190 = load i64, ptr %.184, align 4
-  %.191 = getelementptr i8, ptr %.179, i64 %.190
-  %.192 = load i8, ptr %.191, align 1
-  %.193 = zext i8 %.192 to i64
-  call void @i64.array.append(ptr %.182, i64 %.193)
-  %.195 = add i64 %.190, 1
-  store i64 %.195, ptr %.184, align 4
+  %.185 = load i64, ptr %.179, align 4
+  %.186 = getelementptr i8, ptr %.172, i64 %.185
+  %.187 = load i8, ptr %.186, align 1
+  %.188 = zext i8 %.187 to i64
+  call void @i64.array.append(ptr %.176, i64 %.188)
+  %.190 = add i64 %.185, 1
+  store i64 %.190, ptr %.179, align 4
   br label %cstr_conv_cond
 
 cstr_conv_end:                                    ; preds = %cstr_conv_cond
-  %.198 = bitcast ptr %.176 to ptr
-  %.199 = getelementptr i8, ptr %.198, i64 -16
-  %.200 = bitcast ptr %.199 to ptr
-  %.201 = getelementptr %meteor.header, ptr %.200, i64 0, i32 2
-  %.202 = load i8, ptr %.201, align 1
-  %.203 = and i8 %.202, 1
-  %.204 = icmp ne i8 %.203, 0
-  br i1 %.204, label %frozen.abort.4, label %frozen.continue.4
+  %.193 = bitcast ptr %.169 to ptr
+  %.194 = getelementptr i8, ptr %.193, i64 -16
+  %.195 = bitcast ptr %.194 to ptr
+  %.196 = getelementptr %meteor.header, ptr %.195, i64 0, i32 2
+  %.197 = load i8, ptr %.196, align 1
+  %.198 = and i8 %.197, 1
+  %.199 = icmp ne i8 %.198, 0
+  br i1 %.199, label %frozen.abort.4, label %frozen.continue.4
 
 frozen.abort.4:                                   ; preds = %cstr_conv_end
   call void @abort()
   unreachable
 
 frozen.continue.4:                                ; preds = %cstr_conv_end
-  %.208 = load ptr, ptr %.177, align 8
-  %.209 = icmp ne ptr %.208, null
-  br i1 %.209, label %frozen.continue.4.if, label %frozen.continue.4.endif
+  %.203 = load ptr, ptr %.170, align 8
+  %.204 = icmp ne ptr %.203, null
+  br i1 %.204, label %frozen.continue.4.if, label %frozen.continue.4.endif
 
 frozen.continue.4.if:                             ; preds = %frozen.continue.4
-  %.211 = icmp eq ptr %.208, null
-  br i1 %.211, label %rc_release_continue.1, label %rc_release.1
+  %.206 = icmp eq ptr %.203, null
+  br i1 %.206, label %rc_release_continue.1, label %rc_release.1
 
 frozen.continue.4.endif:                          ; preds = %rc_release_continue.1, %frozen.continue.4
-  %.217 = bitcast ptr %.182 to ptr
-  call void @meteor_retain(ptr %.217)
-  store ptr %.182, ptr %.177, align 8
-  %.220 = icmp eq ptr %.182, null
-  br i1 %.220, label %rc_release_continue.2, label %rc_release.2
+  %.212 = bitcast ptr %.176 to ptr
+  call void @meteor_retain(ptr %.212)
+  store ptr %.176, ptr %.170, align 8
+  %.215 = icmp eq ptr %.176, null
+  br i1 %.215, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.1:                                     ; preds = %frozen.continue.4.if
-  %.213 = bitcast ptr %.208 to ptr
-  call void @meteor_release(ptr %.213)
+  %.208 = bitcast ptr %.203 to ptr
+  call void @meteor_release(ptr %.208)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %frozen.continue.4.if
   br label %frozen.continue.4.endif
 
 rc_release.2:                                     ; preds = %frozen.continue.4.endif
-  %.222 = bitcast ptr %.182 to ptr
-  call void @meteor_release(ptr %.222)
+  %.217 = bitcast ptr %.176 to ptr
+  call void @meteor_release(ptr %.217)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %frozen.continue.4.endif
-  %.225 = load ptr, ptr %req_ptr, align 8
-  %.226 = call ptr @meteor_request_get_query(ptr %.225)
-  %.227 = load ptr, ptr %req, align 8
-  %.228 = getelementptr inbounds %Request, ptr %.227, i32 0, i32 2
-  %.229 = load ptr, ptr %req_ptr, align 8
-  %.230 = call ptr @meteor_request_get_query(ptr %.229)
-  %.231 = call i64 @strlen(ptr %.230)
-  %.232 = call ptr @malloc(i64 40)
-  %.233 = bitcast ptr %.232 to ptr
-  call void @i64.array.init(ptr %.233)
-  %.235 = alloca i64, align 8
-  store i64 0, ptr %.235, align 4
+  %.220 = load ptr, ptr %req_ptr, align 8
+  %.221 = call ptr @meteor_request_get_query(ptr %.220)
+  %.222 = load ptr, ptr %req, align 8
+  %.223 = getelementptr inbounds %Request, ptr %.222, i32 0, i32 2
+  %.224 = load ptr, ptr %req_ptr, align 8
+  %.225 = call ptr @meteor_request_get_query(ptr %.224)
+  %.226 = call i64 @strlen(ptr %.225)
+  %.227 = call ptr @malloc(i64 40)
+  %.228 = call ptr @memset(ptr %.227, i32 0, i64 40)
+  %.229 = bitcast ptr %.227 to ptr
+  call void @i64.array.init(ptr %.229)
+  call void @i64.array.init(ptr %.229)
+  %.232 = alloca i64, align 8
+  store i64 0, ptr %.232, align 4
   br label %cstr_conv_cond.1
 
 cstr_conv_cond.1:                                 ; preds = %cstr_conv_body.1, %rc_release_continue.2
-  %.238 = load i64, ptr %.235, align 4
-  %.239 = icmp slt i64 %.238, %.231
-  br i1 %.239, label %cstr_conv_body.1, label %cstr_conv_end.1
+  %.235 = load i64, ptr %.232, align 4
+  %.236 = icmp slt i64 %.235, %.226
+  br i1 %.236, label %cstr_conv_body.1, label %cstr_conv_end.1
 
 cstr_conv_body.1:                                 ; preds = %cstr_conv_cond.1
-  %.241 = load i64, ptr %.235, align 4
-  %.242 = getelementptr i8, ptr %.230, i64 %.241
-  %.243 = load i8, ptr %.242, align 1
-  %.244 = zext i8 %.243 to i64
-  call void @i64.array.append(ptr %.233, i64 %.244)
-  %.246 = add i64 %.241, 1
-  store i64 %.246, ptr %.235, align 4
+  %.238 = load i64, ptr %.232, align 4
+  %.239 = getelementptr i8, ptr %.225, i64 %.238
+  %.240 = load i8, ptr %.239, align 1
+  %.241 = zext i8 %.240 to i64
+  call void @i64.array.append(ptr %.229, i64 %.241)
+  %.243 = add i64 %.238, 1
+  store i64 %.243, ptr %.232, align 4
   br label %cstr_conv_cond.1
 
 cstr_conv_end.1:                                  ; preds = %cstr_conv_cond.1
-  %.249 = bitcast ptr %.227 to ptr
-  %.250 = getelementptr i8, ptr %.249, i64 -16
-  %.251 = bitcast ptr %.250 to ptr
-  %.252 = getelementptr %meteor.header, ptr %.251, i64 0, i32 2
-  %.253 = load i8, ptr %.252, align 1
-  %.254 = and i8 %.253, 1
-  %.255 = icmp ne i8 %.254, 0
-  br i1 %.255, label %frozen.abort.5, label %frozen.continue.5
+  %.246 = bitcast ptr %.222 to ptr
+  %.247 = getelementptr i8, ptr %.246, i64 -16
+  %.248 = bitcast ptr %.247 to ptr
+  %.249 = getelementptr %meteor.header, ptr %.248, i64 0, i32 2
+  %.250 = load i8, ptr %.249, align 1
+  %.251 = and i8 %.250, 1
+  %.252 = icmp ne i8 %.251, 0
+  br i1 %.252, label %frozen.abort.5, label %frozen.continue.5
 
 frozen.abort.5:                                   ; preds = %cstr_conv_end.1
   call void @abort()
   unreachable
 
 frozen.continue.5:                                ; preds = %cstr_conv_end.1
-  %.259 = load ptr, ptr %.228, align 8
-  %.260 = icmp ne ptr %.259, null
-  br i1 %.260, label %frozen.continue.5.if, label %frozen.continue.5.endif
+  %.256 = load ptr, ptr %.223, align 8
+  %.257 = icmp ne ptr %.256, null
+  br i1 %.257, label %frozen.continue.5.if, label %frozen.continue.5.endif
 
 frozen.continue.5.if:                             ; preds = %frozen.continue.5
-  %.262 = icmp eq ptr %.259, null
-  br i1 %.262, label %rc_release_continue.3, label %rc_release.3
+  %.259 = icmp eq ptr %.256, null
+  br i1 %.259, label %rc_release_continue.3, label %rc_release.3
 
 frozen.continue.5.endif:                          ; preds = %rc_release_continue.3, %frozen.continue.5
-  %.268 = bitcast ptr %.233 to ptr
-  call void @meteor_retain(ptr %.268)
-  store ptr %.233, ptr %.228, align 8
-  %.271 = icmp eq ptr %.233, null
-  br i1 %.271, label %rc_release_continue.4, label %rc_release.4
+  %.265 = bitcast ptr %.229 to ptr
+  call void @meteor_retain(ptr %.265)
+  store ptr %.229, ptr %.223, align 8
+  %.268 = icmp eq ptr %.229, null
+  br i1 %.268, label %rc_release_continue.4, label %rc_release.4
 
 rc_release.3:                                     ; preds = %frozen.continue.5.if
-  %.264 = bitcast ptr %.259 to ptr
-  call void @meteor_release(ptr %.264)
+  %.261 = bitcast ptr %.256 to ptr
+  call void @meteor_release(ptr %.261)
   br label %rc_release_continue.3
 
 rc_release_continue.3:                            ; preds = %rc_release.3, %frozen.continue.5.if
   br label %frozen.continue.5.endif
 
 rc_release.4:                                     ; preds = %frozen.continue.5.endif
-  %.273 = bitcast ptr %.233 to ptr
-  call void @meteor_release(ptr %.273)
+  %.270 = bitcast ptr %.229 to ptr
+  call void @meteor_release(ptr %.270)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %frozen.continue.5.endif
-  %.276 = load ptr, ptr %req_ptr, align 8
-  %.277 = call ptr @meteor_request_get_body(ptr %.276)
-  %.278 = load ptr, ptr %req, align 8
-  %.279 = getelementptr inbounds %Request, ptr %.278, i32 0, i32 3
-  %.280 = load ptr, ptr %req_ptr, align 8
-  %.281 = call ptr @meteor_request_get_body(ptr %.280)
-  %.282 = call i64 @strlen(ptr %.281)
-  %.283 = call ptr @malloc(i64 40)
-  %.284 = bitcast ptr %.283 to ptr
-  call void @i64.array.init(ptr %.284)
-  %.286 = alloca i64, align 8
-  store i64 0, ptr %.286, align 4
+  %.273 = load ptr, ptr %req_ptr, align 8
+  %.274 = call ptr @meteor_request_get_body(ptr %.273)
+  %.275 = load ptr, ptr %req, align 8
+  %.276 = getelementptr inbounds %Request, ptr %.275, i32 0, i32 3
+  %.277 = load ptr, ptr %req_ptr, align 8
+  %.278 = call ptr @meteor_request_get_body(ptr %.277)
+  %.279 = call i64 @strlen(ptr %.278)
+  %.280 = call ptr @malloc(i64 40)
+  %.281 = call ptr @memset(ptr %.280, i32 0, i64 40)
+  %.282 = bitcast ptr %.280 to ptr
+  call void @i64.array.init(ptr %.282)
+  call void @i64.array.init(ptr %.282)
+  %.285 = alloca i64, align 8
+  store i64 0, ptr %.285, align 4
   br label %cstr_conv_cond.2
 
 cstr_conv_cond.2:                                 ; preds = %cstr_conv_body.2, %rc_release_continue.4
-  %.289 = load i64, ptr %.286, align 4
-  %.290 = icmp slt i64 %.289, %.282
-  br i1 %.290, label %cstr_conv_body.2, label %cstr_conv_end.2
+  %.288 = load i64, ptr %.285, align 4
+  %.289 = icmp slt i64 %.288, %.279
+  br i1 %.289, label %cstr_conv_body.2, label %cstr_conv_end.2
 
 cstr_conv_body.2:                                 ; preds = %cstr_conv_cond.2
-  %.292 = load i64, ptr %.286, align 4
-  %.293 = getelementptr i8, ptr %.281, i64 %.292
-  %.294 = load i8, ptr %.293, align 1
-  %.295 = zext i8 %.294 to i64
-  call void @i64.array.append(ptr %.284, i64 %.295)
-  %.297 = add i64 %.292, 1
-  store i64 %.297, ptr %.286, align 4
+  %.291 = load i64, ptr %.285, align 4
+  %.292 = getelementptr i8, ptr %.278, i64 %.291
+  %.293 = load i8, ptr %.292, align 1
+  %.294 = zext i8 %.293 to i64
+  call void @i64.array.append(ptr %.282, i64 %.294)
+  %.296 = add i64 %.291, 1
+  store i64 %.296, ptr %.285, align 4
   br label %cstr_conv_cond.2
 
 cstr_conv_end.2:                                  ; preds = %cstr_conv_cond.2
-  %.300 = bitcast ptr %.278 to ptr
-  %.301 = getelementptr i8, ptr %.300, i64 -16
-  %.302 = bitcast ptr %.301 to ptr
-  %.303 = getelementptr %meteor.header, ptr %.302, i64 0, i32 2
-  %.304 = load i8, ptr %.303, align 1
-  %.305 = and i8 %.304, 1
-  %.306 = icmp ne i8 %.305, 0
-  br i1 %.306, label %frozen.abort.6, label %frozen.continue.6
+  %.299 = bitcast ptr %.275 to ptr
+  %.300 = getelementptr i8, ptr %.299, i64 -16
+  %.301 = bitcast ptr %.300 to ptr
+  %.302 = getelementptr %meteor.header, ptr %.301, i64 0, i32 2
+  %.303 = load i8, ptr %.302, align 1
+  %.304 = and i8 %.303, 1
+  %.305 = icmp ne i8 %.304, 0
+  br i1 %.305, label %frozen.abort.6, label %frozen.continue.6
 
 frozen.abort.6:                                   ; preds = %cstr_conv_end.2
   call void @abort()
   unreachable
 
 frozen.continue.6:                                ; preds = %cstr_conv_end.2
-  %.310 = load ptr, ptr %.279, align 8
-  %.311 = icmp ne ptr %.310, null
-  br i1 %.311, label %frozen.continue.6.if, label %frozen.continue.6.endif
+  %.309 = load ptr, ptr %.276, align 8
+  %.310 = icmp ne ptr %.309, null
+  br i1 %.310, label %frozen.continue.6.if, label %frozen.continue.6.endif
 
 frozen.continue.6.if:                             ; preds = %frozen.continue.6
-  %.313 = icmp eq ptr %.310, null
-  br i1 %.313, label %rc_release_continue.5, label %rc_release.5
+  %.312 = icmp eq ptr %.309, null
+  br i1 %.312, label %rc_release_continue.5, label %rc_release.5
 
 frozen.continue.6.endif:                          ; preds = %rc_release_continue.5, %frozen.continue.6
-  %.319 = bitcast ptr %.284 to ptr
-  call void @meteor_retain(ptr %.319)
-  store ptr %.284, ptr %.279, align 8
-  %.322 = icmp eq ptr %.284, null
-  br i1 %.322, label %rc_release_continue.6, label %rc_release.6
+  %.318 = bitcast ptr %.282 to ptr
+  call void @meteor_retain(ptr %.318)
+  store ptr %.282, ptr %.276, align 8
+  %.321 = icmp eq ptr %.282, null
+  br i1 %.321, label %rc_release_continue.6, label %rc_release.6
 
 rc_release.5:                                     ; preds = %frozen.continue.6.if
-  %.315 = bitcast ptr %.310 to ptr
-  call void @meteor_release(ptr %.315)
+  %.314 = bitcast ptr %.309 to ptr
+  call void @meteor_release(ptr %.314)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %frozen.continue.6.if
   br label %frozen.continue.6.endif
 
 rc_release.6:                                     ; preds = %frozen.continue.6.endif
-  %.324 = bitcast ptr %.284 to ptr
-  call void @meteor_release(ptr %.324)
+  %.323 = bitcast ptr %.282 to ptr
+  call void @meteor_release(ptr %.323)
   br label %rc_release_continue.6
 
 rc_release_continue.6:                            ; preds = %rc_release.6, %frozen.continue.6.endif
-  %.327 = load ptr, ptr %req_ptr, align 8
-  %.328 = call i32 @meteor_request_get_header_count(ptr %.327)
-  store i32 %.328, ptr %count, align 4
+  %.326 = load ptr, ptr %req_ptr, align 8
+  %.327 = call i32 @meteor_request_get_header_count(ptr %.326)
+  store i32 %.327, ptr %count, align 4
   store i64 0, ptr %i, align 4
   br label %while.cond.1
 
 while.cond.1:                                     ; preds = %rc_release_continue.7, %rc_release_continue.6
-  %.332 = load i64, ptr %i, align 4
-  %.333 = load i32, ptr %count, align 4
-  %.334 = sext i32 %.333 to i64
-  %cmptmp.4 = icmp slt i64 %.332, %.334
+  %.331 = load i64, ptr %i, align 4
+  %.332 = load i32, ptr %count, align 4
+  %.333 = sext i32 %.332 to i64
+  %cmptmp.4 = icmp slt i64 %.331, %.333
   br i1 %cmptmp.4, label %while.body.1, label %while.end.1
 
 while.body.1:                                     ; preds = %while.cond.1
-  %.336 = load ptr, ptr %req_ptr, align 8
-  %.337 = load i64, ptr %i, align 4
-  %.338 = trunc i64 %.337 to i32
-  %.339 = call ptr @meteor_request_get_header_name_at(ptr %.336, i32 %.338)
-  store ptr %.339, ptr %name, align 8
-  %.341 = load ptr, ptr %req_ptr, align 8
-  %.342 = load i64, ptr %i, align 4
-  %.343 = trunc i64 %.342 to i32
-  %.344 = call ptr @meteor_request_get_header_value_at(ptr %.341, i32 %.343)
-  store ptr %.344, ptr %val, align 8
-  %.346 = load ptr, ptr %req, align 8
-  %.347 = load %Request, ptr %.346, align 8
-  %.348 = extractvalue %Request %.347, 4
-  %.349 = call ptr @malloc(i64 32)
-  %.350 = bitcast ptr %.349 to ptr
-  %.351 = getelementptr %meteor.header, ptr %.350, i64 0, i32 0
-  store i32 1, ptr %.351, align 4
-  %.353 = getelementptr %meteor.header, ptr %.350, i64 0, i32 1
-  store i32 0, ptr %.353, align 4
-  %.355 = getelementptr %meteor.header, ptr %.350, i64 0, i32 2
-  store i8 0, ptr %.355, align 1
-  %.357 = getelementptr %meteor.header, ptr %.350, i64 0, i32 3
-  store i8 10, ptr %.357, align 1
-  %.359 = getelementptr i8, ptr %.349, i64 16
-  %.360 = bitcast ptr %.359 to ptr
-  %.361 = getelementptr inbounds %Header, ptr %.360, i32 0, i32 0
-  store ptr null, ptr %.361, align 8
-  %.363 = getelementptr inbounds %Header, ptr %.360, i32 0, i32 1
-  store ptr null, ptr %.363, align 8
-  %.365 = load ptr, ptr %name, align 8
-  %.366 = call i64 @strlen(ptr %.365)
-  %.367 = call ptr @malloc(i64 40)
-  %.368 = bitcast ptr %.367 to ptr
-  call void @i64.array.init(ptr %.368)
-  %.370 = alloca i64, align 8
-  store i64 0, ptr %.370, align 4
+  %.335 = load ptr, ptr %req_ptr, align 8
+  %.336 = load i64, ptr %i, align 4
+  %.337 = trunc i64 %.336 to i32
+  %.338 = call ptr @meteor_request_get_header_name_at(ptr %.335, i32 %.337)
+  store ptr %.338, ptr %name, align 8
+  %.340 = load ptr, ptr %req_ptr, align 8
+  %.341 = load i64, ptr %i, align 4
+  %.342 = trunc i64 %.341 to i32
+  %.343 = call ptr @meteor_request_get_header_value_at(ptr %.340, i32 %.342)
+  store ptr %.343, ptr %val, align 8
+  %.345 = load ptr, ptr %req, align 8
+  %.346 = load %Request, ptr %.345, align 8
+  %.347 = extractvalue %Request %.346, 4
+  %.348 = getelementptr %Header, ptr null, i64 1
+  %.349 = ptrtoint ptr %.348 to i64
+  %.350 = add i64 16, %.349
+  %.351 = call ptr @malloc(i64 %.350)
+  %.352 = call ptr @memset(ptr %.351, i32 0, i64 %.350)
+  %.353 = bitcast ptr %.351 to ptr
+  %.354 = getelementptr %meteor.header, ptr %.353, i64 0, i32 0
+  store i32 1, ptr %.354, align 4
+  %.356 = getelementptr %meteor.header, ptr %.353, i64 0, i32 1
+  store i32 0, ptr %.356, align 4
+  %.358 = getelementptr %meteor.header, ptr %.353, i64 0, i32 2
+  store i8 0, ptr %.358, align 1
+  %.360 = getelementptr %meteor.header, ptr %.353, i64 0, i32 3
+  store i8 10, ptr %.360, align 1
+  %.362 = getelementptr %meteor.header, ptr %.353, i64 0, i32 5
+  store i32 1, ptr %.362, align 4
+  %.364 = getelementptr i8, ptr %.351, i64 16
+  %.365 = bitcast ptr %.364 to ptr
+  %.366 = getelementptr inbounds %Header, ptr %.365, i32 0, i32 0
+  store ptr null, ptr %.366, align 8
+  %.368 = getelementptr inbounds %Header, ptr %.365, i32 0, i32 1
+  store ptr null, ptr %.368, align 8
+  %.370 = load ptr, ptr %name, align 8
+  %.371 = call i64 @strlen(ptr %.370)
+  %.372 = call ptr @malloc(i64 40)
+  %.373 = call ptr @memset(ptr %.372, i32 0, i64 40)
+  %.374 = bitcast ptr %.372 to ptr
+  call void @i64.array.init(ptr %.374)
+  call void @i64.array.init(ptr %.374)
+  %.377 = alloca i64, align 8
+  store i64 0, ptr %.377, align 4
   br label %cstr_conv_cond.3
 
 while.end.1:                                      ; preds = %while.cond.1
-  %.428 = call ptr @malloc(i64 40)
-  %.429 = bitcast ptr %.428 to ptr
+  %.424 = getelementptr %Response, ptr null, i64 1
+  %.425 = ptrtoint ptr %.424 to i64
+  %.426 = add i64 16, %.425
+  %.427 = call ptr @malloc(i64 %.426)
+  %.428 = call ptr @memset(ptr %.427, i32 0, i64 %.426)
+  %.429 = bitcast ptr %.427 to ptr
   %.430 = getelementptr %meteor.header, ptr %.429, i64 0, i32 0
   store i32 1, ptr %.430, align 4
   %.432 = getelementptr %meteor.header, ptr %.429, i64 0, i32 1
@@ -20048,224 +20270,177 @@ while.end.1:                                      ; preds = %while.cond.1
   store i8 0, ptr %.434, align 1
   %.436 = getelementptr %meteor.header, ptr %.429, i64 0, i32 3
   store i8 10, ptr %.436, align 1
-  %.438 = getelementptr i8, ptr %.428, i64 16
-  %.439 = bitcast ptr %.438 to ptr
-  %.440 = getelementptr inbounds %Response, ptr %.439, i32 0, i32 0
-  store ptr null, ptr %.440, align 8
-  %.442 = getelementptr inbounds %Response, ptr %.439, i32 0, i32 1
+  %.438 = getelementptr %meteor.header, ptr %.429, i64 0, i32 5
+  store i32 3, ptr %.438, align 4
+  %.440 = getelementptr i8, ptr %.427, i64 16
+  %.441 = bitcast ptr %.440 to ptr
+  %.442 = getelementptr inbounds %Response, ptr %.441, i32 0, i32 0
   store ptr null, ptr %.442, align 8
-  %.444 = getelementptr inbounds %Response, ptr %.439, i32 0, i32 2
+  %.444 = getelementptr inbounds %Response, ptr %.441, i32 0, i32 1
   store ptr null, ptr %.444, align 8
-  call void @Response.new(ptr %.439)
-  %.448 = load ptr, ptr %res, align 8
-  %.449 = icmp ne ptr %.448, null
-  br i1 %.449, label %while.end.1.if, label %while.end.1.endif
+  %.446 = getelementptr inbounds %Response, ptr %.441, i32 0, i32 2
+  store ptr null, ptr %.446, align 8
+  call void @Response.new(ptr %.441)
+  %.450 = load ptr, ptr %res, align 8
+  %.451 = icmp ne ptr %.450, null
+  br i1 %.451, label %while.end.1.if, label %while.end.1.endif
 
 cstr_conv_cond.3:                                 ; preds = %cstr_conv_body.3, %while.body.1
-  %.373 = load i64, ptr %.370, align 4
-  %.374 = icmp slt i64 %.373, %.366
-  br i1 %.374, label %cstr_conv_body.3, label %cstr_conv_end.3
+  %.380 = load i64, ptr %.377, align 4
+  %.381 = icmp slt i64 %.380, %.371
+  br i1 %.381, label %cstr_conv_body.3, label %cstr_conv_end.3
 
 cstr_conv_body.3:                                 ; preds = %cstr_conv_cond.3
-  %.376 = load i64, ptr %.370, align 4
-  %.377 = getelementptr i8, ptr %.365, i64 %.376
-  %.378 = load i8, ptr %.377, align 1
-  %.379 = zext i8 %.378 to i64
-  call void @i64.array.append(ptr %.368, i64 %.379)
-  %.381 = add i64 %.376, 1
-  store i64 %.381, ptr %.370, align 4
+  %.383 = load i64, ptr %.377, align 4
+  %.384 = getelementptr i8, ptr %.370, i64 %.383
+  %.385 = load i8, ptr %.384, align 1
+  %.386 = zext i8 %.385 to i64
+  call void @i64.array.append(ptr %.374, i64 %.386)
+  %.388 = add i64 %.383, 1
+  store i64 %.388, ptr %.377, align 4
   br label %cstr_conv_cond.3
 
 cstr_conv_end.3:                                  ; preds = %cstr_conv_cond.3
-  %.384 = load ptr, ptr %val, align 8
-  %.385 = call i64 @strlen(ptr %.384)
-  %.386 = call ptr @malloc(i64 40)
-  %.387 = bitcast ptr %.386 to ptr
-  call void @i64.array.init(ptr %.387)
-  %.389 = alloca i64, align 8
-  store i64 0, ptr %.389, align 4
+  %.391 = load ptr, ptr %val, align 8
+  %.392 = call i64 @strlen(ptr %.391)
+  %.393 = call ptr @malloc(i64 40)
+  %.394 = call ptr @memset(ptr %.393, i32 0, i64 40)
+  %.395 = bitcast ptr %.393 to ptr
+  call void @i64.array.init(ptr %.395)
+  call void @i64.array.init(ptr %.395)
+  %.398 = alloca i64, align 8
+  store i64 0, ptr %.398, align 4
   br label %cstr_conv_cond.4
 
 cstr_conv_cond.4:                                 ; preds = %cstr_conv_body.4, %cstr_conv_end.3
-  %.392 = load i64, ptr %.389, align 4
-  %.393 = icmp slt i64 %.392, %.385
-  br i1 %.393, label %cstr_conv_body.4, label %cstr_conv_end.4
+  %.401 = load i64, ptr %.398, align 4
+  %.402 = icmp slt i64 %.401, %.392
+  br i1 %.402, label %cstr_conv_body.4, label %cstr_conv_end.4
 
 cstr_conv_body.4:                                 ; preds = %cstr_conv_cond.4
-  %.395 = load i64, ptr %.389, align 4
-  %.396 = getelementptr i8, ptr %.384, i64 %.395
-  %.397 = load i8, ptr %.396, align 1
-  %.398 = zext i8 %.397 to i64
-  call void @i64.array.append(ptr %.387, i64 %.398)
-  %.400 = add i64 %.395, 1
-  store i64 %.400, ptr %.389, align 4
+  %.404 = load i64, ptr %.398, align 4
+  %.405 = getelementptr i8, ptr %.391, i64 %.404
+  %.406 = load i8, ptr %.405, align 1
+  %.407 = zext i8 %.406 to i64
+  call void @i64.array.append(ptr %.395, i64 %.407)
+  %.409 = add i64 %.404, 1
+  store i64 %.409, ptr %.398, align 4
   br label %cstr_conv_cond.4
 
 cstr_conv_end.4:                                  ; preds = %cstr_conv_cond.4
-  call void @Header.new(ptr %.360, ptr %.368, ptr %.387)
-  call void @Header.array.append(ptr %.348, ptr %.360)
-  %.405 = icmp eq ptr %.360, null
-  br i1 %.405, label %rc_release_continue.7, label %rc_release.7
+  call void @Header.new(ptr %.365, ptr %.374, ptr %.395)
+  call void @Header.array.append(ptr %.347, ptr %.365)
+  %.414 = icmp eq ptr %.365, null
+  br i1 %.414, label %rc_release_continue.7, label %rc_release.7
 
 rc_release.7:                                     ; preds = %cstr_conv_end.4
-  %.407 = bitcast ptr %.360 to ptr
-  %.408 = getelementptr i8, ptr %.407, i64 -16
-  %.409 = bitcast ptr %.408 to ptr
-  %.410 = getelementptr %meteor.header, ptr %.409, i64 0, i32 0
-  %.411 = load i32, ptr %.410, align 4
-  %.412 = icmp eq i32 %.411, 1
-  br i1 %.412, label %rc_destroy.1, label %rc_release_only.1
+  %.416 = bitcast ptr %.365 to ptr
+  %.417 = getelementptr i8, ptr %.416, i64 -16
+  %.418 = bitcast ptr %.417 to ptr
+  call void @meteor_release(ptr %.418)
+  br label %rc_release_continue.7
 
-rc_release_continue.7:                            ; preds = %rc_release_only.1, %rc_destroy.1, %cstr_conv_end.4
-  %.425 = load i64, ptr %i, align 4
-  %addtmp = add i64 %.425, 1
+rc_release_continue.7:                            ; preds = %rc_release.7, %cstr_conv_end.4
+  %.421 = load i64, ptr %i, align 4
+  %addtmp = add i64 %.421, 1
   store i64 %addtmp, ptr %i, align 4
   br label %while.cond.1
 
-rc_destroy.1:                                     ; preds = %rc_release.7
-  call void @__destroy_Header__(ptr %.360)
-  %.415 = bitcast ptr %.360 to ptr
-  %.416 = getelementptr i8, ptr %.415, i64 -16
-  %.417 = bitcast ptr %.416 to ptr
-  call void @meteor_release(ptr %.417)
-  br label %rc_release_continue.7
-
-rc_release_only.1:                                ; preds = %rc_release.7
-  %.420 = bitcast ptr %.360 to ptr
-  %.421 = getelementptr i8, ptr %.420, i64 -16
-  %.422 = bitcast ptr %.421 to ptr
-  call void @meteor_release(ptr %.422)
-  br label %rc_release_continue.7
-
 while.end.1.if:                                   ; preds = %while.end.1
-  %.451 = icmp eq ptr %.448, null
-  br i1 %.451, label %rc_release_continue.8, label %rc_release.8
+  %.453 = icmp eq ptr %.450, null
+  br i1 %.453, label %rc_release_continue.8, label %rc_release.8
 
 while.end.1.endif:                                ; preds = %rc_release_continue.8, %while.end.1
-  store ptr %.439, ptr %res, align 8
+  store ptr %.441, ptr %res, align 8
   store i1 false, ptr %handled, align 1
   store i64 0, ptr %i, align 4
   br label %while.cond.2
 
 rc_release.8:                                     ; preds = %while.end.1.if
-  %.453 = bitcast ptr %.448 to ptr
-  %.454 = getelementptr i8, ptr %.453, i64 -16
-  %.455 = bitcast ptr %.454 to ptr
-  %.456 = getelementptr %meteor.header, ptr %.455, i64 0, i32 0
-  %.457 = load i32, ptr %.456, align 4
-  %.458 = icmp eq i32 %.457, 1
-  br i1 %.458, label %rc_destroy.2, label %rc_release_only.2
+  %.455 = bitcast ptr %.450 to ptr
+  %.456 = getelementptr i8, ptr %.455, i64 -16
+  %.457 = bitcast ptr %.456 to ptr
+  call void @meteor_release(ptr %.457)
+  br label %rc_release_continue.8
 
-rc_release_continue.8:                            ; preds = %rc_release_only.2, %rc_destroy.2, %while.end.1.if
+rc_release_continue.8:                            ; preds = %rc_release.8, %while.end.1.if
   br label %while.end.1.endif
 
-rc_destroy.2:                                     ; preds = %rc_release.8
-  call void @__destroy_Response__(ptr %.448)
-  %.461 = bitcast ptr %.448 to ptr
-  %.462 = getelementptr i8, ptr %.461, i64 -16
-  %.463 = bitcast ptr %.462 to ptr
-  call void @meteor_release(ptr %.463)
-  br label %rc_release_continue.8
-
-rc_release_only.2:                                ; preds = %rc_release.8
-  %.466 = bitcast ptr %.448 to ptr
-  %.467 = getelementptr i8, ptr %.466, i64 -16
-  %.468 = bitcast ptr %.467 to ptr
-  call void @meteor_release(ptr %.468)
-  br label %rc_release_continue.8
-
 while.cond.2:                                     ; preds = %if.end.3, %while.end.1.endif
-  %.476 = load i64, ptr %i, align 4
-  %.477 = load ptr, ptr %self.1, align 8
-  %.478 = load %Server, ptr %.477, align 8
-  %.479 = extractvalue %Server %.478, 3
-  %.480 = call i64 @Route.array.length(ptr %.479)
-  %cmptmp.5 = icmp slt i64 %.476, %.480
+  %.465 = load i64, ptr %i, align 4
+  %.466 = load ptr, ptr %self.1, align 8
+  %.467 = load %Server, ptr %.466, align 8
+  %.468 = extractvalue %Server %.467, 3
+  %.469 = call i64 @Route.array.length(ptr %.468)
+  %cmptmp.5 = icmp slt i64 %.465, %.469
   br i1 %cmptmp.5, label %while.body.2, label %while.end.2
 
 while.body.2:                                     ; preds = %while.cond.2
-  %.482 = load i64, ptr %i, align 4
-  %.483 = load ptr, ptr %self.1, align 8
-  %.484 = load %Server, ptr %.483, align 8
-  %.485 = extractvalue %Server %.484, 3
-  %.486 = call ptr @Route.array.get(ptr %.485, i64 %.482)
-  %.487 = bitcast ptr %.486 to ptr
-  %.488 = getelementptr i8, ptr %.487, i64 -16
-  %.489 = bitcast ptr %.488 to ptr
-  call void @meteor_retain(ptr %.489)
-  %.492 = load ptr, ptr %route, align 8
-  %.493 = icmp ne ptr %.492, null
-  br i1 %.493, label %while.body.2.if, label %while.body.2.endif
+  %.471 = load i64, ptr %i, align 4
+  %.472 = load ptr, ptr %self.1, align 8
+  %.473 = load %Server, ptr %.472, align 8
+  %.474 = extractvalue %Server %.473, 3
+  %.475 = call ptr @Route.array.get(ptr %.474, i64 %.471)
+  %.476 = bitcast ptr %.475 to ptr
+  %.477 = getelementptr i8, ptr %.476, i64 -16
+  %.478 = bitcast ptr %.477 to ptr
+  call void @meteor_retain(ptr %.478)
+  %.481 = load ptr, ptr %route, align 8
+  %.482 = icmp ne ptr %.481, null
+  br i1 %.482, label %while.body.2.if, label %while.body.2.endif
 
 while.end.2:                                      ; preds = %if.true.0.3, %while.cond.2
   br label %if.start.4
 
 while.body.2.if:                                  ; preds = %while.body.2
-  %.495 = icmp eq ptr %.492, null
-  br i1 %.495, label %rc_release_continue.9, label %rc_release.9
+  %.484 = icmp eq ptr %.481, null
+  br i1 %.484, label %rc_release_continue.9, label %rc_release.9
 
 while.body.2.endif:                               ; preds = %rc_release_continue.9, %while.body.2
-  store ptr %.486, ptr %route, align 8
+  store ptr %.475, ptr %route, align 8
   br label %if.start.3
 
 rc_release.9:                                     ; preds = %while.body.2.if
-  %.497 = bitcast ptr %.492 to ptr
-  %.498 = getelementptr i8, ptr %.497, i64 -16
-  %.499 = bitcast ptr %.498 to ptr
-  %.500 = getelementptr %meteor.header, ptr %.499, i64 0, i32 0
-  %.501 = load i32, ptr %.500, align 4
-  %.502 = icmp eq i32 %.501, 1
-  br i1 %.502, label %rc_destroy.3, label %rc_release_only.3
+  %.486 = bitcast ptr %.481 to ptr
+  %.487 = getelementptr i8, ptr %.486, i64 -16
+  %.488 = bitcast ptr %.487 to ptr
+  call void @meteor_release(ptr %.488)
+  br label %rc_release_continue.9
 
-rc_release_continue.9:                            ; preds = %rc_release_only.3, %rc_destroy.3, %while.body.2.if
+rc_release_continue.9:                            ; preds = %rc_release.9, %while.body.2.if
   br label %while.body.2.endif
 
-rc_destroy.3:                                     ; preds = %rc_release.9
-  call void @__destroy_Route__(ptr %.492)
-  %.505 = bitcast ptr %.492 to ptr
-  %.506 = getelementptr i8, ptr %.505, i64 -16
-  %.507 = bitcast ptr %.506 to ptr
-  call void @meteor_release(ptr %.507)
-  br label %rc_release_continue.9
-
-rc_release_only.3:                                ; preds = %rc_release.9
-  %.510 = bitcast ptr %.492 to ptr
-  %.511 = getelementptr i8, ptr %.510, i64 -16
-  %.512 = bitcast ptr %.511 to ptr
-  call void @meteor_release(ptr %.512)
-  br label %rc_release_continue.9
-
 if.start.3:                                       ; preds = %while.body.2.endif
-  %.518 = load ptr, ptr %route, align 8
-  %.519 = load %Route, ptr %.518, align 8
-  %.520 = extractvalue %Route %.519, 1
-  %.521 = load ptr, ptr %req, align 8
-  %.522 = load %Request, ptr %.521, align 8
-  %.523 = extractvalue %Request %.522, 1
-  %left_len = call i64 @i64.array.length(ptr %.520)
-  %right_len = call i64 @i64.array.length(ptr %.523)
+  %.494 = load ptr, ptr %route, align 8
+  %.495 = load %Route, ptr %.494, align 8
+  %.496 = extractvalue %Route %.495, 1
+  %.497 = load ptr, ptr %req, align 8
+  %.498 = load %Request, ptr %.497, align 8
+  %.499 = extractvalue %Request %.498, 1
+  %left_len = call i64 @i64.array.length(ptr %.496)
+  %right_len = call i64 @i64.array.length(ptr %.499)
   %str_eq_result = alloca i1, align 1
   br label %str_eq.len_check
 
 if.end.3:                                         ; preds = %str_eq.end
-  %.553 = load i64, ptr %i, align 4
-  %addtmp.1 = add i64 %.553, 1
+  %.529 = load i64, ptr %i, align 4
+  %addtmp.1 = add i64 %.529, 1
   store i64 %addtmp.1, ptr %i, align 4
   br label %while.cond.2
 
 if.true.0.3:                                      ; preds = %str_eq.end
-  %.545 = load ptr, ptr %route, align 8
-  %.546 = getelementptr %Route, ptr %.545, i32 0, i32 2
-  %.547 = load ptr, ptr %.546, align 8
-  %.548 = load ptr, ptr %req, align 8
-  %.549 = load ptr, ptr %res, align 8
-  %.550 = call ptr %.547(ptr %.548, ptr %.549)
+  %.521 = load ptr, ptr %route, align 8
+  %.522 = getelementptr %Route, ptr %.521, i32 0, i32 2
+  %.523 = load ptr, ptr %.522, align 8
+  %.524 = load ptr, ptr %req, align 8
+  %.525 = load ptr, ptr %res, align 8
+  %.526 = call ptr %.523(ptr %.524, ptr %.525)
   store i1 true, ptr %handled, align 1
   br label %while.end.2
 
 str_eq.len_check:                                 ; preds = %if.start.3
-  %.525 = icmp eq i64 %left_len, %right_len
-  br i1 %.525, label %str_eq.compare, label %str_eq.len_mismatch
+  %.501 = icmp eq i64 %left_len, %right_len
+  br i1 %.501, label %str_eq.compare, label %str_eq.len_mismatch
 
 str_eq.len_mismatch:                              ; preds = %str_eq.len_check
   store i1 false, ptr %str_eq_result, align 1
@@ -20277,18 +20452,18 @@ str_eq.compare:                                   ; preds = %str_eq.len_check
   br label %str_eq.loop_cond
 
 str_eq.loop_cond:                                 ; preds = %str_eq.loop_body, %str_eq.compare
-  %.531 = load i64, ptr %i_cmp, align 4
-  %.532 = icmp slt i64 %.531, %left_len
-  br i1 %.532, label %str_eq.loop_body, label %str_eq.strings_equal
+  %.507 = load i64, ptr %i_cmp, align 4
+  %.508 = icmp slt i64 %.507, %left_len
+  br i1 %.508, label %str_eq.loop_body, label %str_eq.strings_equal
 
 str_eq.loop_body:                                 ; preds = %str_eq.loop_cond
-  %.534 = load i64, ptr %i_cmp, align 4
-  %l_char = call i64 @i64.array.get(ptr %.520, i64 %.534)
-  %r_char = call i64 @i64.array.get(ptr %.523, i64 %.534)
-  %.535 = icmp eq i64 %l_char, %r_char
-  %.536 = add i64 %.534, 1
-  store i64 %.536, ptr %i_cmp, align 4
-  br i1 %.535, label %str_eq.loop_cond, label %str_eq.char_mismatch
+  %.510 = load i64, ptr %i_cmp, align 4
+  %l_char = call i64 @i64.array.get(ptr %.496, i64 %.510)
+  %r_char = call i64 @i64.array.get(ptr %.499, i64 %.510)
+  %.511 = icmp eq i64 %l_char, %r_char
+  %.512 = add i64 %.510, 1
+  store i64 %.512, ptr %i_cmp, align 4
+  br i1 %.511, label %str_eq.loop_cond, label %str_eq.char_mismatch
 
 str_eq.char_mismatch:                             ; preds = %str_eq.loop_body
   store i1 false, ptr %str_eq_result, align 1
@@ -20299,44 +20474,44 @@ str_eq.strings_equal:                             ; preds = %str_eq.loop_cond
   br label %str_eq.end
 
 str_eq.end:                                       ; preds = %str_eq.strings_equal, %str_eq.char_mismatch, %str_eq.len_mismatch
-  %.543 = load i1, ptr %str_eq_result, align 1
-  br i1 %.543, label %if.true.0.3, label %if.end.3
+  %.519 = load i1, ptr %str_eq_result, align 1
+  br i1 %.519, label %if.true.0.3, label %if.end.3
 
 if.start.4:                                       ; preds = %while.end.2
-  %.557 = load i1, ptr %handled, align 1
-  %.558 = xor i1 %.557, true
-  br i1 %.558, label %if.true.0.4, label %if.end.4
+  %.533 = load i1, ptr %handled, align 1
+  %.534 = xor i1 %.533, true
+  br i1 %.534, label %if.true.0.4, label %if.end.4
 
 if.end.4:                                         ; preds = %if.true.0.4, %if.start.4
-  %.563 = call ptr @meteor_http_response_create()
-  store ptr %.563, ptr %res_ptr, align 8
+  %.539 = call ptr @meteor_http_response_create()
+  store ptr %.539, ptr %res_ptr, align 8
   store i64 200, ptr %status_code, align 4
   br label %if.start.5
 
 if.true.0.4:                                      ; preds = %if.start.4
-  %.560 = load ptr, ptr %res, align 8
-  %.561 = call ptr @Response.not_found(ptr %.560)
+  %.536 = load ptr, ptr %res, align 8
+  %.537 = call ptr @Response.not_found(ptr %.536)
   br label %if.end.4
 
 if.start.5:                                       ; preds = %if.end.4
-  %.567 = load ptr, ptr %res, align 8
-  %.568 = load %Response, ptr %.567, align 8
-  %.569 = extractvalue %Response %.568, 0
-  %.570 = alloca %HttpStatus, align 8
-  %.571 = getelementptr inbounds %HttpStatus, ptr %.570, i32 0, i32 0
-  store i8 0, ptr %.571, align 1
-  %.573 = load %HttpStatus, ptr %.569, align 1
-  %.574 = load %HttpStatus, ptr %.570, align 1
-  %.575 = extractvalue %HttpStatus %.573, 0
-  %.576 = extractvalue %HttpStatus %.574, 0
-  %cmptmp.6 = icmp eq i8 %.575, %.576
+  %.543 = load ptr, ptr %res, align 8
+  %.544 = load %Response, ptr %.543, align 8
+  %.545 = extractvalue %Response %.544, 0
+  %.546 = alloca %HttpStatus, align 8
+  %.547 = getelementptr inbounds %HttpStatus, ptr %.546, i32 0, i32 0
+  store i8 0, ptr %.547, align 1
+  %.549 = load %HttpStatus, ptr %.545, align 1
+  %.550 = load %HttpStatus, ptr %.546, align 1
+  %.551 = extractvalue %HttpStatus %.549, 0
+  %.552 = extractvalue %HttpStatus %.550, 0
+  %cmptmp.6 = icmp eq i8 %.551, %.552
   br i1 %cmptmp.6, label %if.true.0.5, label %if.false.0.1
 
 if.end.5:                                         ; preds = %if.true.2.1, %if.false.1.1, %if.true.1.1, %if.true.0.5
-  %.606 = load ptr, ptr %res_ptr, align 8
-  %.607 = load i64, ptr %status_code, align 4
-  %.608 = trunc i64 %.607 to i32
-  %.609 = call i32 @meteor_http_response_set_status(ptr %.606, i32 %.608)
+  %.582 = load ptr, ptr %res_ptr, align 8
+  %.583 = load i64, ptr %status_code, align 4
+  %.584 = trunc i64 %.583 to i32
+  %.585 = call i32 @meteor_http_response_set_status(ptr %.582, i32 %.584)
   store i64 0, ptr %i, align 4
   br label %while.cond.3
 
@@ -20345,17 +20520,17 @@ if.true.0.5:                                      ; preds = %if.start.5
   br label %if.end.5
 
 if.false.0.1:                                     ; preds = %if.start.5
-  %.580 = load ptr, ptr %res, align 8
-  %.581 = load %Response, ptr %.580, align 8
-  %.582 = extractvalue %Response %.581, 0
-  %.583 = alloca %HttpStatus, align 8
-  %.584 = getelementptr inbounds %HttpStatus, ptr %.583, i32 0, i32 0
-  store i8 9, ptr %.584, align 1
-  %.586 = load %HttpStatus, ptr %.582, align 1
-  %.587 = load %HttpStatus, ptr %.583, align 1
-  %.588 = extractvalue %HttpStatus %.586, 0
-  %.589 = extractvalue %HttpStatus %.587, 0
-  %cmptmp.7 = icmp eq i8 %.588, %.589
+  %.556 = load ptr, ptr %res, align 8
+  %.557 = load %Response, ptr %.556, align 8
+  %.558 = extractvalue %Response %.557, 0
+  %.559 = alloca %HttpStatus, align 8
+  %.560 = getelementptr inbounds %HttpStatus, ptr %.559, i32 0, i32 0
+  store i8 9, ptr %.560, align 1
+  %.562 = load %HttpStatus, ptr %.558, align 1
+  %.563 = load %HttpStatus, ptr %.559, align 1
+  %.564 = extractvalue %HttpStatus %.562, 0
+  %.565 = extractvalue %HttpStatus %.563, 0
+  %cmptmp.7 = icmp eq i8 %.564, %.565
   br i1 %cmptmp.7, label %if.true.1.1, label %if.false.1.1
 
 if.true.1.1:                                      ; preds = %if.false.0.1
@@ -20363,17 +20538,17 @@ if.true.1.1:                                      ; preds = %if.false.0.1
   br label %if.end.5
 
 if.false.1.1:                                     ; preds = %if.false.0.1
-  %.593 = load ptr, ptr %res, align 8
-  %.594 = load %Response, ptr %.593, align 8
-  %.595 = extractvalue %Response %.594, 0
-  %.596 = alloca %HttpStatus, align 8
-  %.597 = getelementptr inbounds %HttpStatus, ptr %.596, i32 0, i32 0
-  store i8 11, ptr %.597, align 1
-  %.599 = load %HttpStatus, ptr %.595, align 1
-  %.600 = load %HttpStatus, ptr %.596, align 1
-  %.601 = extractvalue %HttpStatus %.599, 0
-  %.602 = extractvalue %HttpStatus %.600, 0
-  %cmptmp.8 = icmp eq i8 %.601, %.602
+  %.569 = load ptr, ptr %res, align 8
+  %.570 = load %Response, ptr %.569, align 8
+  %.571 = extractvalue %Response %.570, 0
+  %.572 = alloca %HttpStatus, align 8
+  %.573 = getelementptr inbounds %HttpStatus, ptr %.572, i32 0, i32 0
+  store i8 11, ptr %.573, align 1
+  %.575 = load %HttpStatus, ptr %.571, align 1
+  %.576 = load %HttpStatus, ptr %.572, align 1
+  %.577 = extractvalue %HttpStatus %.575, 0
+  %.578 = extractvalue %HttpStatus %.576, 0
+  %cmptmp.8 = icmp eq i8 %.577, %.578
   br i1 %cmptmp.8, label %if.true.2.1, label %if.end.5
 
 if.true.2.1:                                      ; preds = %if.false.1.1
@@ -20381,329 +20556,244 @@ if.true.2.1:                                      ; preds = %if.false.1.1
   br label %if.end.5
 
 while.cond.3:                                     ; preds = %rc_release_continue.12, %if.end.5
-  %.612 = load i64, ptr %i, align 4
-  %.613 = load ptr, ptr %res, align 8
-  %.614 = load %Response, ptr %.613, align 8
-  %.615 = extractvalue %Response %.614, 1
-  %.616 = call i64 @Header.array.length(ptr %.615)
-  %cmptmp.9 = icmp slt i64 %.612, %.616
+  %.588 = load i64, ptr %i, align 4
+  %.589 = load ptr, ptr %res, align 8
+  %.590 = load %Response, ptr %.589, align 8
+  %.591 = extractvalue %Response %.590, 1
+  %.592 = call i64 @Header.array.length(ptr %.591)
+  %cmptmp.9 = icmp slt i64 %.588, %.592
   br i1 %cmptmp.9, label %while.body.3, label %while.end.3
 
 while.body.3:                                     ; preds = %while.cond.3
-  %.618 = load i64, ptr %i, align 4
-  %.619 = load ptr, ptr %res, align 8
-  %.620 = load %Response, ptr %.619, align 8
-  %.621 = extractvalue %Response %.620, 1
-  %.622 = call ptr @Header.array.get(ptr %.621, i64 %.618)
-  %.623 = bitcast ptr %.622 to ptr
-  %.624 = getelementptr i8, ptr %.623, i64 -16
-  %.625 = bitcast ptr %.624 to ptr
-  call void @meteor_retain(ptr %.625)
-  %.628 = load ptr, ptr %h, align 8
-  %.629 = icmp ne ptr %.628, null
-  br i1 %.629, label %while.body.3.if, label %while.body.3.endif
+  %.594 = load i64, ptr %i, align 4
+  %.595 = load ptr, ptr %res, align 8
+  %.596 = load %Response, ptr %.595, align 8
+  %.597 = extractvalue %Response %.596, 1
+  %.598 = call ptr @Header.array.get(ptr %.597, i64 %.594)
+  %.599 = bitcast ptr %.598 to ptr
+  %.600 = getelementptr i8, ptr %.599, i64 -16
+  %.601 = bitcast ptr %.600 to ptr
+  call void @meteor_retain(ptr %.601)
+  %.604 = load ptr, ptr %h, align 8
+  %.605 = icmp ne ptr %.604, null
+  br i1 %.605, label %while.body.3.if, label %while.body.3.endif
 
 while.end.3:                                      ; preds = %while.cond.3
-  %.722 = load ptr, ptr %res_ptr, align 8
-  %.723 = load ptr, ptr %res, align 8
-  %.724 = load %Response, ptr %.723, align 8
-  %.725 = extractvalue %Response %.724, 2
-  %.726 = getelementptr %i64.array, ptr %.725, i32 0, i32 1
-  %.727 = load i64, ptr %.726, align 4
-  %.728 = getelementptr %i64.array, ptr %.725, i32 0, i32 3
-  %.729 = load ptr, ptr %.728, align 8
-  %.730 = add i64 %.727, 1
-  %.731 = call ptr @malloc(i64 %.730)
-  %.732 = alloca i64, align 8
-  store i64 0, ptr %.732, align 4
+  %.685 = load ptr, ptr %res_ptr, align 8
+  %.686 = load ptr, ptr %res, align 8
+  %.687 = load %Response, ptr %.686, align 8
+  %.688 = extractvalue %Response %.687, 2
+  %.689 = getelementptr %i64.array, ptr %.688, i32 0, i32 1
+  %.690 = load i64, ptr %.689, align 4
+  %.691 = getelementptr %i64.array, ptr %.688, i32 0, i32 3
+  %.692 = load ptr, ptr %.691, align 8
+  %.693 = add i64 %.690, 1
+  %.694 = call ptr @malloc(i64 %.693)
+  %.695 = alloca i64, align 8
+  store i64 0, ptr %.695, align 4
   br label %str_conv_cond.2
 
 while.body.3.if:                                  ; preds = %while.body.3
-  %.631 = icmp eq ptr %.628, null
-  br i1 %.631, label %rc_release_continue.10, label %rc_release.10
+  %.607 = icmp eq ptr %.604, null
+  br i1 %.607, label %rc_release_continue.10, label %rc_release.10
 
 while.body.3.endif:                               ; preds = %rc_release_continue.10, %while.body.3
-  store ptr %.622, ptr %h, align 8
-  %.653 = load ptr, ptr %res_ptr, align 8
-  %.654 = load ptr, ptr %h, align 8
-  %.655 = load %Header, ptr %.654, align 8
-  %.656 = extractvalue %Header %.655, 0
-  %.657 = getelementptr %i64.array, ptr %.656, i32 0, i32 1
-  %.658 = load i64, ptr %.657, align 4
-  %.659 = getelementptr %i64.array, ptr %.656, i32 0, i32 3
-  %.660 = load ptr, ptr %.659, align 8
-  %.661 = add i64 %.658, 1
-  %.662 = call ptr @malloc(i64 %.661)
-  %.663 = alloca i64, align 8
-  store i64 0, ptr %.663, align 4
+  store ptr %.598, ptr %h, align 8
+  %.616 = load ptr, ptr %res_ptr, align 8
+  %.617 = load ptr, ptr %h, align 8
+  %.618 = load %Header, ptr %.617, align 8
+  %.619 = extractvalue %Header %.618, 0
+  %.620 = getelementptr %i64.array, ptr %.619, i32 0, i32 1
+  %.621 = load i64, ptr %.620, align 4
+  %.622 = getelementptr %i64.array, ptr %.619, i32 0, i32 3
+  %.623 = load ptr, ptr %.622, align 8
+  %.624 = add i64 %.621, 1
+  %.625 = call ptr @malloc(i64 %.624)
+  %.626 = alloca i64, align 8
+  store i64 0, ptr %.626, align 4
   br label %str_conv_cond
 
 rc_release.10:                                    ; preds = %while.body.3.if
-  %.633 = bitcast ptr %.628 to ptr
-  %.634 = getelementptr i8, ptr %.633, i64 -16
-  %.635 = bitcast ptr %.634 to ptr
-  %.636 = getelementptr %meteor.header, ptr %.635, i64 0, i32 0
-  %.637 = load i32, ptr %.636, align 4
-  %.638 = icmp eq i32 %.637, 1
-  br i1 %.638, label %rc_destroy.4, label %rc_release_only.4
+  %.609 = bitcast ptr %.604 to ptr
+  %.610 = getelementptr i8, ptr %.609, i64 -16
+  %.611 = bitcast ptr %.610 to ptr
+  call void @meteor_release(ptr %.611)
+  br label %rc_release_continue.10
 
-rc_release_continue.10:                           ; preds = %rc_release_only.4, %rc_destroy.4, %while.body.3.if
+rc_release_continue.10:                           ; preds = %rc_release.10, %while.body.3.if
   br label %while.body.3.endif
 
-rc_destroy.4:                                     ; preds = %rc_release.10
-  call void @__destroy_Header__(ptr %.628)
-  %.641 = bitcast ptr %.628 to ptr
-  %.642 = getelementptr i8, ptr %.641, i64 -16
-  %.643 = bitcast ptr %.642 to ptr
-  call void @meteor_release(ptr %.643)
-  br label %rc_release_continue.10
-
-rc_release_only.4:                                ; preds = %rc_release.10
-  %.646 = bitcast ptr %.628 to ptr
-  %.647 = getelementptr i8, ptr %.646, i64 -16
-  %.648 = bitcast ptr %.647 to ptr
-  call void @meteor_release(ptr %.648)
-  br label %rc_release_continue.10
-
 str_conv_cond:                                    ; preds = %str_conv_body, %while.body.3.endif
-  %.666 = load i64, ptr %.663, align 4
-  %.667 = icmp slt i64 %.666, %.658
-  br i1 %.667, label %str_conv_body, label %str_conv_end
+  %.629 = load i64, ptr %.626, align 4
+  %.630 = icmp slt i64 %.629, %.621
+  br i1 %.630, label %str_conv_body, label %str_conv_end
 
 str_conv_body:                                    ; preds = %str_conv_cond
-  %.669 = load i64, ptr %.663, align 4
-  %.670 = getelementptr i64, ptr %.660, i64 %.669
-  %.671 = load i64, ptr %.670, align 4
-  %.672 = trunc i64 %.671 to i8
-  %.673 = getelementptr i8, ptr %.662, i64 %.669
-  store i8 %.672, ptr %.673, align 1
-  %.675 = add i64 %.669, 1
-  store i64 %.675, ptr %.663, align 4
+  %.632 = load i64, ptr %.626, align 4
+  %.633 = getelementptr i64, ptr %.623, i64 %.632
+  %.634 = load i64, ptr %.633, align 4
+  %.635 = trunc i64 %.634 to i8
+  %.636 = getelementptr i8, ptr %.625, i64 %.632
+  store i8 %.635, ptr %.636, align 1
+  %.638 = add i64 %.632, 1
+  store i64 %.638, ptr %.626, align 4
   br label %str_conv_cond
 
 str_conv_end:                                     ; preds = %str_conv_cond
-  %.678 = getelementptr i8, ptr %.662, i64 %.658
-  store i8 0, ptr %.678, align 1
-  %.680 = load ptr, ptr %h, align 8
-  %.681 = load %Header, ptr %.680, align 8
-  %.682 = extractvalue %Header %.681, 1
-  %.683 = getelementptr %i64.array, ptr %.682, i32 0, i32 1
-  %.684 = load i64, ptr %.683, align 4
-  %.685 = getelementptr %i64.array, ptr %.682, i32 0, i32 3
-  %.686 = load ptr, ptr %.685, align 8
-  %.687 = add i64 %.684, 1
-  %.688 = call ptr @malloc(i64 %.687)
-  %.689 = alloca i64, align 8
-  store i64 0, ptr %.689, align 4
+  %.641 = getelementptr i8, ptr %.625, i64 %.621
+  store i8 0, ptr %.641, align 1
+  %.643 = load ptr, ptr %h, align 8
+  %.644 = load %Header, ptr %.643, align 8
+  %.645 = extractvalue %Header %.644, 1
+  %.646 = getelementptr %i64.array, ptr %.645, i32 0, i32 1
+  %.647 = load i64, ptr %.646, align 4
+  %.648 = getelementptr %i64.array, ptr %.645, i32 0, i32 3
+  %.649 = load ptr, ptr %.648, align 8
+  %.650 = add i64 %.647, 1
+  %.651 = call ptr @malloc(i64 %.650)
+  %.652 = alloca i64, align 8
+  store i64 0, ptr %.652, align 4
   br label %str_conv_cond.1
 
 str_conv_cond.1:                                  ; preds = %str_conv_body.1, %str_conv_end
-  %.692 = load i64, ptr %.689, align 4
-  %.693 = icmp slt i64 %.692, %.684
-  br i1 %.693, label %str_conv_body.1, label %str_conv_end.1
+  %.655 = load i64, ptr %.652, align 4
+  %.656 = icmp slt i64 %.655, %.647
+  br i1 %.656, label %str_conv_body.1, label %str_conv_end.1
 
 str_conv_body.1:                                  ; preds = %str_conv_cond.1
-  %.695 = load i64, ptr %.689, align 4
-  %.696 = getelementptr i64, ptr %.686, i64 %.695
-  %.697 = load i64, ptr %.696, align 4
-  %.698 = trunc i64 %.697 to i8
-  %.699 = getelementptr i8, ptr %.688, i64 %.695
-  store i8 %.698, ptr %.699, align 1
-  %.701 = add i64 %.695, 1
-  store i64 %.701, ptr %.689, align 4
+  %.658 = load i64, ptr %.652, align 4
+  %.659 = getelementptr i64, ptr %.649, i64 %.658
+  %.660 = load i64, ptr %.659, align 4
+  %.661 = trunc i64 %.660 to i8
+  %.662 = getelementptr i8, ptr %.651, i64 %.658
+  store i8 %.661, ptr %.662, align 1
+  %.664 = add i64 %.658, 1
+  store i64 %.664, ptr %.652, align 4
   br label %str_conv_cond.1
 
 str_conv_end.1:                                   ; preds = %str_conv_cond.1
-  %.704 = getelementptr i8, ptr %.688, i64 %.684
-  store i8 0, ptr %.704, align 1
-  %.706 = call i32 @meteor_http_response_set_header(ptr %.653, ptr %.662, ptr %.688)
-  call void @free(ptr %.662)
-  call void @free(ptr %.688)
-  %.709 = icmp eq ptr %.656, null
-  br i1 %.709, label %rc_release_continue.11, label %rc_release.11
+  %.667 = getelementptr i8, ptr %.651, i64 %.647
+  store i8 0, ptr %.667, align 1
+  %.669 = call i32 @meteor_http_response_set_header(ptr %.616, ptr %.625, ptr %.651)
+  call void @free(ptr %.625)
+  call void @free(ptr %.651)
+  %.672 = icmp eq ptr %.619, null
+  br i1 %.672, label %rc_release_continue.11, label %rc_release.11
 
 rc_release.11:                                    ; preds = %str_conv_end.1
-  %.711 = bitcast ptr %.656 to ptr
-  call void @meteor_release(ptr %.711)
+  %.674 = bitcast ptr %.619 to ptr
+  call void @meteor_release(ptr %.674)
   br label %rc_release_continue.11
 
 rc_release_continue.11:                           ; preds = %rc_release.11, %str_conv_end.1
-  %.714 = icmp eq ptr %.682, null
-  br i1 %.714, label %rc_release_continue.12, label %rc_release.12
+  %.677 = icmp eq ptr %.645, null
+  br i1 %.677, label %rc_release_continue.12, label %rc_release.12
 
 rc_release.12:                                    ; preds = %rc_release_continue.11
-  %.716 = bitcast ptr %.682 to ptr
-  call void @meteor_release(ptr %.716)
+  %.679 = bitcast ptr %.645 to ptr
+  call void @meteor_release(ptr %.679)
   br label %rc_release_continue.12
 
 rc_release_continue.12:                           ; preds = %rc_release.12, %rc_release_continue.11
-  %.719 = load i64, ptr %i, align 4
-  %addtmp.2 = add i64 %.719, 1
+  %.682 = load i64, ptr %i, align 4
+  %addtmp.2 = add i64 %.682, 1
   store i64 %addtmp.2, ptr %i, align 4
   br label %while.cond.3
 
 str_conv_cond.2:                                  ; preds = %str_conv_body.2, %while.end.3
-  %.735 = load i64, ptr %.732, align 4
-  %.736 = icmp slt i64 %.735, %.727
-  br i1 %.736, label %str_conv_body.2, label %str_conv_end.2
+  %.698 = load i64, ptr %.695, align 4
+  %.699 = icmp slt i64 %.698, %.690
+  br i1 %.699, label %str_conv_body.2, label %str_conv_end.2
 
 str_conv_body.2:                                  ; preds = %str_conv_cond.2
-  %.738 = load i64, ptr %.732, align 4
-  %.739 = getelementptr i64, ptr %.729, i64 %.738
-  %.740 = load i64, ptr %.739, align 4
-  %.741 = trunc i64 %.740 to i8
-  %.742 = getelementptr i8, ptr %.731, i64 %.738
-  store i8 %.741, ptr %.742, align 1
-  %.744 = add i64 %.738, 1
-  store i64 %.744, ptr %.732, align 4
+  %.701 = load i64, ptr %.695, align 4
+  %.702 = getelementptr i64, ptr %.692, i64 %.701
+  %.703 = load i64, ptr %.702, align 4
+  %.704 = trunc i64 %.703 to i8
+  %.705 = getelementptr i8, ptr %.694, i64 %.701
+  store i8 %.704, ptr %.705, align 1
+  %.707 = add i64 %.701, 1
+  store i64 %.707, ptr %.695, align 4
   br label %str_conv_cond.2
 
 str_conv_end.2:                                   ; preds = %str_conv_cond.2
-  %.747 = getelementptr i8, ptr %.731, i64 %.727
-  store i8 0, ptr %.747, align 1
-  %.749 = load ptr, ptr %res, align 8
-  %.750 = load %Response, ptr %.749, align 8
-  %.751 = extractvalue %Response %.750, 2
-  %.752 = call i64 @i64.array.length(ptr %.751)
-  %.753 = call i32 @meteor_http_response_set_body(ptr %.722, ptr %.731, i64 %.752)
-  call void @free(ptr %.731)
-  %.755 = icmp eq ptr %.725, null
-  br i1 %.755, label %rc_release_continue.13, label %rc_release.13
+  %.710 = getelementptr i8, ptr %.694, i64 %.690
+  store i8 0, ptr %.710, align 1
+  %.712 = load ptr, ptr %res, align 8
+  %.713 = load %Response, ptr %.712, align 8
+  %.714 = extractvalue %Response %.713, 2
+  %.715 = call i64 @i64.array.length(ptr %.714)
+  %.716 = call i32 @meteor_http_response_set_body(ptr %.685, ptr %.694, i64 %.715)
+  call void @free(ptr %.694)
+  %.718 = icmp eq ptr %.688, null
+  br i1 %.718, label %rc_release_continue.13, label %rc_release.13
 
 rc_release.13:                                    ; preds = %str_conv_end.2
-  %.757 = bitcast ptr %.725 to ptr
-  call void @meteor_release(ptr %.757)
+  %.720 = bitcast ptr %.688 to ptr
+  call void @meteor_release(ptr %.720)
   br label %rc_release_continue.13
 
 rc_release_continue.13:                           ; preds = %rc_release.13, %str_conv_end.2
-  %.760 = load ptr, ptr %conn, align 8
-  %.761 = load ptr, ptr %res_ptr, align 8
-  %.762 = call i32 @meteor_http_connection_send_response(ptr %.760, ptr %.761)
-  %.763 = load ptr, ptr %res_ptr, align 8
-  call void @meteor_http_response_free(ptr %.763)
-  %.765 = load ptr, ptr %req_ptr, align 8
-  call void @meteor_http_request_free(ptr %.765)
-  %.767 = load ptr, ptr %req, align 8
-  %.768 = icmp eq ptr %.767, null
-  br i1 %.768, label %rc_release_continue.14, label %rc_release.14
+  %.723 = load ptr, ptr %conn, align 8
+  %.724 = load ptr, ptr %res_ptr, align 8
+  %.725 = call i32 @meteor_http_connection_send_response(ptr %.723, ptr %.724)
+  %.726 = load ptr, ptr %res_ptr, align 8
+  call void @meteor_http_response_free(ptr %.726)
+  %.728 = load ptr, ptr %req_ptr, align 8
+  call void @meteor_http_request_free(ptr %.728)
+  %.730 = load ptr, ptr %req, align 8
+  %.731 = icmp eq ptr %.730, null
+  br i1 %.731, label %rc_release_continue.14, label %rc_release.14
 
 rc_release.14:                                    ; preds = %rc_release_continue.13
-  %.770 = bitcast ptr %.767 to ptr
-  %.771 = getelementptr i8, ptr %.770, i64 -16
-  %.772 = bitcast ptr %.771 to ptr
-  %.773 = getelementptr %meteor.header, ptr %.772, i64 0, i32 0
-  %.774 = load i32, ptr %.773, align 4
-  %.775 = icmp eq i32 %.774, 1
-  br i1 %.775, label %rc_destroy.5, label %rc_release_only.5
+  %.733 = bitcast ptr %.730 to ptr
+  %.734 = getelementptr i8, ptr %.733, i64 -16
+  %.735 = bitcast ptr %.734 to ptr
+  call void @meteor_release(ptr %.735)
+  br label %rc_release_continue.14
 
-rc_release_continue.14:                           ; preds = %rc_release_only.5, %rc_destroy.5, %rc_release_continue.13
+rc_release_continue.14:                           ; preds = %rc_release.14, %rc_release_continue.13
   store ptr null, ptr %req, align 8
-  %.789 = load ptr, ptr %res, align 8
-  %.790 = icmp eq ptr %.789, null
-  br i1 %.790, label %rc_release_continue.15, label %rc_release.15
-
-rc_destroy.5:                                     ; preds = %rc_release.14
-  call void @__destroy_Request__(ptr %.767)
-  %.778 = bitcast ptr %.767 to ptr
-  %.779 = getelementptr i8, ptr %.778, i64 -16
-  %.780 = bitcast ptr %.779 to ptr
-  call void @meteor_release(ptr %.780)
-  br label %rc_release_continue.14
-
-rc_release_only.5:                                ; preds = %rc_release.14
-  %.783 = bitcast ptr %.767 to ptr
-  %.784 = getelementptr i8, ptr %.783, i64 -16
-  %.785 = bitcast ptr %.784 to ptr
-  call void @meteor_release(ptr %.785)
-  br label %rc_release_continue.14
+  %.739 = load ptr, ptr %res, align 8
+  %.740 = icmp eq ptr %.739, null
+  br i1 %.740, label %rc_release_continue.15, label %rc_release.15
 
 rc_release.15:                                    ; preds = %rc_release_continue.14
-  %.792 = bitcast ptr %.789 to ptr
-  %.793 = getelementptr i8, ptr %.792, i64 -16
-  %.794 = bitcast ptr %.793 to ptr
-  %.795 = getelementptr %meteor.header, ptr %.794, i64 0, i32 0
-  %.796 = load i32, ptr %.795, align 4
-  %.797 = icmp eq i32 %.796, 1
-  br i1 %.797, label %rc_destroy.6, label %rc_release_only.6
+  %.742 = bitcast ptr %.739 to ptr
+  %.743 = getelementptr i8, ptr %.742, i64 -16
+  %.744 = bitcast ptr %.743 to ptr
+  call void @meteor_release(ptr %.744)
+  br label %rc_release_continue.15
 
-rc_release_continue.15:                           ; preds = %rc_release_only.6, %rc_destroy.6, %rc_release_continue.14
+rc_release_continue.15:                           ; preds = %rc_release.15, %rc_release_continue.14
   store ptr null, ptr %res, align 8
-  %.811 = load ptr, ptr %route, align 8
-  %.812 = icmp eq ptr %.811, null
-  br i1 %.812, label %rc_release_continue.16, label %rc_release.16
-
-rc_destroy.6:                                     ; preds = %rc_release.15
-  call void @__destroy_Response__(ptr %.789)
-  %.800 = bitcast ptr %.789 to ptr
-  %.801 = getelementptr i8, ptr %.800, i64 -16
-  %.802 = bitcast ptr %.801 to ptr
-  call void @meteor_release(ptr %.802)
-  br label %rc_release_continue.15
-
-rc_release_only.6:                                ; preds = %rc_release.15
-  %.805 = bitcast ptr %.789 to ptr
-  %.806 = getelementptr i8, ptr %.805, i64 -16
-  %.807 = bitcast ptr %.806 to ptr
-  call void @meteor_release(ptr %.807)
-  br label %rc_release_continue.15
+  %.748 = load ptr, ptr %route, align 8
+  %.749 = icmp eq ptr %.748, null
+  br i1 %.749, label %rc_release_continue.16, label %rc_release.16
 
 rc_release.16:                                    ; preds = %rc_release_continue.15
-  %.814 = bitcast ptr %.811 to ptr
-  %.815 = getelementptr i8, ptr %.814, i64 -16
-  %.816 = bitcast ptr %.815 to ptr
-  %.817 = getelementptr %meteor.header, ptr %.816, i64 0, i32 0
-  %.818 = load i32, ptr %.817, align 4
-  %.819 = icmp eq i32 %.818, 1
-  br i1 %.819, label %rc_destroy.7, label %rc_release_only.7
+  %.751 = bitcast ptr %.748 to ptr
+  %.752 = getelementptr i8, ptr %.751, i64 -16
+  %.753 = bitcast ptr %.752 to ptr
+  call void @meteor_release(ptr %.753)
+  br label %rc_release_continue.16
 
-rc_release_continue.16:                           ; preds = %rc_release_only.7, %rc_destroy.7, %rc_release_continue.15
+rc_release_continue.16:                           ; preds = %rc_release.16, %rc_release_continue.15
   store ptr null, ptr %route, align 8
-  %.833 = load ptr, ptr %h, align 8
-  %.834 = icmp eq ptr %.833, null
-  br i1 %.834, label %rc_release_continue.17, label %rc_release.17
-
-rc_destroy.7:                                     ; preds = %rc_release.16
-  call void @__destroy_Route__(ptr %.811)
-  %.822 = bitcast ptr %.811 to ptr
-  %.823 = getelementptr i8, ptr %.822, i64 -16
-  %.824 = bitcast ptr %.823 to ptr
-  call void @meteor_release(ptr %.824)
-  br label %rc_release_continue.16
-
-rc_release_only.7:                                ; preds = %rc_release.16
-  %.827 = bitcast ptr %.811 to ptr
-  %.828 = getelementptr i8, ptr %.827, i64 -16
-  %.829 = bitcast ptr %.828 to ptr
-  call void @meteor_release(ptr %.829)
-  br label %rc_release_continue.16
+  %.757 = load ptr, ptr %h, align 8
+  %.758 = icmp eq ptr %.757, null
+  br i1 %.758, label %rc_release_continue.17, label %rc_release.17
 
 rc_release.17:                                    ; preds = %rc_release_continue.16
-  %.836 = bitcast ptr %.833 to ptr
-  %.837 = getelementptr i8, ptr %.836, i64 -16
-  %.838 = bitcast ptr %.837 to ptr
-  %.839 = getelementptr %meteor.header, ptr %.838, i64 0, i32 0
-  %.840 = load i32, ptr %.839, align 4
-  %.841 = icmp eq i32 %.840, 1
-  br i1 %.841, label %rc_destroy.8, label %rc_release_only.8
+  %.760 = bitcast ptr %.757 to ptr
+  %.761 = getelementptr i8, ptr %.760, i64 -16
+  %.762 = bitcast ptr %.761 to ptr
+  call void @meteor_release(ptr %.762)
+  br label %rc_release_continue.17
 
-rc_release_continue.17:                           ; preds = %rc_release_only.8, %rc_destroy.8, %rc_release_continue.16
+rc_release_continue.17:                           ; preds = %rc_release.17, %rc_release_continue.16
   store ptr null, ptr %h, align 8
   br label %if.end.1
-
-rc_destroy.8:                                     ; preds = %rc_release.17
-  call void @__destroy_Header__(ptr %.833)
-  %.844 = bitcast ptr %.833 to ptr
-  %.845 = getelementptr i8, ptr %.844, i64 -16
-  %.846 = bitcast ptr %.845 to ptr
-  call void @meteor_release(ptr %.846)
-  br label %rc_release_continue.17
-
-rc_release_only.8:                                ; preds = %rc_release.17
-  %.849 = bitcast ptr %.833 to ptr
-  %.850 = getelementptr i8, ptr %.849, i64 -16
-  %.851 = bitcast ptr %.850 to ptr
-  call void @meteor_release(ptr %.851)
-  br label %rc_release_continue.17
 }
 
 define void @Server.stop(ptr %self) {
@@ -20715,32 +20805,42 @@ entry:
   %.6 = extractvalue %Server %.5, 0
   %.7 = call i32 @meteor_http_server_stop(ptr %.6)
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 240)
-  call void @i64.array.append(ptr %.9, i64 159)
-  call void @i64.array.append(ptr %.9, i64 155)
-  call void @i64.array.append(ptr %.9, i64 145)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 83)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 118)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 115)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 112)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 100)
-  call void @print(ptr %.9)
-  br label %exit
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 240)
+  call void @i64.array.append(ptr %.10, i64 159)
+  call void @i64.array.append(ptr %.10, i64 155)
+  call void @i64.array.append(ptr %.10, i64 145)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 83)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 118)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 115)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 112)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 100)
+  call void @print(ptr %.10)
+  %.32 = icmp eq ptr %.10, null
+  br i1 %.32, label %rc_release_continue, label %rc_release
 
-exit:                                             ; preds = %entry
+exit:                                             ; preds = %rc_release_continue
   ret void
+
+rc_release:                                       ; preds = %entry
+  %.34 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.34)
+  br label %rc_release_continue
+
+rc_release_continue:                              ; preds = %rc_release, %entry
+  br label %exit
 }
 
 define internal void @__destroy_Server__(ptr %.1) {
@@ -20803,223 +20903,178 @@ define ptr @create_server() {
 entry:
   %ret_var = alloca ptr, align 8
   store ptr null, ptr %ret_var, align 8
-  %.3 = call ptr @malloc(i64 64)
-  %.4 = bitcast ptr %.3 to ptr
-  %.5 = getelementptr %meteor.header, ptr %.4, i64 0, i32 0
-  store i32 1, ptr %.5, align 4
-  %.7 = getelementptr %meteor.header, ptr %.4, i64 0, i32 1
-  store i32 0, ptr %.7, align 4
-  %.9 = getelementptr %meteor.header, ptr %.4, i64 0, i32 2
-  store i8 0, ptr %.9, align 1
-  %.11 = getelementptr %meteor.header, ptr %.4, i64 0, i32 3
-  store i8 10, ptr %.11, align 1
-  %.13 = getelementptr i8, ptr %.3, i64 16
-  %.14 = bitcast ptr %.13 to ptr
-  %.15 = getelementptr inbounds %Server, ptr %.14, i32 0, i32 0
-  store ptr null, ptr %.15, align 8
-  %.17 = getelementptr inbounds %Server, ptr %.14, i32 0, i32 1
-  store ptr null, ptr %.17, align 8
-  %.19 = getelementptr inbounds %Server, ptr %.14, i32 0, i32 3
-  store ptr null, ptr %.19, align 8
-  %.21 = getelementptr inbounds %Server, ptr %.14, i32 0, i32 4
+  %.3 = getelementptr %Server, ptr null, i64 1
+  %.4 = ptrtoint ptr %.3 to i64
+  %.5 = add i64 16, %.4
+  %.6 = call ptr @malloc(i64 %.5)
+  %.7 = call ptr @memset(ptr %.6, i32 0, i64 %.5)
+  %.8 = bitcast ptr %.6 to ptr
+  %.9 = getelementptr %meteor.header, ptr %.8, i64 0, i32 0
+  store i32 1, ptr %.9, align 4
+  %.11 = getelementptr %meteor.header, ptr %.8, i64 0, i32 1
+  store i32 0, ptr %.11, align 4
+  %.13 = getelementptr %meteor.header, ptr %.8, i64 0, i32 2
+  store i8 0, ptr %.13, align 1
+  %.15 = getelementptr %meteor.header, ptr %.8, i64 0, i32 3
+  store i8 10, ptr %.15, align 1
+  %.17 = getelementptr %meteor.header, ptr %.8, i64 0, i32 5
+  store i32 6, ptr %.17, align 4
+  %.19 = getelementptr i8, ptr %.6, i64 16
+  %.20 = bitcast ptr %.19 to ptr
+  %.21 = getelementptr inbounds %Server, ptr %.20, i32 0, i32 0
   store ptr null, ptr %.21, align 8
-  %.23 = getelementptr inbounds %Server, ptr %.14, i32 0, i32 5
+  %.23 = getelementptr inbounds %Server, ptr %.20, i32 0, i32 1
   store ptr null, ptr %.23, align 8
-  call void @Server.new(ptr %.14)
-  %.26 = load ptr, ptr %ret_var, align 8
-  %.27 = icmp ne ptr %.26, null
-  br i1 %.27, label %entry.if, label %entry.endif
+  %.25 = getelementptr inbounds %Server, ptr %.20, i32 0, i32 3
+  store ptr null, ptr %.25, align 8
+  %.27 = getelementptr inbounds %Server, ptr %.20, i32 0, i32 4
+  store ptr null, ptr %.27, align 8
+  %.29 = getelementptr inbounds %Server, ptr %.20, i32 0, i32 5
+  store ptr null, ptr %.29, align 8
+  call void @Server.new(ptr %.20)
+  %.32 = load ptr, ptr %ret_var, align 8
+  %.33 = icmp ne ptr %.32, null
+  br i1 %.33, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %entry.endif
-  %.56 = load ptr, ptr %ret_var, align 8
-  ret ptr %.56
+  %.45 = load ptr, ptr %ret_var, align 8
+  ret ptr %.45
 
 entry.if:                                         ; preds = %entry
-  %.29 = icmp eq ptr %.26, null
-  br i1 %.29, label %rc_release_continue, label %rc_release
+  %.35 = icmp eq ptr %.32, null
+  br i1 %.35, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.14, ptr %ret_var, align 8
-  %.51 = bitcast ptr %.14 to ptr
-  %.52 = getelementptr i8, ptr %.51, i64 -16
-  %.53 = bitcast ptr %.52 to ptr
-  call void @meteor_retain(ptr %.53)
+  store ptr %.20, ptr %ret_var, align 8
   br label %exit
 
 rc_release:                                       ; preds = %entry.if
-  %.31 = bitcast ptr %.26 to ptr
-  %.32 = getelementptr i8, ptr %.31, i64 -16
-  %.33 = bitcast ptr %.32 to ptr
-  %.34 = getelementptr %meteor.header, ptr %.33, i64 0, i32 0
-  %.35 = load i32, ptr %.34, align 4
-  %.36 = icmp eq i32 %.35, 1
-  br i1 %.36, label %rc_destroy, label %rc_release_only
+  %.37 = bitcast ptr %.32 to ptr
+  %.38 = getelementptr i8, ptr %.37, i64 -16
+  %.39 = bitcast ptr %.38 to ptr
+  call void @meteor_release(ptr %.39)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry.if
+rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Server__(ptr %.26)
-  %.39 = bitcast ptr %.26 to ptr
-  %.40 = getelementptr i8, ptr %.39, i64 -16
-  %.41 = bitcast ptr %.40 to ptr
-  call void @meteor_release(ptr %.41)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.44 = bitcast ptr %.26 to ptr
-  %.45 = getelementptr i8, ptr %.44, i64 -16
-  %.46 = bitcast ptr %.45 to ptr
-  call void @meteor_release(ptr %.46)
-  br label %rc_release_continue
 }
 
 define ptr @create_request() {
 entry:
   %ret_var = alloca ptr, align 8
   store ptr null, ptr %ret_var, align 8
-  %.3 = call ptr @malloc(i64 64)
-  %.4 = bitcast ptr %.3 to ptr
-  %.5 = getelementptr %meteor.header, ptr %.4, i64 0, i32 0
-  store i32 1, ptr %.5, align 4
-  %.7 = getelementptr %meteor.header, ptr %.4, i64 0, i32 1
-  store i32 0, ptr %.7, align 4
-  %.9 = getelementptr %meteor.header, ptr %.4, i64 0, i32 2
-  store i8 0, ptr %.9, align 1
-  %.11 = getelementptr %meteor.header, ptr %.4, i64 0, i32 3
-  store i8 10, ptr %.11, align 1
-  %.13 = getelementptr i8, ptr %.3, i64 16
-  %.14 = bitcast ptr %.13 to ptr
-  %.15 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 0
-  store ptr null, ptr %.15, align 8
-  %.17 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 1
-  store ptr null, ptr %.17, align 8
-  %.19 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 2
-  store ptr null, ptr %.19, align 8
-  %.21 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 3
+  %.3 = getelementptr %Request, ptr null, i64 1
+  %.4 = ptrtoint ptr %.3 to i64
+  %.5 = add i64 16, %.4
+  %.6 = call ptr @malloc(i64 %.5)
+  %.7 = call ptr @memset(ptr %.6, i32 0, i64 %.5)
+  %.8 = bitcast ptr %.6 to ptr
+  %.9 = getelementptr %meteor.header, ptr %.8, i64 0, i32 0
+  store i32 1, ptr %.9, align 4
+  %.11 = getelementptr %meteor.header, ptr %.8, i64 0, i32 1
+  store i32 0, ptr %.11, align 4
+  %.13 = getelementptr %meteor.header, ptr %.8, i64 0, i32 2
+  store i8 0, ptr %.13, align 1
+  %.15 = getelementptr %meteor.header, ptr %.8, i64 0, i32 3
+  store i8 10, ptr %.15, align 1
+  %.17 = getelementptr %meteor.header, ptr %.8, i64 0, i32 5
+  store i32 2, ptr %.17, align 4
+  %.19 = getelementptr i8, ptr %.6, i64 16
+  %.20 = bitcast ptr %.19 to ptr
+  %.21 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 0
   store ptr null, ptr %.21, align 8
-  %.23 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 4
+  %.23 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 1
   store ptr null, ptr %.23, align 8
-  %.25 = getelementptr inbounds %Request, ptr %.14, i32 0, i32 5
+  %.25 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 2
   store ptr null, ptr %.25, align 8
-  call void @Request.new(ptr %.14)
-  %.28 = load ptr, ptr %ret_var, align 8
-  %.29 = icmp ne ptr %.28, null
-  br i1 %.29, label %entry.if, label %entry.endif
+  %.27 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 3
+  store ptr null, ptr %.27, align 8
+  %.29 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 4
+  store ptr null, ptr %.29, align 8
+  %.31 = getelementptr inbounds %Request, ptr %.20, i32 0, i32 5
+  store ptr null, ptr %.31, align 8
+  call void @Request.new(ptr %.20)
+  %.34 = load ptr, ptr %ret_var, align 8
+  %.35 = icmp ne ptr %.34, null
+  br i1 %.35, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %entry.endif
-  %.58 = load ptr, ptr %ret_var, align 8
-  ret ptr %.58
+  %.47 = load ptr, ptr %ret_var, align 8
+  ret ptr %.47
 
 entry.if:                                         ; preds = %entry
-  %.31 = icmp eq ptr %.28, null
-  br i1 %.31, label %rc_release_continue, label %rc_release
+  %.37 = icmp eq ptr %.34, null
+  br i1 %.37, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.14, ptr %ret_var, align 8
-  %.53 = bitcast ptr %.14 to ptr
-  %.54 = getelementptr i8, ptr %.53, i64 -16
-  %.55 = bitcast ptr %.54 to ptr
-  call void @meteor_retain(ptr %.55)
+  store ptr %.20, ptr %ret_var, align 8
   br label %exit
 
 rc_release:                                       ; preds = %entry.if
-  %.33 = bitcast ptr %.28 to ptr
-  %.34 = getelementptr i8, ptr %.33, i64 -16
-  %.35 = bitcast ptr %.34 to ptr
-  %.36 = getelementptr %meteor.header, ptr %.35, i64 0, i32 0
-  %.37 = load i32, ptr %.36, align 4
-  %.38 = icmp eq i32 %.37, 1
-  br i1 %.38, label %rc_destroy, label %rc_release_only
+  %.39 = bitcast ptr %.34 to ptr
+  %.40 = getelementptr i8, ptr %.39, i64 -16
+  %.41 = bitcast ptr %.40 to ptr
+  call void @meteor_release(ptr %.41)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry.if
+rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Request__(ptr %.28)
-  %.41 = bitcast ptr %.28 to ptr
-  %.42 = getelementptr i8, ptr %.41, i64 -16
-  %.43 = bitcast ptr %.42 to ptr
-  call void @meteor_release(ptr %.43)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.46 = bitcast ptr %.28 to ptr
-  %.47 = getelementptr i8, ptr %.46, i64 -16
-  %.48 = bitcast ptr %.47 to ptr
-  call void @meteor_release(ptr %.48)
-  br label %rc_release_continue
 }
 
 define ptr @create_response() {
 entry:
   %ret_var = alloca ptr, align 8
   store ptr null, ptr %ret_var, align 8
-  %.3 = call ptr @malloc(i64 40)
-  %.4 = bitcast ptr %.3 to ptr
-  %.5 = getelementptr %meteor.header, ptr %.4, i64 0, i32 0
-  store i32 1, ptr %.5, align 4
-  %.7 = getelementptr %meteor.header, ptr %.4, i64 0, i32 1
-  store i32 0, ptr %.7, align 4
-  %.9 = getelementptr %meteor.header, ptr %.4, i64 0, i32 2
-  store i8 0, ptr %.9, align 1
-  %.11 = getelementptr %meteor.header, ptr %.4, i64 0, i32 3
-  store i8 10, ptr %.11, align 1
-  %.13 = getelementptr i8, ptr %.3, i64 16
-  %.14 = bitcast ptr %.13 to ptr
-  %.15 = getelementptr inbounds %Response, ptr %.14, i32 0, i32 0
-  store ptr null, ptr %.15, align 8
-  %.17 = getelementptr inbounds %Response, ptr %.14, i32 0, i32 1
-  store ptr null, ptr %.17, align 8
-  %.19 = getelementptr inbounds %Response, ptr %.14, i32 0, i32 2
-  store ptr null, ptr %.19, align 8
-  call void @Response.new(ptr %.14)
-  %.22 = load ptr, ptr %ret_var, align 8
-  %.23 = icmp ne ptr %.22, null
-  br i1 %.23, label %entry.if, label %entry.endif
+  %.3 = getelementptr %Response, ptr null, i64 1
+  %.4 = ptrtoint ptr %.3 to i64
+  %.5 = add i64 16, %.4
+  %.6 = call ptr @malloc(i64 %.5)
+  %.7 = call ptr @memset(ptr %.6, i32 0, i64 %.5)
+  %.8 = bitcast ptr %.6 to ptr
+  %.9 = getelementptr %meteor.header, ptr %.8, i64 0, i32 0
+  store i32 1, ptr %.9, align 4
+  %.11 = getelementptr %meteor.header, ptr %.8, i64 0, i32 1
+  store i32 0, ptr %.11, align 4
+  %.13 = getelementptr %meteor.header, ptr %.8, i64 0, i32 2
+  store i8 0, ptr %.13, align 1
+  %.15 = getelementptr %meteor.header, ptr %.8, i64 0, i32 3
+  store i8 10, ptr %.15, align 1
+  %.17 = getelementptr %meteor.header, ptr %.8, i64 0, i32 5
+  store i32 3, ptr %.17, align 4
+  %.19 = getelementptr i8, ptr %.6, i64 16
+  %.20 = bitcast ptr %.19 to ptr
+  %.21 = getelementptr inbounds %Response, ptr %.20, i32 0, i32 0
+  store ptr null, ptr %.21, align 8
+  %.23 = getelementptr inbounds %Response, ptr %.20, i32 0, i32 1
+  store ptr null, ptr %.23, align 8
+  %.25 = getelementptr inbounds %Response, ptr %.20, i32 0, i32 2
+  store ptr null, ptr %.25, align 8
+  call void @Response.new(ptr %.20)
+  %.28 = load ptr, ptr %ret_var, align 8
+  %.29 = icmp ne ptr %.28, null
+  br i1 %.29, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %entry.endif
-  %.52 = load ptr, ptr %ret_var, align 8
-  ret ptr %.52
+  %.41 = load ptr, ptr %ret_var, align 8
+  ret ptr %.41
 
 entry.if:                                         ; preds = %entry
-  %.25 = icmp eq ptr %.22, null
-  br i1 %.25, label %rc_release_continue, label %rc_release
+  %.31 = icmp eq ptr %.28, null
+  br i1 %.31, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.14, ptr %ret_var, align 8
-  %.47 = bitcast ptr %.14 to ptr
-  %.48 = getelementptr i8, ptr %.47, i64 -16
-  %.49 = bitcast ptr %.48 to ptr
-  call void @meteor_retain(ptr %.49)
+  store ptr %.20, ptr %ret_var, align 8
   br label %exit
 
 rc_release:                                       ; preds = %entry.if
-  %.27 = bitcast ptr %.22 to ptr
-  %.28 = getelementptr i8, ptr %.27, i64 -16
-  %.29 = bitcast ptr %.28 to ptr
-  %.30 = getelementptr %meteor.header, ptr %.29, i64 0, i32 0
-  %.31 = load i32, ptr %.30, align 4
-  %.32 = icmp eq i32 %.31, 1
-  br i1 %.32, label %rc_destroy, label %rc_release_only
+  %.33 = bitcast ptr %.28 to ptr
+  %.34 = getelementptr i8, ptr %.33, i64 -16
+  %.35 = bitcast ptr %.34 to ptr
+  call void @meteor_release(ptr %.35)
+  br label %rc_release_continue
 
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry.if
+rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Response__(ptr %.22)
-  %.35 = bitcast ptr %.22 to ptr
-  %.36 = getelementptr i8, ptr %.35, i64 -16
-  %.37 = bitcast ptr %.36 to ptr
-  call void @meteor_release(ptr %.37)
-  br label %rc_release_continue
-
-rc_release_only:                                  ; preds = %rc_release
-  %.40 = bitcast ptr %.22 to ptr
-  %.41 = getelementptr i8, ptr %.40, i64 -16
-  %.42 = bitcast ptr %.41 to ptr
-  call void @meteor_release(ptr %.42)
-  br label %rc_release_continue
 }
 
 declare i64 @time(ptr)
@@ -21038,8 +21093,8 @@ entry:
   br label %if.start
 
 exit:                                             ; preds = %rc_release_continue.36, %if.true.0.endif
-  %.664 = load ptr, ptr %ret_var, align 8
-  ret ptr %.664
+  %.686 = load ptr, ptr %ret_var, align 8
+  ret ptr %.686
 
 if.start:                                         ; preds = %entry
   %.6 = load i64, ptr %n.1, align 4
@@ -21047,8 +21102,9 @@ if.start:                                         ; preds = %entry
   br i1 %cmptmp, label %if.true.0, label %if.end
 
 if.end:                                           ; preds = %if.start
-  %.25 = call ptr @malloc(i64 40)
-  %.26 = bitcast ptr %.25 to ptr
+  %.24 = call ptr @malloc(i64 40)
+  %.25 = call ptr @memset(ptr %.24, i32 0, i64 40)
+  %.26 = bitcast ptr %.24 to ptr
   call void @i64.array.init(ptr %.26)
   %.29 = load ptr, ptr %result, align 8
   %.30 = icmp ne ptr %.29, null
@@ -21056,26 +21112,25 @@ if.end:                                           ; preds = %if.start
 
 if.true.0:                                        ; preds = %if.start
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 48)
-  %.12 = load ptr, ptr %ret_var, align 8
-  %.13 = icmp ne ptr %.12, null
-  br i1 %.13, label %if.true.0.if, label %if.true.0.endif
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 48)
+  %.13 = load ptr, ptr %ret_var, align 8
+  %.14 = icmp ne ptr %.13, null
+  br i1 %.14, label %if.true.0.if, label %if.true.0.endif
 
 if.true.0.if:                                     ; preds = %if.true.0
-  %.15 = icmp eq ptr %.12, null
-  br i1 %.15, label %rc_release_continue, label %rc_release
+  %.16 = icmp eq ptr %.13, null
+  br i1 %.16, label %rc_release_continue, label %rc_release
 
 if.true.0.endif:                                  ; preds = %rc_release_continue, %if.true.0
-  store ptr %.9, ptr %ret_var, align 8
-  %.22 = bitcast ptr %.9 to ptr
-  call void @meteor_retain(ptr %.22)
+  store ptr %.10, ptr %ret_var, align 8
   br label %exit
 
 rc_release:                                       ; preds = %if.true.0.if
-  %.17 = bitcast ptr %.12 to ptr
-  call void @meteor_release(ptr %.17)
+  %.18 = bitcast ptr %.13 to ptr
+  call void @meteor_release(ptr %.18)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %if.true.0.if
@@ -21135,47 +21190,49 @@ if.start.2:                                       ; preds = %while.body
   br i1 %cmptmp.3, label %if.true.0.2, label %if.false.0
 
 if.end.2:                                         ; preds = %rc_release_continue.30.endif, %rc_release_continue.27.endif, %if.false.8, %rc_release_continue.24.endif, %rc_release_continue.21.endif, %rc_release_continue.18.endif, %rc_release_continue.15.endif, %rc_release_continue.12.endif, %rc_release_continue.9.endif, %rc_release_continue.6.endif, %rc_release_continue.3.endif
-  %.584 = load i64, ptr %num, align 4
-  %.585 = sitofp i64 %.584 to double
-  %.586 = sitofp i64 10 to double
-  %fdivtmp = fdiv double %.585, %.586
-  %.587 = fptosi double %fdivtmp to i64
-  store i64 %.587, ptr %num, align 4
+  %.604 = load i64, ptr %num, align 4
+  %.605 = sitofp i64 %.604 to double
+  %.606 = sitofp i64 10 to double
+  %fdivtmp = fdiv double %.605, %.606
+  %.607 = fptosi double %fdivtmp to i64
+  store i64 %.607, ptr %num, align 4
   br label %while.cond
 
 if.true.0.2:                                      ; preds = %if.start.2
   %.57 = call ptr @malloc(i64 40)
-  %.58 = bitcast ptr %.57 to ptr
-  call void @i64.array.init(ptr %.58)
-  call void @i64.array.append(ptr %.58, i64 48)
-  %.61 = load ptr, ptr %result, align 8
-  %.62 = bitcast ptr %.61 to ptr
-  call void @meteor_retain(ptr %.62)
-  %.64 = call ptr @malloc(i64 40)
-  %.65 = bitcast ptr %.64 to ptr
-  call void @i64.array.init(ptr %.65)
-  %left_len = call i64 @i64.array.length(ptr %.58)
-  %right_len = call i64 @i64.array.length(ptr %.61)
+  %.58 = call ptr @memset(ptr %.57, i32 0, i64 40)
+  %.59 = bitcast ptr %.57 to ptr
+  call void @i64.array.init(ptr %.59)
+  call void @i64.array.append(ptr %.59, i64 48)
+  %.62 = load ptr, ptr %result, align 8
+  %.63 = bitcast ptr %.62 to ptr
+  call void @meteor_retain(ptr %.63)
+  %.65 = call ptr @malloc(i64 40)
+  %.66 = call ptr @memset(ptr %.65, i32 0, i64 40)
+  %.67 = bitcast ptr %.65 to ptr
+  call void @i64.array.init(ptr %.67)
+  %left_len = call i64 @i64.array.length(ptr %.59)
+  %right_len = call i64 @i64.array.length(ptr %.62)
   %i_left = alloca i64, align 8
   store i64 0, ptr %i_left, align 4
   br label %str_concat.left.cond
 
 if.false.0:                                       ; preds = %if.start.2
-  %.108 = load i64, ptr %d, align 4
-  %cmptmp.4 = icmp eq i64 %.108, 1
+  %.110 = load i64, ptr %d, align 4
+  %cmptmp.4 = icmp eq i64 %.110, 1
   br i1 %cmptmp.4, label %if.true.1, label %if.false.1
 
 str_concat.left.cond:                             ; preds = %str_concat.left.body, %if.true.0.2
-  %.69 = load i64, ptr %i_left, align 4
-  %.70 = icmp slt i64 %.69, %left_len
-  br i1 %.70, label %str_concat.left.body, label %str_concat.left.end
+  %.71 = load i64, ptr %i_left, align 4
+  %.72 = icmp slt i64 %.71, %left_len
+  br i1 %.72, label %str_concat.left.body, label %str_concat.left.end
 
 str_concat.left.body:                             ; preds = %str_concat.left.cond
-  %.72 = load i64, ptr %i_left, align 4
-  %left_char = call i64 @i64.array.get(ptr %.58, i64 %.72)
-  call void @i64.array.append(ptr %.65, i64 %left_char)
-  %.74 = add i64 %.72, 1
-  store i64 %.74, ptr %i_left, align 4
+  %.74 = load i64, ptr %i_left, align 4
+  %left_char = call i64 @i64.array.get(ptr %.59, i64 %.74)
+  call void @i64.array.append(ptr %.67, i64 %left_char)
+  %.76 = add i64 %.74, 1
+  store i64 %.76, ptr %i_left, align 4
   br label %str_concat.left.cond
 
 str_concat.left.end:                              ; preds = %str_concat.left.cond
@@ -21184,90 +21241,92 @@ str_concat.left.end:                              ; preds = %str_concat.left.con
   br label %str_concat.right.cond
 
 str_concat.right.cond:                            ; preds = %str_concat.right.body, %str_concat.left.end
-  %.79 = load i64, ptr %i_right, align 4
-  %.80 = icmp slt i64 %.79, %right_len
-  br i1 %.80, label %str_concat.right.body, label %str_concat.right.end
+  %.81 = load i64, ptr %i_right, align 4
+  %.82 = icmp slt i64 %.81, %right_len
+  br i1 %.82, label %str_concat.right.body, label %str_concat.right.end
 
 str_concat.right.body:                            ; preds = %str_concat.right.cond
-  %.82 = load i64, ptr %i_right, align 4
-  %right_char = call i64 @i64.array.get(ptr %.61, i64 %.82)
-  call void @i64.array.append(ptr %.65, i64 %right_char)
-  %.84 = add i64 %.82, 1
-  store i64 %.84, ptr %i_right, align 4
+  %.84 = load i64, ptr %i_right, align 4
+  %right_char = call i64 @i64.array.get(ptr %.62, i64 %.84)
+  call void @i64.array.append(ptr %.67, i64 %right_char)
+  %.86 = add i64 %.84, 1
+  store i64 %.86, ptr %i_right, align 4
   br label %str_concat.right.cond
 
 str_concat.right.end:                             ; preds = %str_concat.right.cond
-  %.87 = icmp eq ptr %.58, null
-  br i1 %.87, label %rc_release_continue.2, label %rc_release.2
+  %.89 = icmp eq ptr %.59, null
+  br i1 %.89, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.2:                                     ; preds = %str_concat.right.end
-  %.89 = bitcast ptr %.58 to ptr
-  call void @meteor_release(ptr %.89)
+  %.91 = bitcast ptr %.59 to ptr
+  call void @meteor_release(ptr %.91)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %str_concat.right.end
-  %.92 = icmp eq ptr %.61, null
-  br i1 %.92, label %rc_release_continue.3, label %rc_release.3
+  %.94 = icmp eq ptr %.62, null
+  br i1 %.94, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.3:                                     ; preds = %rc_release_continue.2
-  %.94 = bitcast ptr %.61 to ptr
-  call void @meteor_release(ptr %.94)
+  %.96 = bitcast ptr %.62 to ptr
+  call void @meteor_release(ptr %.96)
   br label %rc_release_continue.3
 
 rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.2
-  %.97 = load ptr, ptr %result, align 8
-  %.98 = icmp ne ptr %.97, null
-  br i1 %.98, label %rc_release_continue.3.if, label %rc_release_continue.3.endif
+  %.99 = load ptr, ptr %result, align 8
+  %.100 = icmp ne ptr %.99, null
+  br i1 %.100, label %rc_release_continue.3.if, label %rc_release_continue.3.endif
 
 rc_release_continue.3.if:                         ; preds = %rc_release_continue.3
-  %.100 = icmp eq ptr %.97, null
-  br i1 %.100, label %rc_release_continue.4, label %rc_release.4
+  %.102 = icmp eq ptr %.99, null
+  br i1 %.102, label %rc_release_continue.4, label %rc_release.4
 
 rc_release_continue.3.endif:                      ; preds = %rc_release_continue.4, %rc_release_continue.3
-  store ptr %.65, ptr %result, align 8
+  store ptr %.67, ptr %result, align 8
   br label %if.end.2
 
 rc_release.4:                                     ; preds = %rc_release_continue.3.if
-  %.102 = bitcast ptr %.97 to ptr
-  call void @meteor_release(ptr %.102)
+  %.104 = bitcast ptr %.99 to ptr
+  call void @meteor_release(ptr %.104)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3.if
   br label %rc_release_continue.3.endif
 
 if.true.1:                                        ; preds = %if.false.0
-  %.110 = call ptr @malloc(i64 40)
-  %.111 = bitcast ptr %.110 to ptr
-  call void @i64.array.init(ptr %.111)
-  call void @i64.array.append(ptr %.111, i64 49)
-  %.114 = load ptr, ptr %result, align 8
-  %.115 = bitcast ptr %.114 to ptr
-  call void @meteor_retain(ptr %.115)
-  %.117 = call ptr @malloc(i64 40)
+  %.112 = call ptr @malloc(i64 40)
+  %.113 = call ptr @memset(ptr %.112, i32 0, i64 40)
+  %.114 = bitcast ptr %.112 to ptr
+  call void @i64.array.init(ptr %.114)
+  call void @i64.array.append(ptr %.114, i64 49)
+  %.117 = load ptr, ptr %result, align 8
   %.118 = bitcast ptr %.117 to ptr
-  call void @i64.array.init(ptr %.118)
-  %left_len.1 = call i64 @i64.array.length(ptr %.111)
-  %right_len.1 = call i64 @i64.array.length(ptr %.114)
+  call void @meteor_retain(ptr %.118)
+  %.120 = call ptr @malloc(i64 40)
+  %.121 = call ptr @memset(ptr %.120, i32 0, i64 40)
+  %.122 = bitcast ptr %.120 to ptr
+  call void @i64.array.init(ptr %.122)
+  %left_len.1 = call i64 @i64.array.length(ptr %.114)
+  %right_len.1 = call i64 @i64.array.length(ptr %.117)
   %i_left.1 = alloca i64, align 8
   store i64 0, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 if.false.1:                                       ; preds = %if.false.0
-  %.161 = load i64, ptr %d, align 4
-  %cmptmp.5 = icmp eq i64 %.161, 2
+  %.165 = load i64, ptr %d, align 4
+  %cmptmp.5 = icmp eq i64 %.165, 2
   br i1 %cmptmp.5, label %if.true.2, label %if.false.2
 
 str_concat.left.cond.1:                           ; preds = %str_concat.left.body.1, %if.true.1
-  %.122 = load i64, ptr %i_left.1, align 4
-  %.123 = icmp slt i64 %.122, %left_len.1
-  br i1 %.123, label %str_concat.left.body.1, label %str_concat.left.end.1
+  %.126 = load i64, ptr %i_left.1, align 4
+  %.127 = icmp slt i64 %.126, %left_len.1
+  br i1 %.127, label %str_concat.left.body.1, label %str_concat.left.end.1
 
 str_concat.left.body.1:                           ; preds = %str_concat.left.cond.1
-  %.125 = load i64, ptr %i_left.1, align 4
-  %left_char.1 = call i64 @i64.array.get(ptr %.111, i64 %.125)
-  call void @i64.array.append(ptr %.118, i64 %left_char.1)
-  %.127 = add i64 %.125, 1
-  store i64 %.127, ptr %i_left.1, align 4
+  %.129 = load i64, ptr %i_left.1, align 4
+  %left_char.1 = call i64 @i64.array.get(ptr %.114, i64 %.129)
+  call void @i64.array.append(ptr %.122, i64 %left_char.1)
+  %.131 = add i64 %.129, 1
+  store i64 %.131, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 str_concat.left.end.1:                            ; preds = %str_concat.left.cond.1
@@ -21276,90 +21335,92 @@ str_concat.left.end.1:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.1
 
 str_concat.right.cond.1:                          ; preds = %str_concat.right.body.1, %str_concat.left.end.1
-  %.132 = load i64, ptr %i_right.1, align 4
-  %.133 = icmp slt i64 %.132, %right_len.1
-  br i1 %.133, label %str_concat.right.body.1, label %str_concat.right.end.1
+  %.136 = load i64, ptr %i_right.1, align 4
+  %.137 = icmp slt i64 %.136, %right_len.1
+  br i1 %.137, label %str_concat.right.body.1, label %str_concat.right.end.1
 
 str_concat.right.body.1:                          ; preds = %str_concat.right.cond.1
-  %.135 = load i64, ptr %i_right.1, align 4
-  %right_char.1 = call i64 @i64.array.get(ptr %.114, i64 %.135)
-  call void @i64.array.append(ptr %.118, i64 %right_char.1)
-  %.137 = add i64 %.135, 1
-  store i64 %.137, ptr %i_right.1, align 4
+  %.139 = load i64, ptr %i_right.1, align 4
+  %right_char.1 = call i64 @i64.array.get(ptr %.117, i64 %.139)
+  call void @i64.array.append(ptr %.122, i64 %right_char.1)
+  %.141 = add i64 %.139, 1
+  store i64 %.141, ptr %i_right.1, align 4
   br label %str_concat.right.cond.1
 
 str_concat.right.end.1:                           ; preds = %str_concat.right.cond.1
-  %.140 = icmp eq ptr %.111, null
-  br i1 %.140, label %rc_release_continue.5, label %rc_release.5
+  %.144 = icmp eq ptr %.114, null
+  br i1 %.144, label %rc_release_continue.5, label %rc_release.5
 
 rc_release.5:                                     ; preds = %str_concat.right.end.1
-  %.142 = bitcast ptr %.111 to ptr
-  call void @meteor_release(ptr %.142)
+  %.146 = bitcast ptr %.114 to ptr
+  call void @meteor_release(ptr %.146)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %str_concat.right.end.1
-  %.145 = icmp eq ptr %.114, null
-  br i1 %.145, label %rc_release_continue.6, label %rc_release.6
+  %.149 = icmp eq ptr %.117, null
+  br i1 %.149, label %rc_release_continue.6, label %rc_release.6
 
 rc_release.6:                                     ; preds = %rc_release_continue.5
-  %.147 = bitcast ptr %.114 to ptr
-  call void @meteor_release(ptr %.147)
+  %.151 = bitcast ptr %.117 to ptr
+  call void @meteor_release(ptr %.151)
   br label %rc_release_continue.6
 
 rc_release_continue.6:                            ; preds = %rc_release.6, %rc_release_continue.5
-  %.150 = load ptr, ptr %result, align 8
-  %.151 = icmp ne ptr %.150, null
-  br i1 %.151, label %rc_release_continue.6.if, label %rc_release_continue.6.endif
+  %.154 = load ptr, ptr %result, align 8
+  %.155 = icmp ne ptr %.154, null
+  br i1 %.155, label %rc_release_continue.6.if, label %rc_release_continue.6.endif
 
 rc_release_continue.6.if:                         ; preds = %rc_release_continue.6
-  %.153 = icmp eq ptr %.150, null
-  br i1 %.153, label %rc_release_continue.7, label %rc_release.7
+  %.157 = icmp eq ptr %.154, null
+  br i1 %.157, label %rc_release_continue.7, label %rc_release.7
 
 rc_release_continue.6.endif:                      ; preds = %rc_release_continue.7, %rc_release_continue.6
-  store ptr %.118, ptr %result, align 8
+  store ptr %.122, ptr %result, align 8
   br label %if.end.2
 
 rc_release.7:                                     ; preds = %rc_release_continue.6.if
-  %.155 = bitcast ptr %.150 to ptr
-  call void @meteor_release(ptr %.155)
+  %.159 = bitcast ptr %.154 to ptr
+  call void @meteor_release(ptr %.159)
   br label %rc_release_continue.7
 
 rc_release_continue.7:                            ; preds = %rc_release.7, %rc_release_continue.6.if
   br label %rc_release_continue.6.endif
 
 if.true.2:                                        ; preds = %if.false.1
-  %.163 = call ptr @malloc(i64 40)
-  %.164 = bitcast ptr %.163 to ptr
-  call void @i64.array.init(ptr %.164)
-  call void @i64.array.append(ptr %.164, i64 50)
-  %.167 = load ptr, ptr %result, align 8
-  %.168 = bitcast ptr %.167 to ptr
-  call void @meteor_retain(ptr %.168)
-  %.170 = call ptr @malloc(i64 40)
-  %.171 = bitcast ptr %.170 to ptr
-  call void @i64.array.init(ptr %.171)
-  %left_len.2 = call i64 @i64.array.length(ptr %.164)
-  %right_len.2 = call i64 @i64.array.length(ptr %.167)
+  %.167 = call ptr @malloc(i64 40)
+  %.168 = call ptr @memset(ptr %.167, i32 0, i64 40)
+  %.169 = bitcast ptr %.167 to ptr
+  call void @i64.array.init(ptr %.169)
+  call void @i64.array.append(ptr %.169, i64 50)
+  %.172 = load ptr, ptr %result, align 8
+  %.173 = bitcast ptr %.172 to ptr
+  call void @meteor_retain(ptr %.173)
+  %.175 = call ptr @malloc(i64 40)
+  %.176 = call ptr @memset(ptr %.175, i32 0, i64 40)
+  %.177 = bitcast ptr %.175 to ptr
+  call void @i64.array.init(ptr %.177)
+  %left_len.2 = call i64 @i64.array.length(ptr %.169)
+  %right_len.2 = call i64 @i64.array.length(ptr %.172)
   %i_left.2 = alloca i64, align 8
   store i64 0, ptr %i_left.2, align 4
   br label %str_concat.left.cond.2
 
 if.false.2:                                       ; preds = %if.false.1
-  %.214 = load i64, ptr %d, align 4
-  %cmptmp.6 = icmp eq i64 %.214, 3
+  %.220 = load i64, ptr %d, align 4
+  %cmptmp.6 = icmp eq i64 %.220, 3
   br i1 %cmptmp.6, label %if.true.3, label %if.false.3
 
 str_concat.left.cond.2:                           ; preds = %str_concat.left.body.2, %if.true.2
-  %.175 = load i64, ptr %i_left.2, align 4
-  %.176 = icmp slt i64 %.175, %left_len.2
-  br i1 %.176, label %str_concat.left.body.2, label %str_concat.left.end.2
+  %.181 = load i64, ptr %i_left.2, align 4
+  %.182 = icmp slt i64 %.181, %left_len.2
+  br i1 %.182, label %str_concat.left.body.2, label %str_concat.left.end.2
 
 str_concat.left.body.2:                           ; preds = %str_concat.left.cond.2
-  %.178 = load i64, ptr %i_left.2, align 4
-  %left_char.2 = call i64 @i64.array.get(ptr %.164, i64 %.178)
-  call void @i64.array.append(ptr %.171, i64 %left_char.2)
-  %.180 = add i64 %.178, 1
-  store i64 %.180, ptr %i_left.2, align 4
+  %.184 = load i64, ptr %i_left.2, align 4
+  %left_char.2 = call i64 @i64.array.get(ptr %.169, i64 %.184)
+  call void @i64.array.append(ptr %.177, i64 %left_char.2)
+  %.186 = add i64 %.184, 1
+  store i64 %.186, ptr %i_left.2, align 4
   br label %str_concat.left.cond.2
 
 str_concat.left.end.2:                            ; preds = %str_concat.left.cond.2
@@ -21368,90 +21429,92 @@ str_concat.left.end.2:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.2
 
 str_concat.right.cond.2:                          ; preds = %str_concat.right.body.2, %str_concat.left.end.2
-  %.185 = load i64, ptr %i_right.2, align 4
-  %.186 = icmp slt i64 %.185, %right_len.2
-  br i1 %.186, label %str_concat.right.body.2, label %str_concat.right.end.2
+  %.191 = load i64, ptr %i_right.2, align 4
+  %.192 = icmp slt i64 %.191, %right_len.2
+  br i1 %.192, label %str_concat.right.body.2, label %str_concat.right.end.2
 
 str_concat.right.body.2:                          ; preds = %str_concat.right.cond.2
-  %.188 = load i64, ptr %i_right.2, align 4
-  %right_char.2 = call i64 @i64.array.get(ptr %.167, i64 %.188)
-  call void @i64.array.append(ptr %.171, i64 %right_char.2)
-  %.190 = add i64 %.188, 1
-  store i64 %.190, ptr %i_right.2, align 4
+  %.194 = load i64, ptr %i_right.2, align 4
+  %right_char.2 = call i64 @i64.array.get(ptr %.172, i64 %.194)
+  call void @i64.array.append(ptr %.177, i64 %right_char.2)
+  %.196 = add i64 %.194, 1
+  store i64 %.196, ptr %i_right.2, align 4
   br label %str_concat.right.cond.2
 
 str_concat.right.end.2:                           ; preds = %str_concat.right.cond.2
-  %.193 = icmp eq ptr %.164, null
-  br i1 %.193, label %rc_release_continue.8, label %rc_release.8
+  %.199 = icmp eq ptr %.169, null
+  br i1 %.199, label %rc_release_continue.8, label %rc_release.8
 
 rc_release.8:                                     ; preds = %str_concat.right.end.2
-  %.195 = bitcast ptr %.164 to ptr
-  call void @meteor_release(ptr %.195)
+  %.201 = bitcast ptr %.169 to ptr
+  call void @meteor_release(ptr %.201)
   br label %rc_release_continue.8
 
 rc_release_continue.8:                            ; preds = %rc_release.8, %str_concat.right.end.2
-  %.198 = icmp eq ptr %.167, null
-  br i1 %.198, label %rc_release_continue.9, label %rc_release.9
+  %.204 = icmp eq ptr %.172, null
+  br i1 %.204, label %rc_release_continue.9, label %rc_release.9
 
 rc_release.9:                                     ; preds = %rc_release_continue.8
-  %.200 = bitcast ptr %.167 to ptr
-  call void @meteor_release(ptr %.200)
+  %.206 = bitcast ptr %.172 to ptr
+  call void @meteor_release(ptr %.206)
   br label %rc_release_continue.9
 
 rc_release_continue.9:                            ; preds = %rc_release.9, %rc_release_continue.8
-  %.203 = load ptr, ptr %result, align 8
-  %.204 = icmp ne ptr %.203, null
-  br i1 %.204, label %rc_release_continue.9.if, label %rc_release_continue.9.endif
+  %.209 = load ptr, ptr %result, align 8
+  %.210 = icmp ne ptr %.209, null
+  br i1 %.210, label %rc_release_continue.9.if, label %rc_release_continue.9.endif
 
 rc_release_continue.9.if:                         ; preds = %rc_release_continue.9
-  %.206 = icmp eq ptr %.203, null
-  br i1 %.206, label %rc_release_continue.10, label %rc_release.10
+  %.212 = icmp eq ptr %.209, null
+  br i1 %.212, label %rc_release_continue.10, label %rc_release.10
 
 rc_release_continue.9.endif:                      ; preds = %rc_release_continue.10, %rc_release_continue.9
-  store ptr %.171, ptr %result, align 8
+  store ptr %.177, ptr %result, align 8
   br label %if.end.2
 
 rc_release.10:                                    ; preds = %rc_release_continue.9.if
-  %.208 = bitcast ptr %.203 to ptr
-  call void @meteor_release(ptr %.208)
+  %.214 = bitcast ptr %.209 to ptr
+  call void @meteor_release(ptr %.214)
   br label %rc_release_continue.10
 
 rc_release_continue.10:                           ; preds = %rc_release.10, %rc_release_continue.9.if
   br label %rc_release_continue.9.endif
 
 if.true.3:                                        ; preds = %if.false.2
-  %.216 = call ptr @malloc(i64 40)
-  %.217 = bitcast ptr %.216 to ptr
-  call void @i64.array.init(ptr %.217)
-  call void @i64.array.append(ptr %.217, i64 51)
-  %.220 = load ptr, ptr %result, align 8
-  %.221 = bitcast ptr %.220 to ptr
-  call void @meteor_retain(ptr %.221)
-  %.223 = call ptr @malloc(i64 40)
-  %.224 = bitcast ptr %.223 to ptr
+  %.222 = call ptr @malloc(i64 40)
+  %.223 = call ptr @memset(ptr %.222, i32 0, i64 40)
+  %.224 = bitcast ptr %.222 to ptr
   call void @i64.array.init(ptr %.224)
-  %left_len.3 = call i64 @i64.array.length(ptr %.217)
-  %right_len.3 = call i64 @i64.array.length(ptr %.220)
+  call void @i64.array.append(ptr %.224, i64 51)
+  %.227 = load ptr, ptr %result, align 8
+  %.228 = bitcast ptr %.227 to ptr
+  call void @meteor_retain(ptr %.228)
+  %.230 = call ptr @malloc(i64 40)
+  %.231 = call ptr @memset(ptr %.230, i32 0, i64 40)
+  %.232 = bitcast ptr %.230 to ptr
+  call void @i64.array.init(ptr %.232)
+  %left_len.3 = call i64 @i64.array.length(ptr %.224)
+  %right_len.3 = call i64 @i64.array.length(ptr %.227)
   %i_left.3 = alloca i64, align 8
   store i64 0, ptr %i_left.3, align 4
   br label %str_concat.left.cond.3
 
 if.false.3:                                       ; preds = %if.false.2
-  %.267 = load i64, ptr %d, align 4
-  %cmptmp.7 = icmp eq i64 %.267, 4
+  %.275 = load i64, ptr %d, align 4
+  %cmptmp.7 = icmp eq i64 %.275, 4
   br i1 %cmptmp.7, label %if.true.4, label %if.false.4
 
 str_concat.left.cond.3:                           ; preds = %str_concat.left.body.3, %if.true.3
-  %.228 = load i64, ptr %i_left.3, align 4
-  %.229 = icmp slt i64 %.228, %left_len.3
-  br i1 %.229, label %str_concat.left.body.3, label %str_concat.left.end.3
+  %.236 = load i64, ptr %i_left.3, align 4
+  %.237 = icmp slt i64 %.236, %left_len.3
+  br i1 %.237, label %str_concat.left.body.3, label %str_concat.left.end.3
 
 str_concat.left.body.3:                           ; preds = %str_concat.left.cond.3
-  %.231 = load i64, ptr %i_left.3, align 4
-  %left_char.3 = call i64 @i64.array.get(ptr %.217, i64 %.231)
-  call void @i64.array.append(ptr %.224, i64 %left_char.3)
-  %.233 = add i64 %.231, 1
-  store i64 %.233, ptr %i_left.3, align 4
+  %.239 = load i64, ptr %i_left.3, align 4
+  %left_char.3 = call i64 @i64.array.get(ptr %.224, i64 %.239)
+  call void @i64.array.append(ptr %.232, i64 %left_char.3)
+  %.241 = add i64 %.239, 1
+  store i64 %.241, ptr %i_left.3, align 4
   br label %str_concat.left.cond.3
 
 str_concat.left.end.3:                            ; preds = %str_concat.left.cond.3
@@ -21460,90 +21523,92 @@ str_concat.left.end.3:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.3
 
 str_concat.right.cond.3:                          ; preds = %str_concat.right.body.3, %str_concat.left.end.3
-  %.238 = load i64, ptr %i_right.3, align 4
-  %.239 = icmp slt i64 %.238, %right_len.3
-  br i1 %.239, label %str_concat.right.body.3, label %str_concat.right.end.3
+  %.246 = load i64, ptr %i_right.3, align 4
+  %.247 = icmp slt i64 %.246, %right_len.3
+  br i1 %.247, label %str_concat.right.body.3, label %str_concat.right.end.3
 
 str_concat.right.body.3:                          ; preds = %str_concat.right.cond.3
-  %.241 = load i64, ptr %i_right.3, align 4
-  %right_char.3 = call i64 @i64.array.get(ptr %.220, i64 %.241)
-  call void @i64.array.append(ptr %.224, i64 %right_char.3)
-  %.243 = add i64 %.241, 1
-  store i64 %.243, ptr %i_right.3, align 4
+  %.249 = load i64, ptr %i_right.3, align 4
+  %right_char.3 = call i64 @i64.array.get(ptr %.227, i64 %.249)
+  call void @i64.array.append(ptr %.232, i64 %right_char.3)
+  %.251 = add i64 %.249, 1
+  store i64 %.251, ptr %i_right.3, align 4
   br label %str_concat.right.cond.3
 
 str_concat.right.end.3:                           ; preds = %str_concat.right.cond.3
-  %.246 = icmp eq ptr %.217, null
-  br i1 %.246, label %rc_release_continue.11, label %rc_release.11
+  %.254 = icmp eq ptr %.224, null
+  br i1 %.254, label %rc_release_continue.11, label %rc_release.11
 
 rc_release.11:                                    ; preds = %str_concat.right.end.3
-  %.248 = bitcast ptr %.217 to ptr
-  call void @meteor_release(ptr %.248)
+  %.256 = bitcast ptr %.224 to ptr
+  call void @meteor_release(ptr %.256)
   br label %rc_release_continue.11
 
 rc_release_continue.11:                           ; preds = %rc_release.11, %str_concat.right.end.3
-  %.251 = icmp eq ptr %.220, null
-  br i1 %.251, label %rc_release_continue.12, label %rc_release.12
+  %.259 = icmp eq ptr %.227, null
+  br i1 %.259, label %rc_release_continue.12, label %rc_release.12
 
 rc_release.12:                                    ; preds = %rc_release_continue.11
-  %.253 = bitcast ptr %.220 to ptr
-  call void @meteor_release(ptr %.253)
+  %.261 = bitcast ptr %.227 to ptr
+  call void @meteor_release(ptr %.261)
   br label %rc_release_continue.12
 
 rc_release_continue.12:                           ; preds = %rc_release.12, %rc_release_continue.11
-  %.256 = load ptr, ptr %result, align 8
-  %.257 = icmp ne ptr %.256, null
-  br i1 %.257, label %rc_release_continue.12.if, label %rc_release_continue.12.endif
+  %.264 = load ptr, ptr %result, align 8
+  %.265 = icmp ne ptr %.264, null
+  br i1 %.265, label %rc_release_continue.12.if, label %rc_release_continue.12.endif
 
 rc_release_continue.12.if:                        ; preds = %rc_release_continue.12
-  %.259 = icmp eq ptr %.256, null
-  br i1 %.259, label %rc_release_continue.13, label %rc_release.13
+  %.267 = icmp eq ptr %.264, null
+  br i1 %.267, label %rc_release_continue.13, label %rc_release.13
 
 rc_release_continue.12.endif:                     ; preds = %rc_release_continue.13, %rc_release_continue.12
-  store ptr %.224, ptr %result, align 8
+  store ptr %.232, ptr %result, align 8
   br label %if.end.2
 
 rc_release.13:                                    ; preds = %rc_release_continue.12.if
-  %.261 = bitcast ptr %.256 to ptr
-  call void @meteor_release(ptr %.261)
+  %.269 = bitcast ptr %.264 to ptr
+  call void @meteor_release(ptr %.269)
   br label %rc_release_continue.13
 
 rc_release_continue.13:                           ; preds = %rc_release.13, %rc_release_continue.12.if
   br label %rc_release_continue.12.endif
 
 if.true.4:                                        ; preds = %if.false.3
-  %.269 = call ptr @malloc(i64 40)
-  %.270 = bitcast ptr %.269 to ptr
-  call void @i64.array.init(ptr %.270)
-  call void @i64.array.append(ptr %.270, i64 52)
-  %.273 = load ptr, ptr %result, align 8
-  %.274 = bitcast ptr %.273 to ptr
-  call void @meteor_retain(ptr %.274)
-  %.276 = call ptr @malloc(i64 40)
-  %.277 = bitcast ptr %.276 to ptr
-  call void @i64.array.init(ptr %.277)
-  %left_len.4 = call i64 @i64.array.length(ptr %.270)
-  %right_len.4 = call i64 @i64.array.length(ptr %.273)
+  %.277 = call ptr @malloc(i64 40)
+  %.278 = call ptr @memset(ptr %.277, i32 0, i64 40)
+  %.279 = bitcast ptr %.277 to ptr
+  call void @i64.array.init(ptr %.279)
+  call void @i64.array.append(ptr %.279, i64 52)
+  %.282 = load ptr, ptr %result, align 8
+  %.283 = bitcast ptr %.282 to ptr
+  call void @meteor_retain(ptr %.283)
+  %.285 = call ptr @malloc(i64 40)
+  %.286 = call ptr @memset(ptr %.285, i32 0, i64 40)
+  %.287 = bitcast ptr %.285 to ptr
+  call void @i64.array.init(ptr %.287)
+  %left_len.4 = call i64 @i64.array.length(ptr %.279)
+  %right_len.4 = call i64 @i64.array.length(ptr %.282)
   %i_left.4 = alloca i64, align 8
   store i64 0, ptr %i_left.4, align 4
   br label %str_concat.left.cond.4
 
 if.false.4:                                       ; preds = %if.false.3
-  %.320 = load i64, ptr %d, align 4
-  %cmptmp.8 = icmp eq i64 %.320, 5
+  %.330 = load i64, ptr %d, align 4
+  %cmptmp.8 = icmp eq i64 %.330, 5
   br i1 %cmptmp.8, label %if.true.5, label %if.false.5
 
 str_concat.left.cond.4:                           ; preds = %str_concat.left.body.4, %if.true.4
-  %.281 = load i64, ptr %i_left.4, align 4
-  %.282 = icmp slt i64 %.281, %left_len.4
-  br i1 %.282, label %str_concat.left.body.4, label %str_concat.left.end.4
+  %.291 = load i64, ptr %i_left.4, align 4
+  %.292 = icmp slt i64 %.291, %left_len.4
+  br i1 %.292, label %str_concat.left.body.4, label %str_concat.left.end.4
 
 str_concat.left.body.4:                           ; preds = %str_concat.left.cond.4
-  %.284 = load i64, ptr %i_left.4, align 4
-  %left_char.4 = call i64 @i64.array.get(ptr %.270, i64 %.284)
-  call void @i64.array.append(ptr %.277, i64 %left_char.4)
-  %.286 = add i64 %.284, 1
-  store i64 %.286, ptr %i_left.4, align 4
+  %.294 = load i64, ptr %i_left.4, align 4
+  %left_char.4 = call i64 @i64.array.get(ptr %.279, i64 %.294)
+  call void @i64.array.append(ptr %.287, i64 %left_char.4)
+  %.296 = add i64 %.294, 1
+  store i64 %.296, ptr %i_left.4, align 4
   br label %str_concat.left.cond.4
 
 str_concat.left.end.4:                            ; preds = %str_concat.left.cond.4
@@ -21552,90 +21617,92 @@ str_concat.left.end.4:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.4
 
 str_concat.right.cond.4:                          ; preds = %str_concat.right.body.4, %str_concat.left.end.4
-  %.291 = load i64, ptr %i_right.4, align 4
-  %.292 = icmp slt i64 %.291, %right_len.4
-  br i1 %.292, label %str_concat.right.body.4, label %str_concat.right.end.4
+  %.301 = load i64, ptr %i_right.4, align 4
+  %.302 = icmp slt i64 %.301, %right_len.4
+  br i1 %.302, label %str_concat.right.body.4, label %str_concat.right.end.4
 
 str_concat.right.body.4:                          ; preds = %str_concat.right.cond.4
-  %.294 = load i64, ptr %i_right.4, align 4
-  %right_char.4 = call i64 @i64.array.get(ptr %.273, i64 %.294)
-  call void @i64.array.append(ptr %.277, i64 %right_char.4)
-  %.296 = add i64 %.294, 1
-  store i64 %.296, ptr %i_right.4, align 4
+  %.304 = load i64, ptr %i_right.4, align 4
+  %right_char.4 = call i64 @i64.array.get(ptr %.282, i64 %.304)
+  call void @i64.array.append(ptr %.287, i64 %right_char.4)
+  %.306 = add i64 %.304, 1
+  store i64 %.306, ptr %i_right.4, align 4
   br label %str_concat.right.cond.4
 
 str_concat.right.end.4:                           ; preds = %str_concat.right.cond.4
-  %.299 = icmp eq ptr %.270, null
-  br i1 %.299, label %rc_release_continue.14, label %rc_release.14
+  %.309 = icmp eq ptr %.279, null
+  br i1 %.309, label %rc_release_continue.14, label %rc_release.14
 
 rc_release.14:                                    ; preds = %str_concat.right.end.4
-  %.301 = bitcast ptr %.270 to ptr
-  call void @meteor_release(ptr %.301)
+  %.311 = bitcast ptr %.279 to ptr
+  call void @meteor_release(ptr %.311)
   br label %rc_release_continue.14
 
 rc_release_continue.14:                           ; preds = %rc_release.14, %str_concat.right.end.4
-  %.304 = icmp eq ptr %.273, null
-  br i1 %.304, label %rc_release_continue.15, label %rc_release.15
+  %.314 = icmp eq ptr %.282, null
+  br i1 %.314, label %rc_release_continue.15, label %rc_release.15
 
 rc_release.15:                                    ; preds = %rc_release_continue.14
-  %.306 = bitcast ptr %.273 to ptr
-  call void @meteor_release(ptr %.306)
+  %.316 = bitcast ptr %.282 to ptr
+  call void @meteor_release(ptr %.316)
   br label %rc_release_continue.15
 
 rc_release_continue.15:                           ; preds = %rc_release.15, %rc_release_continue.14
-  %.309 = load ptr, ptr %result, align 8
-  %.310 = icmp ne ptr %.309, null
-  br i1 %.310, label %rc_release_continue.15.if, label %rc_release_continue.15.endif
+  %.319 = load ptr, ptr %result, align 8
+  %.320 = icmp ne ptr %.319, null
+  br i1 %.320, label %rc_release_continue.15.if, label %rc_release_continue.15.endif
 
 rc_release_continue.15.if:                        ; preds = %rc_release_continue.15
-  %.312 = icmp eq ptr %.309, null
-  br i1 %.312, label %rc_release_continue.16, label %rc_release.16
+  %.322 = icmp eq ptr %.319, null
+  br i1 %.322, label %rc_release_continue.16, label %rc_release.16
 
 rc_release_continue.15.endif:                     ; preds = %rc_release_continue.16, %rc_release_continue.15
-  store ptr %.277, ptr %result, align 8
+  store ptr %.287, ptr %result, align 8
   br label %if.end.2
 
 rc_release.16:                                    ; preds = %rc_release_continue.15.if
-  %.314 = bitcast ptr %.309 to ptr
-  call void @meteor_release(ptr %.314)
+  %.324 = bitcast ptr %.319 to ptr
+  call void @meteor_release(ptr %.324)
   br label %rc_release_continue.16
 
 rc_release_continue.16:                           ; preds = %rc_release.16, %rc_release_continue.15.if
   br label %rc_release_continue.15.endif
 
 if.true.5:                                        ; preds = %if.false.4
-  %.322 = call ptr @malloc(i64 40)
-  %.323 = bitcast ptr %.322 to ptr
-  call void @i64.array.init(ptr %.323)
-  call void @i64.array.append(ptr %.323, i64 53)
-  %.326 = load ptr, ptr %result, align 8
-  %.327 = bitcast ptr %.326 to ptr
-  call void @meteor_retain(ptr %.327)
-  %.329 = call ptr @malloc(i64 40)
-  %.330 = bitcast ptr %.329 to ptr
-  call void @i64.array.init(ptr %.330)
-  %left_len.5 = call i64 @i64.array.length(ptr %.323)
-  %right_len.5 = call i64 @i64.array.length(ptr %.326)
+  %.332 = call ptr @malloc(i64 40)
+  %.333 = call ptr @memset(ptr %.332, i32 0, i64 40)
+  %.334 = bitcast ptr %.332 to ptr
+  call void @i64.array.init(ptr %.334)
+  call void @i64.array.append(ptr %.334, i64 53)
+  %.337 = load ptr, ptr %result, align 8
+  %.338 = bitcast ptr %.337 to ptr
+  call void @meteor_retain(ptr %.338)
+  %.340 = call ptr @malloc(i64 40)
+  %.341 = call ptr @memset(ptr %.340, i32 0, i64 40)
+  %.342 = bitcast ptr %.340 to ptr
+  call void @i64.array.init(ptr %.342)
+  %left_len.5 = call i64 @i64.array.length(ptr %.334)
+  %right_len.5 = call i64 @i64.array.length(ptr %.337)
   %i_left.5 = alloca i64, align 8
   store i64 0, ptr %i_left.5, align 4
   br label %str_concat.left.cond.5
 
 if.false.5:                                       ; preds = %if.false.4
-  %.373 = load i64, ptr %d, align 4
-  %cmptmp.9 = icmp eq i64 %.373, 6
+  %.385 = load i64, ptr %d, align 4
+  %cmptmp.9 = icmp eq i64 %.385, 6
   br i1 %cmptmp.9, label %if.true.6, label %if.false.6
 
 str_concat.left.cond.5:                           ; preds = %str_concat.left.body.5, %if.true.5
-  %.334 = load i64, ptr %i_left.5, align 4
-  %.335 = icmp slt i64 %.334, %left_len.5
-  br i1 %.335, label %str_concat.left.body.5, label %str_concat.left.end.5
+  %.346 = load i64, ptr %i_left.5, align 4
+  %.347 = icmp slt i64 %.346, %left_len.5
+  br i1 %.347, label %str_concat.left.body.5, label %str_concat.left.end.5
 
 str_concat.left.body.5:                           ; preds = %str_concat.left.cond.5
-  %.337 = load i64, ptr %i_left.5, align 4
-  %left_char.5 = call i64 @i64.array.get(ptr %.323, i64 %.337)
-  call void @i64.array.append(ptr %.330, i64 %left_char.5)
-  %.339 = add i64 %.337, 1
-  store i64 %.339, ptr %i_left.5, align 4
+  %.349 = load i64, ptr %i_left.5, align 4
+  %left_char.5 = call i64 @i64.array.get(ptr %.334, i64 %.349)
+  call void @i64.array.append(ptr %.342, i64 %left_char.5)
+  %.351 = add i64 %.349, 1
+  store i64 %.351, ptr %i_left.5, align 4
   br label %str_concat.left.cond.5
 
 str_concat.left.end.5:                            ; preds = %str_concat.left.cond.5
@@ -21644,90 +21711,92 @@ str_concat.left.end.5:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.5
 
 str_concat.right.cond.5:                          ; preds = %str_concat.right.body.5, %str_concat.left.end.5
-  %.344 = load i64, ptr %i_right.5, align 4
-  %.345 = icmp slt i64 %.344, %right_len.5
-  br i1 %.345, label %str_concat.right.body.5, label %str_concat.right.end.5
+  %.356 = load i64, ptr %i_right.5, align 4
+  %.357 = icmp slt i64 %.356, %right_len.5
+  br i1 %.357, label %str_concat.right.body.5, label %str_concat.right.end.5
 
 str_concat.right.body.5:                          ; preds = %str_concat.right.cond.5
-  %.347 = load i64, ptr %i_right.5, align 4
-  %right_char.5 = call i64 @i64.array.get(ptr %.326, i64 %.347)
-  call void @i64.array.append(ptr %.330, i64 %right_char.5)
-  %.349 = add i64 %.347, 1
-  store i64 %.349, ptr %i_right.5, align 4
+  %.359 = load i64, ptr %i_right.5, align 4
+  %right_char.5 = call i64 @i64.array.get(ptr %.337, i64 %.359)
+  call void @i64.array.append(ptr %.342, i64 %right_char.5)
+  %.361 = add i64 %.359, 1
+  store i64 %.361, ptr %i_right.5, align 4
   br label %str_concat.right.cond.5
 
 str_concat.right.end.5:                           ; preds = %str_concat.right.cond.5
-  %.352 = icmp eq ptr %.323, null
-  br i1 %.352, label %rc_release_continue.17, label %rc_release.17
+  %.364 = icmp eq ptr %.334, null
+  br i1 %.364, label %rc_release_continue.17, label %rc_release.17
 
 rc_release.17:                                    ; preds = %str_concat.right.end.5
-  %.354 = bitcast ptr %.323 to ptr
-  call void @meteor_release(ptr %.354)
+  %.366 = bitcast ptr %.334 to ptr
+  call void @meteor_release(ptr %.366)
   br label %rc_release_continue.17
 
 rc_release_continue.17:                           ; preds = %rc_release.17, %str_concat.right.end.5
-  %.357 = icmp eq ptr %.326, null
-  br i1 %.357, label %rc_release_continue.18, label %rc_release.18
+  %.369 = icmp eq ptr %.337, null
+  br i1 %.369, label %rc_release_continue.18, label %rc_release.18
 
 rc_release.18:                                    ; preds = %rc_release_continue.17
-  %.359 = bitcast ptr %.326 to ptr
-  call void @meteor_release(ptr %.359)
+  %.371 = bitcast ptr %.337 to ptr
+  call void @meteor_release(ptr %.371)
   br label %rc_release_continue.18
 
 rc_release_continue.18:                           ; preds = %rc_release.18, %rc_release_continue.17
-  %.362 = load ptr, ptr %result, align 8
-  %.363 = icmp ne ptr %.362, null
-  br i1 %.363, label %rc_release_continue.18.if, label %rc_release_continue.18.endif
+  %.374 = load ptr, ptr %result, align 8
+  %.375 = icmp ne ptr %.374, null
+  br i1 %.375, label %rc_release_continue.18.if, label %rc_release_continue.18.endif
 
 rc_release_continue.18.if:                        ; preds = %rc_release_continue.18
-  %.365 = icmp eq ptr %.362, null
-  br i1 %.365, label %rc_release_continue.19, label %rc_release.19
+  %.377 = icmp eq ptr %.374, null
+  br i1 %.377, label %rc_release_continue.19, label %rc_release.19
 
 rc_release_continue.18.endif:                     ; preds = %rc_release_continue.19, %rc_release_continue.18
-  store ptr %.330, ptr %result, align 8
+  store ptr %.342, ptr %result, align 8
   br label %if.end.2
 
 rc_release.19:                                    ; preds = %rc_release_continue.18.if
-  %.367 = bitcast ptr %.362 to ptr
-  call void @meteor_release(ptr %.367)
+  %.379 = bitcast ptr %.374 to ptr
+  call void @meteor_release(ptr %.379)
   br label %rc_release_continue.19
 
 rc_release_continue.19:                           ; preds = %rc_release.19, %rc_release_continue.18.if
   br label %rc_release_continue.18.endif
 
 if.true.6:                                        ; preds = %if.false.5
-  %.375 = call ptr @malloc(i64 40)
-  %.376 = bitcast ptr %.375 to ptr
-  call void @i64.array.init(ptr %.376)
-  call void @i64.array.append(ptr %.376, i64 54)
-  %.379 = load ptr, ptr %result, align 8
-  %.380 = bitcast ptr %.379 to ptr
-  call void @meteor_retain(ptr %.380)
-  %.382 = call ptr @malloc(i64 40)
-  %.383 = bitcast ptr %.382 to ptr
-  call void @i64.array.init(ptr %.383)
-  %left_len.6 = call i64 @i64.array.length(ptr %.376)
-  %right_len.6 = call i64 @i64.array.length(ptr %.379)
+  %.387 = call ptr @malloc(i64 40)
+  %.388 = call ptr @memset(ptr %.387, i32 0, i64 40)
+  %.389 = bitcast ptr %.387 to ptr
+  call void @i64.array.init(ptr %.389)
+  call void @i64.array.append(ptr %.389, i64 54)
+  %.392 = load ptr, ptr %result, align 8
+  %.393 = bitcast ptr %.392 to ptr
+  call void @meteor_retain(ptr %.393)
+  %.395 = call ptr @malloc(i64 40)
+  %.396 = call ptr @memset(ptr %.395, i32 0, i64 40)
+  %.397 = bitcast ptr %.395 to ptr
+  call void @i64.array.init(ptr %.397)
+  %left_len.6 = call i64 @i64.array.length(ptr %.389)
+  %right_len.6 = call i64 @i64.array.length(ptr %.392)
   %i_left.6 = alloca i64, align 8
   store i64 0, ptr %i_left.6, align 4
   br label %str_concat.left.cond.6
 
 if.false.6:                                       ; preds = %if.false.5
-  %.426 = load i64, ptr %d, align 4
-  %cmptmp.10 = icmp eq i64 %.426, 7
+  %.440 = load i64, ptr %d, align 4
+  %cmptmp.10 = icmp eq i64 %.440, 7
   br i1 %cmptmp.10, label %if.true.7, label %if.false.7
 
 str_concat.left.cond.6:                           ; preds = %str_concat.left.body.6, %if.true.6
-  %.387 = load i64, ptr %i_left.6, align 4
-  %.388 = icmp slt i64 %.387, %left_len.6
-  br i1 %.388, label %str_concat.left.body.6, label %str_concat.left.end.6
+  %.401 = load i64, ptr %i_left.6, align 4
+  %.402 = icmp slt i64 %.401, %left_len.6
+  br i1 %.402, label %str_concat.left.body.6, label %str_concat.left.end.6
 
 str_concat.left.body.6:                           ; preds = %str_concat.left.cond.6
-  %.390 = load i64, ptr %i_left.6, align 4
-  %left_char.6 = call i64 @i64.array.get(ptr %.376, i64 %.390)
-  call void @i64.array.append(ptr %.383, i64 %left_char.6)
-  %.392 = add i64 %.390, 1
-  store i64 %.392, ptr %i_left.6, align 4
+  %.404 = load i64, ptr %i_left.6, align 4
+  %left_char.6 = call i64 @i64.array.get(ptr %.389, i64 %.404)
+  call void @i64.array.append(ptr %.397, i64 %left_char.6)
+  %.406 = add i64 %.404, 1
+  store i64 %.406, ptr %i_left.6, align 4
   br label %str_concat.left.cond.6
 
 str_concat.left.end.6:                            ; preds = %str_concat.left.cond.6
@@ -21736,90 +21805,92 @@ str_concat.left.end.6:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.6
 
 str_concat.right.cond.6:                          ; preds = %str_concat.right.body.6, %str_concat.left.end.6
-  %.397 = load i64, ptr %i_right.6, align 4
-  %.398 = icmp slt i64 %.397, %right_len.6
-  br i1 %.398, label %str_concat.right.body.6, label %str_concat.right.end.6
+  %.411 = load i64, ptr %i_right.6, align 4
+  %.412 = icmp slt i64 %.411, %right_len.6
+  br i1 %.412, label %str_concat.right.body.6, label %str_concat.right.end.6
 
 str_concat.right.body.6:                          ; preds = %str_concat.right.cond.6
-  %.400 = load i64, ptr %i_right.6, align 4
-  %right_char.6 = call i64 @i64.array.get(ptr %.379, i64 %.400)
-  call void @i64.array.append(ptr %.383, i64 %right_char.6)
-  %.402 = add i64 %.400, 1
-  store i64 %.402, ptr %i_right.6, align 4
+  %.414 = load i64, ptr %i_right.6, align 4
+  %right_char.6 = call i64 @i64.array.get(ptr %.392, i64 %.414)
+  call void @i64.array.append(ptr %.397, i64 %right_char.6)
+  %.416 = add i64 %.414, 1
+  store i64 %.416, ptr %i_right.6, align 4
   br label %str_concat.right.cond.6
 
 str_concat.right.end.6:                           ; preds = %str_concat.right.cond.6
-  %.405 = icmp eq ptr %.376, null
-  br i1 %.405, label %rc_release_continue.20, label %rc_release.20
+  %.419 = icmp eq ptr %.389, null
+  br i1 %.419, label %rc_release_continue.20, label %rc_release.20
 
 rc_release.20:                                    ; preds = %str_concat.right.end.6
-  %.407 = bitcast ptr %.376 to ptr
-  call void @meteor_release(ptr %.407)
+  %.421 = bitcast ptr %.389 to ptr
+  call void @meteor_release(ptr %.421)
   br label %rc_release_continue.20
 
 rc_release_continue.20:                           ; preds = %rc_release.20, %str_concat.right.end.6
-  %.410 = icmp eq ptr %.379, null
-  br i1 %.410, label %rc_release_continue.21, label %rc_release.21
+  %.424 = icmp eq ptr %.392, null
+  br i1 %.424, label %rc_release_continue.21, label %rc_release.21
 
 rc_release.21:                                    ; preds = %rc_release_continue.20
-  %.412 = bitcast ptr %.379 to ptr
-  call void @meteor_release(ptr %.412)
+  %.426 = bitcast ptr %.392 to ptr
+  call void @meteor_release(ptr %.426)
   br label %rc_release_continue.21
 
 rc_release_continue.21:                           ; preds = %rc_release.21, %rc_release_continue.20
-  %.415 = load ptr, ptr %result, align 8
-  %.416 = icmp ne ptr %.415, null
-  br i1 %.416, label %rc_release_continue.21.if, label %rc_release_continue.21.endif
+  %.429 = load ptr, ptr %result, align 8
+  %.430 = icmp ne ptr %.429, null
+  br i1 %.430, label %rc_release_continue.21.if, label %rc_release_continue.21.endif
 
 rc_release_continue.21.if:                        ; preds = %rc_release_continue.21
-  %.418 = icmp eq ptr %.415, null
-  br i1 %.418, label %rc_release_continue.22, label %rc_release.22
+  %.432 = icmp eq ptr %.429, null
+  br i1 %.432, label %rc_release_continue.22, label %rc_release.22
 
 rc_release_continue.21.endif:                     ; preds = %rc_release_continue.22, %rc_release_continue.21
-  store ptr %.383, ptr %result, align 8
+  store ptr %.397, ptr %result, align 8
   br label %if.end.2
 
 rc_release.22:                                    ; preds = %rc_release_continue.21.if
-  %.420 = bitcast ptr %.415 to ptr
-  call void @meteor_release(ptr %.420)
+  %.434 = bitcast ptr %.429 to ptr
+  call void @meteor_release(ptr %.434)
   br label %rc_release_continue.22
 
 rc_release_continue.22:                           ; preds = %rc_release.22, %rc_release_continue.21.if
   br label %rc_release_continue.21.endif
 
 if.true.7:                                        ; preds = %if.false.6
-  %.428 = call ptr @malloc(i64 40)
-  %.429 = bitcast ptr %.428 to ptr
-  call void @i64.array.init(ptr %.429)
-  call void @i64.array.append(ptr %.429, i64 55)
-  %.432 = load ptr, ptr %result, align 8
-  %.433 = bitcast ptr %.432 to ptr
-  call void @meteor_retain(ptr %.433)
-  %.435 = call ptr @malloc(i64 40)
-  %.436 = bitcast ptr %.435 to ptr
-  call void @i64.array.init(ptr %.436)
-  %left_len.7 = call i64 @i64.array.length(ptr %.429)
-  %right_len.7 = call i64 @i64.array.length(ptr %.432)
+  %.442 = call ptr @malloc(i64 40)
+  %.443 = call ptr @memset(ptr %.442, i32 0, i64 40)
+  %.444 = bitcast ptr %.442 to ptr
+  call void @i64.array.init(ptr %.444)
+  call void @i64.array.append(ptr %.444, i64 55)
+  %.447 = load ptr, ptr %result, align 8
+  %.448 = bitcast ptr %.447 to ptr
+  call void @meteor_retain(ptr %.448)
+  %.450 = call ptr @malloc(i64 40)
+  %.451 = call ptr @memset(ptr %.450, i32 0, i64 40)
+  %.452 = bitcast ptr %.450 to ptr
+  call void @i64.array.init(ptr %.452)
+  %left_len.7 = call i64 @i64.array.length(ptr %.444)
+  %right_len.7 = call i64 @i64.array.length(ptr %.447)
   %i_left.7 = alloca i64, align 8
   store i64 0, ptr %i_left.7, align 4
   br label %str_concat.left.cond.7
 
 if.false.7:                                       ; preds = %if.false.6
-  %.479 = load i64, ptr %d, align 4
-  %cmptmp.11 = icmp eq i64 %.479, 8
+  %.495 = load i64, ptr %d, align 4
+  %cmptmp.11 = icmp eq i64 %.495, 8
   br i1 %cmptmp.11, label %if.true.8, label %if.false.8
 
 str_concat.left.cond.7:                           ; preds = %str_concat.left.body.7, %if.true.7
-  %.440 = load i64, ptr %i_left.7, align 4
-  %.441 = icmp slt i64 %.440, %left_len.7
-  br i1 %.441, label %str_concat.left.body.7, label %str_concat.left.end.7
+  %.456 = load i64, ptr %i_left.7, align 4
+  %.457 = icmp slt i64 %.456, %left_len.7
+  br i1 %.457, label %str_concat.left.body.7, label %str_concat.left.end.7
 
 str_concat.left.body.7:                           ; preds = %str_concat.left.cond.7
-  %.443 = load i64, ptr %i_left.7, align 4
-  %left_char.7 = call i64 @i64.array.get(ptr %.429, i64 %.443)
-  call void @i64.array.append(ptr %.436, i64 %left_char.7)
-  %.445 = add i64 %.443, 1
-  store i64 %.445, ptr %i_left.7, align 4
+  %.459 = load i64, ptr %i_left.7, align 4
+  %left_char.7 = call i64 @i64.array.get(ptr %.444, i64 %.459)
+  call void @i64.array.append(ptr %.452, i64 %left_char.7)
+  %.461 = add i64 %.459, 1
+  store i64 %.461, ptr %i_left.7, align 4
   br label %str_concat.left.cond.7
 
 str_concat.left.end.7:                            ; preds = %str_concat.left.cond.7
@@ -21828,70 +21899,72 @@ str_concat.left.end.7:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.7
 
 str_concat.right.cond.7:                          ; preds = %str_concat.right.body.7, %str_concat.left.end.7
-  %.450 = load i64, ptr %i_right.7, align 4
-  %.451 = icmp slt i64 %.450, %right_len.7
-  br i1 %.451, label %str_concat.right.body.7, label %str_concat.right.end.7
+  %.466 = load i64, ptr %i_right.7, align 4
+  %.467 = icmp slt i64 %.466, %right_len.7
+  br i1 %.467, label %str_concat.right.body.7, label %str_concat.right.end.7
 
 str_concat.right.body.7:                          ; preds = %str_concat.right.cond.7
-  %.453 = load i64, ptr %i_right.7, align 4
-  %right_char.7 = call i64 @i64.array.get(ptr %.432, i64 %.453)
-  call void @i64.array.append(ptr %.436, i64 %right_char.7)
-  %.455 = add i64 %.453, 1
-  store i64 %.455, ptr %i_right.7, align 4
+  %.469 = load i64, ptr %i_right.7, align 4
+  %right_char.7 = call i64 @i64.array.get(ptr %.447, i64 %.469)
+  call void @i64.array.append(ptr %.452, i64 %right_char.7)
+  %.471 = add i64 %.469, 1
+  store i64 %.471, ptr %i_right.7, align 4
   br label %str_concat.right.cond.7
 
 str_concat.right.end.7:                           ; preds = %str_concat.right.cond.7
-  %.458 = icmp eq ptr %.429, null
-  br i1 %.458, label %rc_release_continue.23, label %rc_release.23
+  %.474 = icmp eq ptr %.444, null
+  br i1 %.474, label %rc_release_continue.23, label %rc_release.23
 
 rc_release.23:                                    ; preds = %str_concat.right.end.7
-  %.460 = bitcast ptr %.429 to ptr
-  call void @meteor_release(ptr %.460)
+  %.476 = bitcast ptr %.444 to ptr
+  call void @meteor_release(ptr %.476)
   br label %rc_release_continue.23
 
 rc_release_continue.23:                           ; preds = %rc_release.23, %str_concat.right.end.7
-  %.463 = icmp eq ptr %.432, null
-  br i1 %.463, label %rc_release_continue.24, label %rc_release.24
+  %.479 = icmp eq ptr %.447, null
+  br i1 %.479, label %rc_release_continue.24, label %rc_release.24
 
 rc_release.24:                                    ; preds = %rc_release_continue.23
-  %.465 = bitcast ptr %.432 to ptr
-  call void @meteor_release(ptr %.465)
+  %.481 = bitcast ptr %.447 to ptr
+  call void @meteor_release(ptr %.481)
   br label %rc_release_continue.24
 
 rc_release_continue.24:                           ; preds = %rc_release.24, %rc_release_continue.23
-  %.468 = load ptr, ptr %result, align 8
-  %.469 = icmp ne ptr %.468, null
-  br i1 %.469, label %rc_release_continue.24.if, label %rc_release_continue.24.endif
+  %.484 = load ptr, ptr %result, align 8
+  %.485 = icmp ne ptr %.484, null
+  br i1 %.485, label %rc_release_continue.24.if, label %rc_release_continue.24.endif
 
 rc_release_continue.24.if:                        ; preds = %rc_release_continue.24
-  %.471 = icmp eq ptr %.468, null
-  br i1 %.471, label %rc_release_continue.25, label %rc_release.25
+  %.487 = icmp eq ptr %.484, null
+  br i1 %.487, label %rc_release_continue.25, label %rc_release.25
 
 rc_release_continue.24.endif:                     ; preds = %rc_release_continue.25, %rc_release_continue.24
-  store ptr %.436, ptr %result, align 8
+  store ptr %.452, ptr %result, align 8
   br label %if.end.2
 
 rc_release.25:                                    ; preds = %rc_release_continue.24.if
-  %.473 = bitcast ptr %.468 to ptr
-  call void @meteor_release(ptr %.473)
+  %.489 = bitcast ptr %.484 to ptr
+  call void @meteor_release(ptr %.489)
   br label %rc_release_continue.25
 
 rc_release_continue.25:                           ; preds = %rc_release.25, %rc_release_continue.24.if
   br label %rc_release_continue.24.endif
 
 if.true.8:                                        ; preds = %if.false.7
-  %.481 = call ptr @malloc(i64 40)
-  %.482 = bitcast ptr %.481 to ptr
-  call void @i64.array.init(ptr %.482)
-  call void @i64.array.append(ptr %.482, i64 56)
-  %.485 = load ptr, ptr %result, align 8
-  %.486 = bitcast ptr %.485 to ptr
-  call void @meteor_retain(ptr %.486)
-  %.488 = call ptr @malloc(i64 40)
-  %.489 = bitcast ptr %.488 to ptr
-  call void @i64.array.init(ptr %.489)
-  %left_len.8 = call i64 @i64.array.length(ptr %.482)
-  %right_len.8 = call i64 @i64.array.length(ptr %.485)
+  %.497 = call ptr @malloc(i64 40)
+  %.498 = call ptr @memset(ptr %.497, i32 0, i64 40)
+  %.499 = bitcast ptr %.497 to ptr
+  call void @i64.array.init(ptr %.499)
+  call void @i64.array.append(ptr %.499, i64 56)
+  %.502 = load ptr, ptr %result, align 8
+  %.503 = bitcast ptr %.502 to ptr
+  call void @meteor_retain(ptr %.503)
+  %.505 = call ptr @malloc(i64 40)
+  %.506 = call ptr @memset(ptr %.505, i32 0, i64 40)
+  %.507 = bitcast ptr %.505 to ptr
+  call void @i64.array.init(ptr %.507)
+  %left_len.8 = call i64 @i64.array.length(ptr %.499)
+  %right_len.8 = call i64 @i64.array.length(ptr %.502)
   %i_left.8 = alloca i64, align 8
   store i64 0, ptr %i_left.8, align 4
   br label %str_concat.left.cond.8
@@ -21901,16 +21974,16 @@ if.false.8:                                       ; preds = %if.false.7
   br i1 %cmptmp.12, label %if.true.9, label %if.end.2
 
 str_concat.left.cond.8:                           ; preds = %str_concat.left.body.8, %if.true.8
-  %.493 = load i64, ptr %i_left.8, align 4
-  %.494 = icmp slt i64 %.493, %left_len.8
-  br i1 %.494, label %str_concat.left.body.8, label %str_concat.left.end.8
+  %.511 = load i64, ptr %i_left.8, align 4
+  %.512 = icmp slt i64 %.511, %left_len.8
+  br i1 %.512, label %str_concat.left.body.8, label %str_concat.left.end.8
 
 str_concat.left.body.8:                           ; preds = %str_concat.left.cond.8
-  %.496 = load i64, ptr %i_left.8, align 4
-  %left_char.8 = call i64 @i64.array.get(ptr %.482, i64 %.496)
-  call void @i64.array.append(ptr %.489, i64 %left_char.8)
-  %.498 = add i64 %.496, 1
-  store i64 %.498, ptr %i_left.8, align 4
+  %.514 = load i64, ptr %i_left.8, align 4
+  %left_char.8 = call i64 @i64.array.get(ptr %.499, i64 %.514)
+  call void @i64.array.append(ptr %.507, i64 %left_char.8)
+  %.516 = add i64 %.514, 1
+  store i64 %.516, ptr %i_left.8, align 4
   br label %str_concat.left.cond.8
 
 str_concat.left.end.8:                            ; preds = %str_concat.left.cond.8
@@ -21919,85 +21992,87 @@ str_concat.left.end.8:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.8
 
 str_concat.right.cond.8:                          ; preds = %str_concat.right.body.8, %str_concat.left.end.8
-  %.503 = load i64, ptr %i_right.8, align 4
-  %.504 = icmp slt i64 %.503, %right_len.8
-  br i1 %.504, label %str_concat.right.body.8, label %str_concat.right.end.8
+  %.521 = load i64, ptr %i_right.8, align 4
+  %.522 = icmp slt i64 %.521, %right_len.8
+  br i1 %.522, label %str_concat.right.body.8, label %str_concat.right.end.8
 
 str_concat.right.body.8:                          ; preds = %str_concat.right.cond.8
-  %.506 = load i64, ptr %i_right.8, align 4
-  %right_char.8 = call i64 @i64.array.get(ptr %.485, i64 %.506)
-  call void @i64.array.append(ptr %.489, i64 %right_char.8)
-  %.508 = add i64 %.506, 1
-  store i64 %.508, ptr %i_right.8, align 4
+  %.524 = load i64, ptr %i_right.8, align 4
+  %right_char.8 = call i64 @i64.array.get(ptr %.502, i64 %.524)
+  call void @i64.array.append(ptr %.507, i64 %right_char.8)
+  %.526 = add i64 %.524, 1
+  store i64 %.526, ptr %i_right.8, align 4
   br label %str_concat.right.cond.8
 
 str_concat.right.end.8:                           ; preds = %str_concat.right.cond.8
-  %.511 = icmp eq ptr %.482, null
-  br i1 %.511, label %rc_release_continue.26, label %rc_release.26
+  %.529 = icmp eq ptr %.499, null
+  br i1 %.529, label %rc_release_continue.26, label %rc_release.26
 
 rc_release.26:                                    ; preds = %str_concat.right.end.8
-  %.513 = bitcast ptr %.482 to ptr
-  call void @meteor_release(ptr %.513)
+  %.531 = bitcast ptr %.499 to ptr
+  call void @meteor_release(ptr %.531)
   br label %rc_release_continue.26
 
 rc_release_continue.26:                           ; preds = %rc_release.26, %str_concat.right.end.8
-  %.516 = icmp eq ptr %.485, null
-  br i1 %.516, label %rc_release_continue.27, label %rc_release.27
+  %.534 = icmp eq ptr %.502, null
+  br i1 %.534, label %rc_release_continue.27, label %rc_release.27
 
 rc_release.27:                                    ; preds = %rc_release_continue.26
-  %.518 = bitcast ptr %.485 to ptr
-  call void @meteor_release(ptr %.518)
+  %.536 = bitcast ptr %.502 to ptr
+  call void @meteor_release(ptr %.536)
   br label %rc_release_continue.27
 
 rc_release_continue.27:                           ; preds = %rc_release.27, %rc_release_continue.26
-  %.521 = load ptr, ptr %result, align 8
-  %.522 = icmp ne ptr %.521, null
-  br i1 %.522, label %rc_release_continue.27.if, label %rc_release_continue.27.endif
+  %.539 = load ptr, ptr %result, align 8
+  %.540 = icmp ne ptr %.539, null
+  br i1 %.540, label %rc_release_continue.27.if, label %rc_release_continue.27.endif
 
 rc_release_continue.27.if:                        ; preds = %rc_release_continue.27
-  %.524 = icmp eq ptr %.521, null
-  br i1 %.524, label %rc_release_continue.28, label %rc_release.28
+  %.542 = icmp eq ptr %.539, null
+  br i1 %.542, label %rc_release_continue.28, label %rc_release.28
 
 rc_release_continue.27.endif:                     ; preds = %rc_release_continue.28, %rc_release_continue.27
-  store ptr %.489, ptr %result, align 8
+  store ptr %.507, ptr %result, align 8
   br label %if.end.2
 
 rc_release.28:                                    ; preds = %rc_release_continue.27.if
-  %.526 = bitcast ptr %.521 to ptr
-  call void @meteor_release(ptr %.526)
+  %.544 = bitcast ptr %.539 to ptr
+  call void @meteor_release(ptr %.544)
   br label %rc_release_continue.28
 
 rc_release_continue.28:                           ; preds = %rc_release.28, %rc_release_continue.27.if
   br label %rc_release_continue.27.endif
 
 if.true.9:                                        ; preds = %if.false.8
-  %.533 = call ptr @malloc(i64 40)
-  %.534 = bitcast ptr %.533 to ptr
-  call void @i64.array.init(ptr %.534)
-  call void @i64.array.append(ptr %.534, i64 57)
-  %.537 = load ptr, ptr %result, align 8
-  %.538 = bitcast ptr %.537 to ptr
-  call void @meteor_retain(ptr %.538)
-  %.540 = call ptr @malloc(i64 40)
-  %.541 = bitcast ptr %.540 to ptr
-  call void @i64.array.init(ptr %.541)
-  %left_len.9 = call i64 @i64.array.length(ptr %.534)
-  %right_len.9 = call i64 @i64.array.length(ptr %.537)
+  %.551 = call ptr @malloc(i64 40)
+  %.552 = call ptr @memset(ptr %.551, i32 0, i64 40)
+  %.553 = bitcast ptr %.551 to ptr
+  call void @i64.array.init(ptr %.553)
+  call void @i64.array.append(ptr %.553, i64 57)
+  %.556 = load ptr, ptr %result, align 8
+  %.557 = bitcast ptr %.556 to ptr
+  call void @meteor_retain(ptr %.557)
+  %.559 = call ptr @malloc(i64 40)
+  %.560 = call ptr @memset(ptr %.559, i32 0, i64 40)
+  %.561 = bitcast ptr %.559 to ptr
+  call void @i64.array.init(ptr %.561)
+  %left_len.9 = call i64 @i64.array.length(ptr %.553)
+  %right_len.9 = call i64 @i64.array.length(ptr %.556)
   %i_left.9 = alloca i64, align 8
   store i64 0, ptr %i_left.9, align 4
   br label %str_concat.left.cond.9
 
 str_concat.left.cond.9:                           ; preds = %str_concat.left.body.9, %if.true.9
-  %.545 = load i64, ptr %i_left.9, align 4
-  %.546 = icmp slt i64 %.545, %left_len.9
-  br i1 %.546, label %str_concat.left.body.9, label %str_concat.left.end.9
+  %.565 = load i64, ptr %i_left.9, align 4
+  %.566 = icmp slt i64 %.565, %left_len.9
+  br i1 %.566, label %str_concat.left.body.9, label %str_concat.left.end.9
 
 str_concat.left.body.9:                           ; preds = %str_concat.left.cond.9
-  %.548 = load i64, ptr %i_left.9, align 4
-  %left_char.9 = call i64 @i64.array.get(ptr %.534, i64 %.548)
-  call void @i64.array.append(ptr %.541, i64 %left_char.9)
-  %.550 = add i64 %.548, 1
-  store i64 %.550, ptr %i_left.9, align 4
+  %.568 = load i64, ptr %i_left.9, align 4
+  %left_char.9 = call i64 @i64.array.get(ptr %.553, i64 %.568)
+  call void @i64.array.append(ptr %.561, i64 %left_char.9)
+  %.570 = add i64 %.568, 1
+  store i64 %.570, ptr %i_left.9, align 4
   br label %str_concat.left.cond.9
 
 str_concat.left.end.9:                            ; preds = %str_concat.left.cond.9
@@ -22006,95 +22081,97 @@ str_concat.left.end.9:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.9
 
 str_concat.right.cond.9:                          ; preds = %str_concat.right.body.9, %str_concat.left.end.9
-  %.555 = load i64, ptr %i_right.9, align 4
-  %.556 = icmp slt i64 %.555, %right_len.9
-  br i1 %.556, label %str_concat.right.body.9, label %str_concat.right.end.9
+  %.575 = load i64, ptr %i_right.9, align 4
+  %.576 = icmp slt i64 %.575, %right_len.9
+  br i1 %.576, label %str_concat.right.body.9, label %str_concat.right.end.9
 
 str_concat.right.body.9:                          ; preds = %str_concat.right.cond.9
-  %.558 = load i64, ptr %i_right.9, align 4
-  %right_char.9 = call i64 @i64.array.get(ptr %.537, i64 %.558)
-  call void @i64.array.append(ptr %.541, i64 %right_char.9)
-  %.560 = add i64 %.558, 1
-  store i64 %.560, ptr %i_right.9, align 4
+  %.578 = load i64, ptr %i_right.9, align 4
+  %right_char.9 = call i64 @i64.array.get(ptr %.556, i64 %.578)
+  call void @i64.array.append(ptr %.561, i64 %right_char.9)
+  %.580 = add i64 %.578, 1
+  store i64 %.580, ptr %i_right.9, align 4
   br label %str_concat.right.cond.9
 
 str_concat.right.end.9:                           ; preds = %str_concat.right.cond.9
-  %.563 = icmp eq ptr %.534, null
-  br i1 %.563, label %rc_release_continue.29, label %rc_release.29
+  %.583 = icmp eq ptr %.553, null
+  br i1 %.583, label %rc_release_continue.29, label %rc_release.29
 
 rc_release.29:                                    ; preds = %str_concat.right.end.9
-  %.565 = bitcast ptr %.534 to ptr
-  call void @meteor_release(ptr %.565)
+  %.585 = bitcast ptr %.553 to ptr
+  call void @meteor_release(ptr %.585)
   br label %rc_release_continue.29
 
 rc_release_continue.29:                           ; preds = %rc_release.29, %str_concat.right.end.9
-  %.568 = icmp eq ptr %.537, null
-  br i1 %.568, label %rc_release_continue.30, label %rc_release.30
+  %.588 = icmp eq ptr %.556, null
+  br i1 %.588, label %rc_release_continue.30, label %rc_release.30
 
 rc_release.30:                                    ; preds = %rc_release_continue.29
-  %.570 = bitcast ptr %.537 to ptr
-  call void @meteor_release(ptr %.570)
+  %.590 = bitcast ptr %.556 to ptr
+  call void @meteor_release(ptr %.590)
   br label %rc_release_continue.30
 
 rc_release_continue.30:                           ; preds = %rc_release.30, %rc_release_continue.29
-  %.573 = load ptr, ptr %result, align 8
-  %.574 = icmp ne ptr %.573, null
-  br i1 %.574, label %rc_release_continue.30.if, label %rc_release_continue.30.endif
+  %.593 = load ptr, ptr %result, align 8
+  %.594 = icmp ne ptr %.593, null
+  br i1 %.594, label %rc_release_continue.30.if, label %rc_release_continue.30.endif
 
 rc_release_continue.30.if:                        ; preds = %rc_release_continue.30
-  %.576 = icmp eq ptr %.573, null
-  br i1 %.576, label %rc_release_continue.31, label %rc_release.31
+  %.596 = icmp eq ptr %.593, null
+  br i1 %.596, label %rc_release_continue.31, label %rc_release.31
 
 rc_release_continue.30.endif:                     ; preds = %rc_release_continue.31, %rc_release_continue.30
-  store ptr %.541, ptr %result, align 8
+  store ptr %.561, ptr %result, align 8
   br label %if.end.2
 
 rc_release.31:                                    ; preds = %rc_release_continue.30.if
-  %.578 = bitcast ptr %.573 to ptr
-  call void @meteor_release(ptr %.578)
+  %.598 = bitcast ptr %.593 to ptr
+  call void @meteor_release(ptr %.598)
   br label %rc_release_continue.31
 
 rc_release_continue.31:                           ; preds = %rc_release.31, %rc_release_continue.30.if
   br label %rc_release_continue.30.endif
 
 if.start.3:                                       ; preds = %while.end
-  %.591 = load i1, ptr %is_neg, align 1
-  br i1 %.591, label %if.true.0.3, label %if.end.3
+  %.611 = load i1, ptr %is_neg, align 1
+  br i1 %.611, label %if.true.0.3, label %if.end.3
 
 if.end.3:                                         ; preds = %rc_release_continue.33.endif, %if.start.3
-  %.644 = load ptr, ptr %result, align 8
-  %.645 = load ptr, ptr %ret_var, align 8
-  %.646 = icmp ne ptr %.645, null
-  br i1 %.646, label %if.end.3.if, label %if.end.3.endif
+  %.666 = load ptr, ptr %result, align 8
+  %.667 = load ptr, ptr %ret_var, align 8
+  %.668 = icmp ne ptr %.667, null
+  br i1 %.668, label %if.end.3.if, label %if.end.3.endif
 
 if.true.0.3:                                      ; preds = %if.start.3
-  %.593 = call ptr @malloc(i64 40)
-  %.594 = bitcast ptr %.593 to ptr
-  call void @i64.array.init(ptr %.594)
-  call void @i64.array.append(ptr %.594, i64 45)
-  %.597 = load ptr, ptr %result, align 8
-  %.598 = bitcast ptr %.597 to ptr
-  call void @meteor_retain(ptr %.598)
-  %.600 = call ptr @malloc(i64 40)
-  %.601 = bitcast ptr %.600 to ptr
-  call void @i64.array.init(ptr %.601)
-  %left_len.10 = call i64 @i64.array.length(ptr %.594)
-  %right_len.10 = call i64 @i64.array.length(ptr %.597)
+  %.613 = call ptr @malloc(i64 40)
+  %.614 = call ptr @memset(ptr %.613, i32 0, i64 40)
+  %.615 = bitcast ptr %.613 to ptr
+  call void @i64.array.init(ptr %.615)
+  call void @i64.array.append(ptr %.615, i64 45)
+  %.618 = load ptr, ptr %result, align 8
+  %.619 = bitcast ptr %.618 to ptr
+  call void @meteor_retain(ptr %.619)
+  %.621 = call ptr @malloc(i64 40)
+  %.622 = call ptr @memset(ptr %.621, i32 0, i64 40)
+  %.623 = bitcast ptr %.621 to ptr
+  call void @i64.array.init(ptr %.623)
+  %left_len.10 = call i64 @i64.array.length(ptr %.615)
+  %right_len.10 = call i64 @i64.array.length(ptr %.618)
   %i_left.10 = alloca i64, align 8
   store i64 0, ptr %i_left.10, align 4
   br label %str_concat.left.cond.10
 
 str_concat.left.cond.10:                          ; preds = %str_concat.left.body.10, %if.true.0.3
-  %.605 = load i64, ptr %i_left.10, align 4
-  %.606 = icmp slt i64 %.605, %left_len.10
-  br i1 %.606, label %str_concat.left.body.10, label %str_concat.left.end.10
+  %.627 = load i64, ptr %i_left.10, align 4
+  %.628 = icmp slt i64 %.627, %left_len.10
+  br i1 %.628, label %str_concat.left.body.10, label %str_concat.left.end.10
 
 str_concat.left.body.10:                          ; preds = %str_concat.left.cond.10
-  %.608 = load i64, ptr %i_left.10, align 4
-  %left_char.10 = call i64 @i64.array.get(ptr %.594, i64 %.608)
-  call void @i64.array.append(ptr %.601, i64 %left_char.10)
-  %.610 = add i64 %.608, 1
-  store i64 %.610, ptr %i_left.10, align 4
+  %.630 = load i64, ptr %i_left.10, align 4
+  %left_char.10 = call i64 @i64.array.get(ptr %.615, i64 %.630)
+  call void @i64.array.append(ptr %.623, i64 %left_char.10)
+  %.632 = add i64 %.630, 1
+  store i64 %.632, ptr %i_left.10, align 4
   br label %str_concat.left.cond.10
 
 str_concat.left.end.10:                           ; preds = %str_concat.left.cond.10
@@ -22103,80 +22180,80 @@ str_concat.left.end.10:                           ; preds = %str_concat.left.con
   br label %str_concat.right.cond.10
 
 str_concat.right.cond.10:                         ; preds = %str_concat.right.body.10, %str_concat.left.end.10
-  %.615 = load i64, ptr %i_right.10, align 4
-  %.616 = icmp slt i64 %.615, %right_len.10
-  br i1 %.616, label %str_concat.right.body.10, label %str_concat.right.end.10
+  %.637 = load i64, ptr %i_right.10, align 4
+  %.638 = icmp slt i64 %.637, %right_len.10
+  br i1 %.638, label %str_concat.right.body.10, label %str_concat.right.end.10
 
 str_concat.right.body.10:                         ; preds = %str_concat.right.cond.10
-  %.618 = load i64, ptr %i_right.10, align 4
-  %right_char.10 = call i64 @i64.array.get(ptr %.597, i64 %.618)
-  call void @i64.array.append(ptr %.601, i64 %right_char.10)
-  %.620 = add i64 %.618, 1
-  store i64 %.620, ptr %i_right.10, align 4
+  %.640 = load i64, ptr %i_right.10, align 4
+  %right_char.10 = call i64 @i64.array.get(ptr %.618, i64 %.640)
+  call void @i64.array.append(ptr %.623, i64 %right_char.10)
+  %.642 = add i64 %.640, 1
+  store i64 %.642, ptr %i_right.10, align 4
   br label %str_concat.right.cond.10
 
 str_concat.right.end.10:                          ; preds = %str_concat.right.cond.10
-  %.623 = icmp eq ptr %.594, null
-  br i1 %.623, label %rc_release_continue.32, label %rc_release.32
+  %.645 = icmp eq ptr %.615, null
+  br i1 %.645, label %rc_release_continue.32, label %rc_release.32
 
 rc_release.32:                                    ; preds = %str_concat.right.end.10
-  %.625 = bitcast ptr %.594 to ptr
-  call void @meteor_release(ptr %.625)
+  %.647 = bitcast ptr %.615 to ptr
+  call void @meteor_release(ptr %.647)
   br label %rc_release_continue.32
 
 rc_release_continue.32:                           ; preds = %rc_release.32, %str_concat.right.end.10
-  %.628 = icmp eq ptr %.597, null
-  br i1 %.628, label %rc_release_continue.33, label %rc_release.33
+  %.650 = icmp eq ptr %.618, null
+  br i1 %.650, label %rc_release_continue.33, label %rc_release.33
 
 rc_release.33:                                    ; preds = %rc_release_continue.32
-  %.630 = bitcast ptr %.597 to ptr
-  call void @meteor_release(ptr %.630)
+  %.652 = bitcast ptr %.618 to ptr
+  call void @meteor_release(ptr %.652)
   br label %rc_release_continue.33
 
 rc_release_continue.33:                           ; preds = %rc_release.33, %rc_release_continue.32
-  %.633 = load ptr, ptr %result, align 8
-  %.634 = icmp ne ptr %.633, null
-  br i1 %.634, label %rc_release_continue.33.if, label %rc_release_continue.33.endif
+  %.655 = load ptr, ptr %result, align 8
+  %.656 = icmp ne ptr %.655, null
+  br i1 %.656, label %rc_release_continue.33.if, label %rc_release_continue.33.endif
 
 rc_release_continue.33.if:                        ; preds = %rc_release_continue.33
-  %.636 = icmp eq ptr %.633, null
-  br i1 %.636, label %rc_release_continue.34, label %rc_release.34
+  %.658 = icmp eq ptr %.655, null
+  br i1 %.658, label %rc_release_continue.34, label %rc_release.34
 
 rc_release_continue.33.endif:                     ; preds = %rc_release_continue.34, %rc_release_continue.33
-  store ptr %.601, ptr %result, align 8
+  store ptr %.623, ptr %result, align 8
   br label %if.end.3
 
 rc_release.34:                                    ; preds = %rc_release_continue.33.if
-  %.638 = bitcast ptr %.633 to ptr
-  call void @meteor_release(ptr %.638)
+  %.660 = bitcast ptr %.655 to ptr
+  call void @meteor_release(ptr %.660)
   br label %rc_release_continue.34
 
 rc_release_continue.34:                           ; preds = %rc_release.34, %rc_release_continue.33.if
   br label %rc_release_continue.33.endif
 
 if.end.3.if:                                      ; preds = %if.end.3
-  %.648 = icmp eq ptr %.645, null
-  br i1 %.648, label %rc_release_continue.35, label %rc_release.35
+  %.670 = icmp eq ptr %.667, null
+  br i1 %.670, label %rc_release_continue.35, label %rc_release.35
 
 if.end.3.endif:                                   ; preds = %rc_release_continue.35, %if.end.3
-  store ptr %.644, ptr %ret_var, align 8
-  %.655 = bitcast ptr %.644 to ptr
-  call void @meteor_retain(ptr %.655)
-  %.657 = load ptr, ptr %result, align 8
-  %.658 = icmp eq ptr %.657, null
-  br i1 %.658, label %rc_release_continue.36, label %rc_release.36
+  store ptr %.666, ptr %ret_var, align 8
+  %.677 = bitcast ptr %.666 to ptr
+  call void @meteor_retain(ptr %.677)
+  %.679 = load ptr, ptr %result, align 8
+  %.680 = icmp eq ptr %.679, null
+  br i1 %.680, label %rc_release_continue.36, label %rc_release.36
 
 rc_release.35:                                    ; preds = %if.end.3.if
-  %.650 = bitcast ptr %.645 to ptr
-  call void @meteor_release(ptr %.650)
+  %.672 = bitcast ptr %.667 to ptr
+  call void @meteor_release(ptr %.672)
   br label %rc_release_continue.35
 
 rc_release_continue.35:                           ; preds = %rc_release.35, %if.end.3.if
   br label %if.end.3.endif
 
 rc_release.36:                                    ; preds = %if.end.3.endif
-  %.660 = bitcast ptr %.657 to ptr
-  call void @meteor_release(ptr %.660)
+  %.682 = bitcast ptr %.679 to ptr
+  call void @meteor_release(ptr %.682)
   br label %rc_release_continue.36
 
 rc_release_continue.36:                           ; preds = %rc_release.36, %if.end.3.endif
@@ -22194,1114 +22271,1094 @@ entry:
   %ret_var = alloca ptr, align 8
   store ptr null, ptr %ret_var, align 8
   %.7 = call ptr @malloc(i64 40)
-  %.8 = bitcast ptr %.7 to ptr
-  call void @i64.array.init(ptr %.8)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 33)
-  call void @i64.array.append(ptr %.8, i64 68)
-  call void @i64.array.append(ptr %.8, i64 79)
-  call void @i64.array.append(ptr %.8, i64 67)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 89)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 69)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 77)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 72)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 68)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 65)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 44)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 119)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 56)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 53)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 50)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 125)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 35)
-  call void @i64.array.append(ptr %.8, i64 54)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 53)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 125)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 46)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 107)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 50)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 125)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 46)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 107)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 53)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 35)
-  call void @i64.array.append(ptr %.8, i64 52)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 54)
-  call void @i64.array.append(ptr %.8, i64 57)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 125)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 107)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 35)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 52)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 52)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 52)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 50)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 54)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 51)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 59)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 125)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 240)
-  call void @i64.array.append(ptr %.8, i64 159)
-  call void @i64.array.append(ptr %.8, i64 154)
-  call void @i64.array.append(ptr %.8, i64 128)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 87)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 77)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 72)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 83)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 33)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 77)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 39)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 72)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 46)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 61)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 107)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 51)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 51)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 61)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 71)
-  call void @i64.array.append(ptr %.8, i64 69)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 83)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 120)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 61)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 71)
-  call void @i64.array.append(ptr %.8, i64 69)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 74)
-  call void @i64.array.append(ptr %.8, i64 83)
-  call void @i64.array.append(ptr %.8, i64 79)
-  call void @i64.array.append(ptr %.8, i64 78)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 65)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 73)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 102)
-  call void @i64.array.append(ptr %.8, i64 61)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 71)
-  call void @i64.array.append(ptr %.8, i64 69)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 45)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 67)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 40)
-  call void @i64.array.append(ptr %.8, i64 74)
-  call void @i64.array.append(ptr %.8, i64 83)
-  call void @i64.array.append(ptr %.8, i64 79)
-  call void @i64.array.append(ptr %.8, i64 78)
-  call void @i64.array.append(ptr %.8, i64 41)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 119)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 77)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 76)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 99)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 112)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 98)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 100)
-  call void @i64.array.append(ptr %.8, i64 121)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 60)
-  call void @i64.array.append(ptr %.8, i64 47)
-  call void @i64.array.append(ptr %.8, i64 104)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 108)
-  call void @i64.array.append(ptr %.8, i64 62)
-  call void @i64.array.append(ptr %.8, i64 10)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 32)
-  %.1044 = load ptr, ptr %html, align 8
-  %.1045 = icmp ne ptr %.1044, null
-  br i1 %.1045, label %entry.if, label %entry.endif
+  %.8 = call ptr @memset(ptr %.7, i32 0, i64 40)
+  %.9 = bitcast ptr %.7 to ptr
+  call void @i64.array.init(ptr %.9)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 33)
+  call void @i64.array.append(ptr %.9, i64 68)
+  call void @i64.array.append(ptr %.9, i64 79)
+  call void @i64.array.append(ptr %.9, i64 67)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 89)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 69)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 77)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 72)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 68)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 65)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 44)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 119)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 56)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 53)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 50)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 125)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 35)
+  call void @i64.array.append(ptr %.9, i64 54)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 53)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 125)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 46)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 107)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 50)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 125)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 46)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 107)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 53)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 35)
+  call void @i64.array.append(ptr %.9, i64 52)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 54)
+  call void @i64.array.append(ptr %.9, i64 57)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 125)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 107)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 35)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 52)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 52)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 52)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 50)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 54)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 51)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 59)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 125)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 240)
+  call void @i64.array.append(ptr %.9, i64 159)
+  call void @i64.array.append(ptr %.9, i64 154)
+  call void @i64.array.append(ptr %.9, i64 128)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 87)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 77)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 72)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 83)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 33)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 77)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 39)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 72)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 46)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 61)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 107)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 51)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 51)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 61)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 71)
+  call void @i64.array.append(ptr %.9, i64 69)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 83)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 120)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 61)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 71)
+  call void @i64.array.append(ptr %.9, i64 69)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 74)
+  call void @i64.array.append(ptr %.9, i64 83)
+  call void @i64.array.append(ptr %.9, i64 79)
+  call void @i64.array.append(ptr %.9, i64 78)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 65)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 73)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 102)
+  call void @i64.array.append(ptr %.9, i64 61)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 71)
+  call void @i64.array.append(ptr %.9, i64 69)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 45)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 67)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 40)
+  call void @i64.array.append(ptr %.9, i64 74)
+  call void @i64.array.append(ptr %.9, i64 83)
+  call void @i64.array.append(ptr %.9, i64 79)
+  call void @i64.array.append(ptr %.9, i64 78)
+  call void @i64.array.append(ptr %.9, i64 41)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 119)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 77)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 76)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 99)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 112)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 98)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 100)
+  call void @i64.array.append(ptr %.9, i64 121)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 60)
+  call void @i64.array.append(ptr %.9, i64 47)
+  call void @i64.array.append(ptr %.9, i64 104)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 108)
+  call void @i64.array.append(ptr %.9, i64 62)
+  call void @i64.array.append(ptr %.9, i64 10)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 32)
+  %.1045 = load ptr, ptr %html, align 8
+  %.1046 = icmp ne ptr %.1045, null
+  br i1 %.1046, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.2
-  %.1093 = load ptr, ptr %ret_var, align 8
-  ret ptr %.1093
+  %.1077 = load ptr, ptr %ret_var, align 8
+  ret ptr %.1077
 
 entry.if:                                         ; preds = %entry
-  %.1047 = icmp eq ptr %.1044, null
-  br i1 %.1047, label %rc_release_continue, label %rc_release
+  %.1048 = icmp eq ptr %.1045, null
+  br i1 %.1048, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.8, ptr %html, align 8
-  %.1054 = load ptr, ptr %res.1, align 8
-  %.1055 = load ptr, ptr %html, align 8
-  %.1056 = call ptr @Response.html(ptr %.1054, ptr %.1055)
-  %.1057 = load ptr, ptr %ret_var, align 8
-  %.1058 = icmp ne ptr %.1057, null
-  br i1 %.1058, label %entry.endif.if, label %entry.endif.endif
+  store ptr %.9, ptr %html, align 8
+  %.1055 = load ptr, ptr %res.1, align 8
+  %.1056 = load ptr, ptr %html, align 8
+  %.1057 = call ptr @Response.html(ptr %.1055, ptr %.1056)
+  %.1058 = load ptr, ptr %ret_var, align 8
+  %.1059 = icmp ne ptr %.1058, null
+  br i1 %.1059, label %entry.endif.if, label %entry.endif.endif
 
 rc_release:                                       ; preds = %entry.if
-  %.1049 = bitcast ptr %.1044 to ptr
-  call void @meteor_release(ptr %.1049)
+  %.1050 = bitcast ptr %.1045 to ptr
+  call void @meteor_release(ptr %.1050)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
 
 entry.endif.if:                                   ; preds = %entry.endif
-  %.1060 = icmp eq ptr %.1057, null
-  br i1 %.1060, label %rc_release_continue.1, label %rc_release.1
+  %.1061 = icmp eq ptr %.1058, null
+  br i1 %.1061, label %rc_release_continue.1, label %rc_release.1
 
 entry.endif.endif:                                ; preds = %rc_release_continue.1, %entry.endif
-  store ptr %.1056, ptr %ret_var, align 8
-  %.1082 = bitcast ptr %.1056 to ptr
-  %.1083 = getelementptr i8, ptr %.1082, i64 -16
-  %.1084 = bitcast ptr %.1083 to ptr
-  call void @meteor_retain(ptr %.1084)
-  %.1086 = load ptr, ptr %html, align 8
-  %.1087 = icmp eq ptr %.1086, null
-  br i1 %.1087, label %rc_release_continue.2, label %rc_release.2
+  store ptr %.1057, ptr %ret_var, align 8
+  %.1070 = load ptr, ptr %html, align 8
+  %.1071 = icmp eq ptr %.1070, null
+  br i1 %.1071, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.1:                                     ; preds = %entry.endif.if
-  %.1062 = bitcast ptr %.1057 to ptr
-  %.1063 = getelementptr i8, ptr %.1062, i64 -16
-  %.1064 = bitcast ptr %.1063 to ptr
-  %.1065 = getelementptr %meteor.header, ptr %.1064, i64 0, i32 0
-  %.1066 = load i32, ptr %.1065, align 4
-  %.1067 = icmp eq i32 %.1066, 1
-  br i1 %.1067, label %rc_destroy, label %rc_release_only
+  %.1063 = bitcast ptr %.1058 to ptr
+  %.1064 = getelementptr i8, ptr %.1063, i64 -16
+  %.1065 = bitcast ptr %.1064 to ptr
+  call void @meteor_release(ptr %.1065)
+  br label %rc_release_continue.1
 
-rc_release_continue.1:                            ; preds = %rc_release_only, %rc_destroy, %entry.endif.if
+rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif.if
   br label %entry.endif.endif
 
-rc_destroy:                                       ; preds = %rc_release.1
-  call void @__destroy_Response__(ptr %.1057)
-  %.1070 = bitcast ptr %.1057 to ptr
-  %.1071 = getelementptr i8, ptr %.1070, i64 -16
-  %.1072 = bitcast ptr %.1071 to ptr
-  call void @meteor_release(ptr %.1072)
-  br label %rc_release_continue.1
-
-rc_release_only:                                  ; preds = %rc_release.1
-  %.1075 = bitcast ptr %.1057 to ptr
-  %.1076 = getelementptr i8, ptr %.1075, i64 -16
-  %.1077 = bitcast ptr %.1076 to ptr
-  call void @meteor_release(ptr %.1077)
-  br label %rc_release_continue.1
-
 rc_release.2:                                     ; preds = %entry.endif.endif
-  %.1089 = bitcast ptr %.1086 to ptr
-  call void @meteor_release(ptr %.1089)
+  %.1073 = bitcast ptr %.1070 to ptr
+  call void @meteor_release(ptr %.1073)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %entry.endif.endif
@@ -23318,87 +23375,67 @@ entry:
   store ptr null, ptr %ret_var, align 8
   %.7 = load ptr, ptr %res.1, align 8
   %.8 = call ptr @malloc(i64 40)
-  %.9 = bitcast ptr %.8 to ptr
-  call void @i64.array.init(ptr %.9)
-  call void @i64.array.append(ptr %.9, i64 72)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 108)
-  call void @i64.array.append(ptr %.9, i64 108)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 102)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 109)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 77)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 116)
-  call void @i64.array.append(ptr %.9, i64 101)
-  call void @i64.array.append(ptr %.9, i64 111)
-  call void @i64.array.append(ptr %.9, i64 114)
-  call void @i64.array.append(ptr %.9, i64 33)
-  call void @i64.array.append(ptr %.9, i64 32)
-  call void @i64.array.append(ptr %.9, i64 240)
-  call void @i64.array.append(ptr %.9, i64 159)
-  call void @i64.array.append(ptr %.9, i64 140)
-  call void @i64.array.append(ptr %.9, i64 159)
-  %.34 = call ptr @Response.text(ptr %.7, ptr %.9)
-  %.35 = icmp eq ptr %.9, null
-  br i1 %.35, label %rc_release_continue, label %rc_release
+  %.9 = call ptr @memset(ptr %.8, i32 0, i64 40)
+  %.10 = bitcast ptr %.8 to ptr
+  call void @i64.array.init(ptr %.10)
+  call void @i64.array.append(ptr %.10, i64 72)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 108)
+  call void @i64.array.append(ptr %.10, i64 108)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 102)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 109)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 77)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 116)
+  call void @i64.array.append(ptr %.10, i64 101)
+  call void @i64.array.append(ptr %.10, i64 111)
+  call void @i64.array.append(ptr %.10, i64 114)
+  call void @i64.array.append(ptr %.10, i64 33)
+  call void @i64.array.append(ptr %.10, i64 32)
+  call void @i64.array.append(ptr %.10, i64 240)
+  call void @i64.array.append(ptr %.10, i64 159)
+  call void @i64.array.append(ptr %.10, i64 140)
+  call void @i64.array.append(ptr %.10, i64 159)
+  %.35 = call ptr @Response.text(ptr %.7, ptr %.10)
+  %.36 = icmp eq ptr %.10, null
+  br i1 %.36, label %rc_release_continue, label %rc_release
 
 exit:                                             ; preds = %rc_release_continue.endif
-  %.70 = load ptr, ptr %ret_var, align 8
-  ret ptr %.70
+  %.54 = load ptr, ptr %ret_var, align 8
+  ret ptr %.54
 
 rc_release:                                       ; preds = %entry
-  %.37 = bitcast ptr %.9 to ptr
-  call void @meteor_release(ptr %.37)
+  %.38 = bitcast ptr %.10 to ptr
+  call void @meteor_release(ptr %.38)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry
-  %.40 = load ptr, ptr %ret_var, align 8
-  %.41 = icmp ne ptr %.40, null
-  br i1 %.41, label %rc_release_continue.if, label %rc_release_continue.endif
+  %.41 = load ptr, ptr %ret_var, align 8
+  %.42 = icmp ne ptr %.41, null
+  br i1 %.42, label %rc_release_continue.if, label %rc_release_continue.endif
 
 rc_release_continue.if:                           ; preds = %rc_release_continue
-  %.43 = icmp eq ptr %.40, null
-  br i1 %.43, label %rc_release_continue.1, label %rc_release.1
+  %.44 = icmp eq ptr %.41, null
+  br i1 %.44, label %rc_release_continue.1, label %rc_release.1
 
 rc_release_continue.endif:                        ; preds = %rc_release_continue.1, %rc_release_continue
-  store ptr %.34, ptr %ret_var, align 8
-  %.65 = bitcast ptr %.34 to ptr
-  %.66 = getelementptr i8, ptr %.65, i64 -16
-  %.67 = bitcast ptr %.66 to ptr
-  call void @meteor_retain(ptr %.67)
+  store ptr %.35, ptr %ret_var, align 8
   br label %exit
 
 rc_release.1:                                     ; preds = %rc_release_continue.if
-  %.45 = bitcast ptr %.40 to ptr
-  %.46 = getelementptr i8, ptr %.45, i64 -16
-  %.47 = bitcast ptr %.46 to ptr
-  %.48 = getelementptr %meteor.header, ptr %.47, i64 0, i32 0
-  %.49 = load i32, ptr %.48, align 4
-  %.50 = icmp eq i32 %.49, 1
-  br i1 %.50, label %rc_destroy, label %rc_release_only
+  %.46 = bitcast ptr %.41 to ptr
+  %.47 = getelementptr i8, ptr %.46, i64 -16
+  %.48 = bitcast ptr %.47 to ptr
+  call void @meteor_release(ptr %.48)
+  br label %rc_release_continue.1
 
-rc_release_continue.1:                            ; preds = %rc_release_only, %rc_destroy, %rc_release_continue.if
+rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue.if
   br label %rc_release_continue.endif
-
-rc_destroy:                                       ; preds = %rc_release.1
-  call void @__destroy_Response__(ptr %.40)
-  %.53 = bitcast ptr %.40 to ptr
-  %.54 = getelementptr i8, ptr %.53, i64 -16
-  %.55 = bitcast ptr %.54 to ptr
-  call void @meteor_release(ptr %.55)
-  br label %rc_release_continue.1
-
-rc_release_only:                                  ; preds = %rc_release.1
-  %.58 = bitcast ptr %.40 to ptr
-  %.59 = getelementptr i8, ptr %.58, i64 -16
-  %.60 = bitcast ptr %.59 to ptr
-  call void @meteor_release(ptr %.60)
-  br label %rc_release_continue.1
 }
 
 define ptr @api_info_handler(ptr %req, ptr %res) {
@@ -23412,152 +23449,132 @@ entry:
   %ret_var = alloca ptr, align 8
   store ptr null, ptr %ret_var, align 8
   %.7 = call ptr @malloc(i64 40)
-  %.8 = bitcast ptr %.7 to ptr
-  call void @i64.array.init(ptr %.8)
-  call void @i64.array.append(ptr %.8, i64 123)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 109)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 77)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 72)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 84)
-  call void @i64.array.append(ptr %.8, i64 80)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 83)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 44)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 118)
-  call void @i64.array.append(ptr %.8, i64 101)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 111)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 49)
-  call void @i64.array.append(ptr %.8, i64 46)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 46)
-  call void @i64.array.append(ptr %.8, i64 48)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 44)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 97)
-  call void @i64.array.append(ptr %.8, i64 116)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 115)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 58)
-  call void @i64.array.append(ptr %.8, i64 32)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 114)
-  call void @i64.array.append(ptr %.8, i64 117)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 105)
-  call void @i64.array.append(ptr %.8, i64 110)
-  call void @i64.array.append(ptr %.8, i64 103)
-  call void @i64.array.append(ptr %.8, i64 34)
-  call void @i64.array.append(ptr %.8, i64 125)
-  %.82 = load ptr, ptr %json_data, align 8
-  %.83 = icmp ne ptr %.82, null
-  br i1 %.83, label %entry.if, label %entry.endif
+  %.8 = call ptr @memset(ptr %.7, i32 0, i64 40)
+  %.9 = bitcast ptr %.7 to ptr
+  call void @i64.array.init(ptr %.9)
+  call void @i64.array.append(ptr %.9, i64 123)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 109)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 77)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 72)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 84)
+  call void @i64.array.append(ptr %.9, i64 80)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 83)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 44)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 118)
+  call void @i64.array.append(ptr %.9, i64 101)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 111)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 49)
+  call void @i64.array.append(ptr %.9, i64 46)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 46)
+  call void @i64.array.append(ptr %.9, i64 48)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 44)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 97)
+  call void @i64.array.append(ptr %.9, i64 116)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 115)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 58)
+  call void @i64.array.append(ptr %.9, i64 32)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 114)
+  call void @i64.array.append(ptr %.9, i64 117)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 105)
+  call void @i64.array.append(ptr %.9, i64 110)
+  call void @i64.array.append(ptr %.9, i64 103)
+  call void @i64.array.append(ptr %.9, i64 34)
+  call void @i64.array.append(ptr %.9, i64 125)
+  %.83 = load ptr, ptr %json_data, align 8
+  %.84 = icmp ne ptr %.83, null
+  br i1 %.84, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.2
-  %.131 = load ptr, ptr %ret_var, align 8
-  ret ptr %.131
+  %.115 = load ptr, ptr %ret_var, align 8
+  ret ptr %.115
 
 entry.if:                                         ; preds = %entry
-  %.85 = icmp eq ptr %.82, null
-  br i1 %.85, label %rc_release_continue, label %rc_release
+  %.86 = icmp eq ptr %.83, null
+  br i1 %.86, label %rc_release_continue, label %rc_release
 
 entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.8, ptr %json_data, align 8
-  %.92 = load ptr, ptr %res.1, align 8
-  %.93 = load ptr, ptr %json_data, align 8
-  %.94 = call ptr @Response.json(ptr %.92, ptr %.93)
-  %.95 = load ptr, ptr %ret_var, align 8
-  %.96 = icmp ne ptr %.95, null
-  br i1 %.96, label %entry.endif.if, label %entry.endif.endif
+  store ptr %.9, ptr %json_data, align 8
+  %.93 = load ptr, ptr %res.1, align 8
+  %.94 = load ptr, ptr %json_data, align 8
+  %.95 = call ptr @Response.json(ptr %.93, ptr %.94)
+  %.96 = load ptr, ptr %ret_var, align 8
+  %.97 = icmp ne ptr %.96, null
+  br i1 %.97, label %entry.endif.if, label %entry.endif.endif
 
 rc_release:                                       ; preds = %entry.if
-  %.87 = bitcast ptr %.82 to ptr
-  call void @meteor_release(ptr %.87)
+  %.88 = bitcast ptr %.83 to ptr
+  call void @meteor_release(ptr %.88)
   br label %rc_release_continue
 
 rc_release_continue:                              ; preds = %rc_release, %entry.if
   br label %entry.endif
 
 entry.endif.if:                                   ; preds = %entry.endif
-  %.98 = icmp eq ptr %.95, null
-  br i1 %.98, label %rc_release_continue.1, label %rc_release.1
+  %.99 = icmp eq ptr %.96, null
+  br i1 %.99, label %rc_release_continue.1, label %rc_release.1
 
 entry.endif.endif:                                ; preds = %rc_release_continue.1, %entry.endif
-  store ptr %.94, ptr %ret_var, align 8
-  %.120 = bitcast ptr %.94 to ptr
-  %.121 = getelementptr i8, ptr %.120, i64 -16
-  %.122 = bitcast ptr %.121 to ptr
-  call void @meteor_retain(ptr %.122)
-  %.124 = load ptr, ptr %json_data, align 8
-  %.125 = icmp eq ptr %.124, null
-  br i1 %.125, label %rc_release_continue.2, label %rc_release.2
+  store ptr %.95, ptr %ret_var, align 8
+  %.108 = load ptr, ptr %json_data, align 8
+  %.109 = icmp eq ptr %.108, null
+  br i1 %.109, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.1:                                     ; preds = %entry.endif.if
-  %.100 = bitcast ptr %.95 to ptr
-  %.101 = getelementptr i8, ptr %.100, i64 -16
-  %.102 = bitcast ptr %.101 to ptr
-  %.103 = getelementptr %meteor.header, ptr %.102, i64 0, i32 0
-  %.104 = load i32, ptr %.103, align 4
-  %.105 = icmp eq i32 %.104, 1
-  br i1 %.105, label %rc_destroy, label %rc_release_only
+  %.101 = bitcast ptr %.96 to ptr
+  %.102 = getelementptr i8, ptr %.101, i64 -16
+  %.103 = bitcast ptr %.102 to ptr
+  call void @meteor_release(ptr %.103)
+  br label %rc_release_continue.1
 
-rc_release_continue.1:                            ; preds = %rc_release_only, %rc_destroy, %entry.endif.if
+rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif.if
   br label %entry.endif.endif
 
-rc_destroy:                                       ; preds = %rc_release.1
-  call void @__destroy_Response__(ptr %.95)
-  %.108 = bitcast ptr %.95 to ptr
-  %.109 = getelementptr i8, ptr %.108, i64 -16
-  %.110 = bitcast ptr %.109 to ptr
-  call void @meteor_release(ptr %.110)
-  br label %rc_release_continue.1
-
-rc_release_only:                                  ; preds = %rc_release.1
-  %.113 = bitcast ptr %.95 to ptr
-  %.114 = getelementptr i8, ptr %.113, i64 -16
-  %.115 = bitcast ptr %.114 to ptr
-  call void @meteor_release(ptr %.115)
-  br label %rc_release_continue.1
-
 rc_release.2:                                     ; preds = %entry.endif.endif
-  %.127 = bitcast ptr %.124 to ptr
-  call void @meteor_release(ptr %.127)
+  %.111 = bitcast ptr %.108 to ptr
+  call void @meteor_release(ptr %.111)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %entry.endif.endif
@@ -23586,8 +23603,8 @@ entry:
   br i1 %.13, label %entry.if, label %entry.endif
 
 exit:                                             ; preds = %rc_release_continue.8
-  %.219 = load ptr, ptr %ret_var, align 8
-  ret ptr %.219
+  %.206 = load ptr, ptr %ret_var, align 8
+  ret ptr %.206
 
 entry.if:                                         ; preds = %entry
   %.15 = icmp eq ptr %.12, null
@@ -23596,30 +23613,32 @@ entry.if:                                         ; preds = %entry
 entry.endif:                                      ; preds = %rc_release_continue, %entry
   store ptr %.10, ptr %ts_str, align 8
   %.22 = call ptr @malloc(i64 40)
-  %.23 = bitcast ptr %.22 to ptr
-  call void @i64.array.init(ptr %.23)
-  call void @i64.array.append(ptr %.23, i64 123)
-  call void @i64.array.append(ptr %.23, i64 34)
-  call void @i64.array.append(ptr %.23, i64 116)
-  call void @i64.array.append(ptr %.23, i64 105)
-  call void @i64.array.append(ptr %.23, i64 109)
-  call void @i64.array.append(ptr %.23, i64 101)
-  call void @i64.array.append(ptr %.23, i64 115)
-  call void @i64.array.append(ptr %.23, i64 116)
-  call void @i64.array.append(ptr %.23, i64 97)
-  call void @i64.array.append(ptr %.23, i64 109)
-  call void @i64.array.append(ptr %.23, i64 112)
-  call void @i64.array.append(ptr %.23, i64 34)
-  call void @i64.array.append(ptr %.23, i64 58)
-  call void @i64.array.append(ptr %.23, i64 32)
-  %.39 = load ptr, ptr %ts_str, align 8
-  %.40 = bitcast ptr %.39 to ptr
-  call void @meteor_retain(ptr %.40)
-  %.42 = call ptr @malloc(i64 40)
-  %.43 = bitcast ptr %.42 to ptr
-  call void @i64.array.init(ptr %.43)
-  %left_len = call i64 @i64.array.length(ptr %.23)
-  %right_len = call i64 @i64.array.length(ptr %.39)
+  %.23 = call ptr @memset(ptr %.22, i32 0, i64 40)
+  %.24 = bitcast ptr %.22 to ptr
+  call void @i64.array.init(ptr %.24)
+  call void @i64.array.append(ptr %.24, i64 123)
+  call void @i64.array.append(ptr %.24, i64 34)
+  call void @i64.array.append(ptr %.24, i64 116)
+  call void @i64.array.append(ptr %.24, i64 105)
+  call void @i64.array.append(ptr %.24, i64 109)
+  call void @i64.array.append(ptr %.24, i64 101)
+  call void @i64.array.append(ptr %.24, i64 115)
+  call void @i64.array.append(ptr %.24, i64 116)
+  call void @i64.array.append(ptr %.24, i64 97)
+  call void @i64.array.append(ptr %.24, i64 109)
+  call void @i64.array.append(ptr %.24, i64 112)
+  call void @i64.array.append(ptr %.24, i64 34)
+  call void @i64.array.append(ptr %.24, i64 58)
+  call void @i64.array.append(ptr %.24, i64 32)
+  %.40 = load ptr, ptr %ts_str, align 8
+  %.41 = bitcast ptr %.40 to ptr
+  call void @meteor_retain(ptr %.41)
+  %.43 = call ptr @malloc(i64 40)
+  %.44 = call ptr @memset(ptr %.43, i32 0, i64 40)
+  %.45 = bitcast ptr %.43 to ptr
+  call void @i64.array.init(ptr %.45)
+  %left_len = call i64 @i64.array.length(ptr %.24)
+  %right_len = call i64 @i64.array.length(ptr %.40)
   %i_left = alloca i64, align 8
   store i64 0, ptr %i_left, align 4
   br label %str_concat.left.cond
@@ -23633,16 +23652,16 @@ rc_release_continue:                              ; preds = %rc_release, %entry.
   br label %entry.endif
 
 str_concat.left.cond:                             ; preds = %str_concat.left.body, %entry.endif
-  %.47 = load i64, ptr %i_left, align 4
-  %.48 = icmp slt i64 %.47, %left_len
-  br i1 %.48, label %str_concat.left.body, label %str_concat.left.end
+  %.49 = load i64, ptr %i_left, align 4
+  %.50 = icmp slt i64 %.49, %left_len
+  br i1 %.50, label %str_concat.left.body, label %str_concat.left.end
 
 str_concat.left.body:                             ; preds = %str_concat.left.cond
-  %.50 = load i64, ptr %i_left, align 4
-  %left_char = call i64 @i64.array.get(ptr %.23, i64 %.50)
-  call void @i64.array.append(ptr %.43, i64 %left_char)
-  %.52 = add i64 %.50, 1
-  store i64 %.52, ptr %i_left, align 4
+  %.52 = load i64, ptr %i_left, align 4
+  %left_char = call i64 @i64.array.get(ptr %.24, i64 %.52)
+  call void @i64.array.append(ptr %.45, i64 %left_char)
+  %.54 = add i64 %.52, 1
+  store i64 %.54, ptr %i_left, align 4
   br label %str_concat.left.cond
 
 str_concat.left.end:                              ; preds = %str_concat.left.cond
@@ -23651,112 +23670,114 @@ str_concat.left.end:                              ; preds = %str_concat.left.con
   br label %str_concat.right.cond
 
 str_concat.right.cond:                            ; preds = %str_concat.right.body, %str_concat.left.end
-  %.57 = load i64, ptr %i_right, align 4
-  %.58 = icmp slt i64 %.57, %right_len
-  br i1 %.58, label %str_concat.right.body, label %str_concat.right.end
+  %.59 = load i64, ptr %i_right, align 4
+  %.60 = icmp slt i64 %.59, %right_len
+  br i1 %.60, label %str_concat.right.body, label %str_concat.right.end
 
 str_concat.right.body:                            ; preds = %str_concat.right.cond
-  %.60 = load i64, ptr %i_right, align 4
-  %right_char = call i64 @i64.array.get(ptr %.39, i64 %.60)
-  call void @i64.array.append(ptr %.43, i64 %right_char)
-  %.62 = add i64 %.60, 1
-  store i64 %.62, ptr %i_right, align 4
+  %.62 = load i64, ptr %i_right, align 4
+  %right_char = call i64 @i64.array.get(ptr %.40, i64 %.62)
+  call void @i64.array.append(ptr %.45, i64 %right_char)
+  %.64 = add i64 %.62, 1
+  store i64 %.64, ptr %i_right, align 4
   br label %str_concat.right.cond
 
 str_concat.right.end:                             ; preds = %str_concat.right.cond
-  %.65 = icmp eq ptr %.23, null
-  br i1 %.65, label %rc_release_continue.1, label %rc_release.1
+  %.67 = icmp eq ptr %.24, null
+  br i1 %.67, label %rc_release_continue.1, label %rc_release.1
 
 rc_release.1:                                     ; preds = %str_concat.right.end
-  %.67 = bitcast ptr %.23 to ptr
-  call void @meteor_release(ptr %.67)
+  %.69 = bitcast ptr %.24 to ptr
+  call void @meteor_release(ptr %.69)
   br label %rc_release_continue.1
 
 rc_release_continue.1:                            ; preds = %rc_release.1, %str_concat.right.end
-  %.70 = icmp eq ptr %.39, null
-  br i1 %.70, label %rc_release_continue.2, label %rc_release.2
+  %.72 = icmp eq ptr %.40, null
+  br i1 %.72, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.2:                                     ; preds = %rc_release_continue.1
-  %.72 = bitcast ptr %.39 to ptr
-  call void @meteor_release(ptr %.72)
+  %.74 = bitcast ptr %.40 to ptr
+  call void @meteor_release(ptr %.74)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %rc_release_continue.1
-  %.75 = call ptr @malloc(i64 40)
-  %.76 = bitcast ptr %.75 to ptr
-  call void @i64.array.init(ptr %.76)
-  call void @i64.array.append(ptr %.76, i64 44)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 34)
-  call void @i64.array.append(ptr %.76, i64 109)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 115)
-  call void @i64.array.append(ptr %.76, i64 115)
-  call void @i64.array.append(ptr %.76, i64 97)
-  call void @i64.array.append(ptr %.76, i64 103)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 34)
-  call void @i64.array.append(ptr %.76, i64 58)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 34)
-  call void @i64.array.append(ptr %.76, i64 67)
-  call void @i64.array.append(ptr %.76, i64 117)
-  call void @i64.array.append(ptr %.76, i64 114)
-  call void @i64.array.append(ptr %.76, i64 114)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 110)
-  call void @i64.array.append(ptr %.76, i64 116)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 115)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 114)
-  call void @i64.array.append(ptr %.76, i64 118)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 114)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 116)
-  call void @i64.array.append(ptr %.76, i64 105)
-  call void @i64.array.append(ptr %.76, i64 109)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 40)
-  call void @i64.array.append(ptr %.76, i64 85)
-  call void @i64.array.append(ptr %.76, i64 110)
-  call void @i64.array.append(ptr %.76, i64 105)
-  call void @i64.array.append(ptr %.76, i64 120)
-  call void @i64.array.append(ptr %.76, i64 32)
-  call void @i64.array.append(ptr %.76, i64 116)
-  call void @i64.array.append(ptr %.76, i64 105)
-  call void @i64.array.append(ptr %.76, i64 109)
-  call void @i64.array.append(ptr %.76, i64 101)
-  call void @i64.array.append(ptr %.76, i64 115)
-  call void @i64.array.append(ptr %.76, i64 116)
-  call void @i64.array.append(ptr %.76, i64 97)
-  call void @i64.array.append(ptr %.76, i64 109)
-  call void @i64.array.append(ptr %.76, i64 112)
-  call void @i64.array.append(ptr %.76, i64 41)
-  call void @i64.array.append(ptr %.76, i64 34)
-  call void @i64.array.append(ptr %.76, i64 125)
-  %.130 = call ptr @malloc(i64 40)
-  %.131 = bitcast ptr %.130 to ptr
-  call void @i64.array.init(ptr %.131)
-  %left_len.1 = call i64 @i64.array.length(ptr %.43)
-  %right_len.1 = call i64 @i64.array.length(ptr %.76)
+  %.77 = call ptr @malloc(i64 40)
+  %.78 = call ptr @memset(ptr %.77, i32 0, i64 40)
+  %.79 = bitcast ptr %.77 to ptr
+  call void @i64.array.init(ptr %.79)
+  call void @i64.array.append(ptr %.79, i64 44)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 34)
+  call void @i64.array.append(ptr %.79, i64 109)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 115)
+  call void @i64.array.append(ptr %.79, i64 115)
+  call void @i64.array.append(ptr %.79, i64 97)
+  call void @i64.array.append(ptr %.79, i64 103)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 34)
+  call void @i64.array.append(ptr %.79, i64 58)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 34)
+  call void @i64.array.append(ptr %.79, i64 67)
+  call void @i64.array.append(ptr %.79, i64 117)
+  call void @i64.array.append(ptr %.79, i64 114)
+  call void @i64.array.append(ptr %.79, i64 114)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 110)
+  call void @i64.array.append(ptr %.79, i64 116)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 115)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 114)
+  call void @i64.array.append(ptr %.79, i64 118)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 114)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 116)
+  call void @i64.array.append(ptr %.79, i64 105)
+  call void @i64.array.append(ptr %.79, i64 109)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 40)
+  call void @i64.array.append(ptr %.79, i64 85)
+  call void @i64.array.append(ptr %.79, i64 110)
+  call void @i64.array.append(ptr %.79, i64 105)
+  call void @i64.array.append(ptr %.79, i64 120)
+  call void @i64.array.append(ptr %.79, i64 32)
+  call void @i64.array.append(ptr %.79, i64 116)
+  call void @i64.array.append(ptr %.79, i64 105)
+  call void @i64.array.append(ptr %.79, i64 109)
+  call void @i64.array.append(ptr %.79, i64 101)
+  call void @i64.array.append(ptr %.79, i64 115)
+  call void @i64.array.append(ptr %.79, i64 116)
+  call void @i64.array.append(ptr %.79, i64 97)
+  call void @i64.array.append(ptr %.79, i64 109)
+  call void @i64.array.append(ptr %.79, i64 112)
+  call void @i64.array.append(ptr %.79, i64 41)
+  call void @i64.array.append(ptr %.79, i64 34)
+  call void @i64.array.append(ptr %.79, i64 125)
+  %.133 = call ptr @malloc(i64 40)
+  %.134 = call ptr @memset(ptr %.133, i32 0, i64 40)
+  %.135 = bitcast ptr %.133 to ptr
+  call void @i64.array.init(ptr %.135)
+  %left_len.1 = call i64 @i64.array.length(ptr %.45)
+  %right_len.1 = call i64 @i64.array.length(ptr %.79)
   %i_left.1 = alloca i64, align 8
   store i64 0, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 str_concat.left.cond.1:                           ; preds = %str_concat.left.body.1, %rc_release_continue.2
-  %.135 = load i64, ptr %i_left.1, align 4
-  %.136 = icmp slt i64 %.135, %left_len.1
-  br i1 %.136, label %str_concat.left.body.1, label %str_concat.left.end.1
+  %.139 = load i64, ptr %i_left.1, align 4
+  %.140 = icmp slt i64 %.139, %left_len.1
+  br i1 %.140, label %str_concat.left.body.1, label %str_concat.left.end.1
 
 str_concat.left.body.1:                           ; preds = %str_concat.left.cond.1
-  %.138 = load i64, ptr %i_left.1, align 4
-  %left_char.1 = call i64 @i64.array.get(ptr %.43, i64 %.138)
-  call void @i64.array.append(ptr %.131, i64 %left_char.1)
-  %.140 = add i64 %.138, 1
-  store i64 %.140, ptr %i_left.1, align 4
+  %.142 = load i64, ptr %i_left.1, align 4
+  %left_char.1 = call i64 @i64.array.get(ptr %.45, i64 %.142)
+  call void @i64.array.append(ptr %.135, i64 %left_char.1)
+  %.144 = add i64 %.142, 1
+  store i64 %.144, ptr %i_left.1, align 4
   br label %str_concat.left.cond.1
 
 str_concat.left.end.1:                            ; preds = %str_concat.left.cond.1
@@ -23765,116 +23786,95 @@ str_concat.left.end.1:                            ; preds = %str_concat.left.con
   br label %str_concat.right.cond.1
 
 str_concat.right.cond.1:                          ; preds = %str_concat.right.body.1, %str_concat.left.end.1
-  %.145 = load i64, ptr %i_right.1, align 4
-  %.146 = icmp slt i64 %.145, %right_len.1
-  br i1 %.146, label %str_concat.right.body.1, label %str_concat.right.end.1
+  %.149 = load i64, ptr %i_right.1, align 4
+  %.150 = icmp slt i64 %.149, %right_len.1
+  br i1 %.150, label %str_concat.right.body.1, label %str_concat.right.end.1
 
 str_concat.right.body.1:                          ; preds = %str_concat.right.cond.1
-  %.148 = load i64, ptr %i_right.1, align 4
-  %right_char.1 = call i64 @i64.array.get(ptr %.76, i64 %.148)
-  call void @i64.array.append(ptr %.131, i64 %right_char.1)
-  %.150 = add i64 %.148, 1
-  store i64 %.150, ptr %i_right.1, align 4
+  %.152 = load i64, ptr %i_right.1, align 4
+  %right_char.1 = call i64 @i64.array.get(ptr %.79, i64 %.152)
+  call void @i64.array.append(ptr %.135, i64 %right_char.1)
+  %.154 = add i64 %.152, 1
+  store i64 %.154, ptr %i_right.1, align 4
   br label %str_concat.right.cond.1
 
 str_concat.right.end.1:                           ; preds = %str_concat.right.cond.1
-  %.153 = icmp eq ptr %.43, null
-  br i1 %.153, label %rc_release_continue.3, label %rc_release.3
+  %.157 = icmp eq ptr %.45, null
+  br i1 %.157, label %rc_release_continue.3, label %rc_release.3
 
 rc_release.3:                                     ; preds = %str_concat.right.end.1
-  %.155 = bitcast ptr %.43 to ptr
-  call void @meteor_release(ptr %.155)
+  %.159 = bitcast ptr %.45 to ptr
+  call void @meteor_release(ptr %.159)
   br label %rc_release_continue.3
 
 rc_release_continue.3:                            ; preds = %rc_release.3, %str_concat.right.end.1
-  %.158 = icmp eq ptr %.76, null
-  br i1 %.158, label %rc_release_continue.4, label %rc_release.4
+  %.162 = icmp eq ptr %.79, null
+  br i1 %.162, label %rc_release_continue.4, label %rc_release.4
 
 rc_release.4:                                     ; preds = %rc_release_continue.3
-  %.160 = bitcast ptr %.76 to ptr
-  call void @meteor_release(ptr %.160)
+  %.164 = bitcast ptr %.79 to ptr
+  call void @meteor_release(ptr %.164)
   br label %rc_release_continue.4
 
 rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3
-  %.164 = load ptr, ptr %json_data, align 8
-  %.165 = icmp ne ptr %.164, null
-  br i1 %.165, label %rc_release_continue.4.if, label %rc_release_continue.4.endif
+  %.168 = load ptr, ptr %json_data, align 8
+  %.169 = icmp ne ptr %.168, null
+  br i1 %.169, label %rc_release_continue.4.if, label %rc_release_continue.4.endif
 
 rc_release_continue.4.if:                         ; preds = %rc_release_continue.4
-  %.167 = icmp eq ptr %.164, null
-  br i1 %.167, label %rc_release_continue.5, label %rc_release.5
+  %.171 = icmp eq ptr %.168, null
+  br i1 %.171, label %rc_release_continue.5, label %rc_release.5
 
 rc_release_continue.4.endif:                      ; preds = %rc_release_continue.5, %rc_release_continue.4
-  store ptr %.131, ptr %json_data, align 8
-  %.174 = load ptr, ptr %res.1, align 8
-  %.175 = load ptr, ptr %json_data, align 8
-  %.176 = call ptr @Response.json(ptr %.174, ptr %.175)
-  %.177 = load ptr, ptr %ret_var, align 8
-  %.178 = icmp ne ptr %.177, null
-  br i1 %.178, label %rc_release_continue.4.endif.if, label %rc_release_continue.4.endif.endif
+  store ptr %.135, ptr %json_data, align 8
+  %.178 = load ptr, ptr %res.1, align 8
+  %.179 = load ptr, ptr %json_data, align 8
+  %.180 = call ptr @Response.json(ptr %.178, ptr %.179)
+  %.181 = load ptr, ptr %ret_var, align 8
+  %.182 = icmp ne ptr %.181, null
+  br i1 %.182, label %rc_release_continue.4.endif.if, label %rc_release_continue.4.endif.endif
 
 rc_release.5:                                     ; preds = %rc_release_continue.4.if
-  %.169 = bitcast ptr %.164 to ptr
-  call void @meteor_release(ptr %.169)
+  %.173 = bitcast ptr %.168 to ptr
+  call void @meteor_release(ptr %.173)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %rc_release_continue.4.if
   br label %rc_release_continue.4.endif
 
 rc_release_continue.4.endif.if:                   ; preds = %rc_release_continue.4.endif
-  %.180 = icmp eq ptr %.177, null
-  br i1 %.180, label %rc_release_continue.6, label %rc_release.6
+  %.184 = icmp eq ptr %.181, null
+  br i1 %.184, label %rc_release_continue.6, label %rc_release.6
 
 rc_release_continue.4.endif.endif:                ; preds = %rc_release_continue.6, %rc_release_continue.4.endif
-  store ptr %.176, ptr %ret_var, align 8
-  %.202 = bitcast ptr %.176 to ptr
-  %.203 = getelementptr i8, ptr %.202, i64 -16
-  %.204 = bitcast ptr %.203 to ptr
-  call void @meteor_retain(ptr %.204)
-  %.206 = load ptr, ptr %ts_str, align 8
-  %.207 = icmp eq ptr %.206, null
-  br i1 %.207, label %rc_release_continue.7, label %rc_release.7
+  store ptr %.180, ptr %ret_var, align 8
+  %.193 = load ptr, ptr %ts_str, align 8
+  %.194 = icmp eq ptr %.193, null
+  br i1 %.194, label %rc_release_continue.7, label %rc_release.7
 
 rc_release.6:                                     ; preds = %rc_release_continue.4.endif.if
-  %.182 = bitcast ptr %.177 to ptr
-  %.183 = getelementptr i8, ptr %.182, i64 -16
-  %.184 = bitcast ptr %.183 to ptr
-  %.185 = getelementptr %meteor.header, ptr %.184, i64 0, i32 0
-  %.186 = load i32, ptr %.185, align 4
-  %.187 = icmp eq i32 %.186, 1
-  br i1 %.187, label %rc_destroy, label %rc_release_only
+  %.186 = bitcast ptr %.181 to ptr
+  %.187 = getelementptr i8, ptr %.186, i64 -16
+  %.188 = bitcast ptr %.187 to ptr
+  call void @meteor_release(ptr %.188)
+  br label %rc_release_continue.6
 
-rc_release_continue.6:                            ; preds = %rc_release_only, %rc_destroy, %rc_release_continue.4.endif.if
+rc_release_continue.6:                            ; preds = %rc_release.6, %rc_release_continue.4.endif.if
   br label %rc_release_continue.4.endif.endif
 
-rc_destroy:                                       ; preds = %rc_release.6
-  call void @__destroy_Response__(ptr %.177)
-  %.190 = bitcast ptr %.177 to ptr
-  %.191 = getelementptr i8, ptr %.190, i64 -16
-  %.192 = bitcast ptr %.191 to ptr
-  call void @meteor_release(ptr %.192)
-  br label %rc_release_continue.6
-
-rc_release_only:                                  ; preds = %rc_release.6
-  %.195 = bitcast ptr %.177 to ptr
-  %.196 = getelementptr i8, ptr %.195, i64 -16
-  %.197 = bitcast ptr %.196 to ptr
-  call void @meteor_release(ptr %.197)
-  br label %rc_release_continue.6
-
 rc_release.7:                                     ; preds = %rc_release_continue.4.endif.endif
-  %.209 = bitcast ptr %.206 to ptr
-  call void @meteor_release(ptr %.209)
+  %.196 = bitcast ptr %.193 to ptr
+  call void @meteor_release(ptr %.196)
   br label %rc_release_continue.7
 
 rc_release_continue.7:                            ; preds = %rc_release.7, %rc_release_continue.4.endif.endif
-  %.212 = load ptr, ptr %json_data, align 8
-  %.213 = icmp eq ptr %.212, null
-  br i1 %.213, label %rc_release_continue.8, label %rc_release.8
+  %.199 = load ptr, ptr %json_data, align 8
+  %.200 = icmp eq ptr %.199, null
+  br i1 %.200, label %rc_release_continue.8, label %rc_release.8
 
 rc_release.8:                                     ; preds = %rc_release_continue.7
-  %.215 = bitcast ptr %.212 to ptr
-  call void @meteor_release(ptr %.215)
+  %.202 = bitcast ptr %.199 to ptr
+  call void @meteor_release(ptr %.202)
   br label %rc_release_continue.8
 
 rc_release_continue.8:                            ; preds = %rc_release.8, %rc_release_continue.7
@@ -23886,469 +23886,540 @@ entry:
   %server = alloca ptr, align 8
   store ptr null, ptr %server, align 8
   %.2 = call ptr @malloc(i64 40)
-  %.3 = bitcast ptr %.2 to ptr
-  call void @i64.array.init(ptr %.3)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @i64.array.append(ptr %.3, i64 61)
-  call void @print(ptr %.3)
-  %.46 = call ptr @malloc(i64 40)
-  %.47 = bitcast ptr %.46 to ptr
-  call void @i64.array.init(ptr %.47)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 77)
-  call void @i64.array.append(ptr %.47, i64 101)
-  call void @i64.array.append(ptr %.47, i64 116)
-  call void @i64.array.append(ptr %.47, i64 101)
-  call void @i64.array.append(ptr %.47, i64 111)
-  call void @i64.array.append(ptr %.47, i64 114)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 72)
-  call void @i64.array.append(ptr %.47, i64 84)
-  call void @i64.array.append(ptr %.47, i64 84)
-  call void @i64.array.append(ptr %.47, i64 80)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 83)
-  call void @i64.array.append(ptr %.47, i64 101)
-  call void @i64.array.append(ptr %.47, i64 114)
-  call void @i64.array.append(ptr %.47, i64 118)
-  call void @i64.array.append(ptr %.47, i64 101)
-  call void @i64.array.append(ptr %.47, i64 114)
-  call void @i64.array.append(ptr %.47, i64 32)
-  call void @i64.array.append(ptr %.47, i64 68)
-  call void @i64.array.append(ptr %.47, i64 101)
-  call void @i64.array.append(ptr %.47, i64 109)
-  call void @i64.array.append(ptr %.47, i64 111)
-  call void @print(ptr %.47)
-  %.76 = call ptr @malloc(i64 40)
-  %.77 = bitcast ptr %.76 to ptr
-  call void @i64.array.init(ptr %.77)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @i64.array.append(ptr %.77, i64 61)
-  call void @print(ptr %.77)
-  %.120 = call ptr @create_server()
-  %.122 = load ptr, ptr %server, align 8
-  %.123 = icmp ne ptr %.122, null
-  br i1 %.123, label %entry.if, label %entry.endif
+  %.3 = call ptr @memset(ptr %.2, i32 0, i64 40)
+  %.4 = bitcast ptr %.2 to ptr
+  call void @i64.array.init(ptr %.4)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @i64.array.append(ptr %.4, i64 61)
+  call void @print(ptr %.4)
+  %.47 = icmp eq ptr %.4, null
+  br i1 %.47, label %rc_release_continue, label %rc_release
 
-exit:                                             ; preds = %rc_release_continue.5
-  %.403 = load ptr, ptr %server, align 8
-  %.404 = icmp eq ptr %.403, null
-  br i1 %.404, label %rc_release_continue.6, label %rc_release.6
+exit:                                             ; preds = %rc_release_continue.15
+  %.455 = load ptr, ptr %server, align 8
+  %.456 = icmp eq ptr %.455, null
+  br i1 %.456, label %rc_release_continue.16, label %rc_release.16
 
-entry.if:                                         ; preds = %entry
-  %.125 = icmp eq ptr %.122, null
-  br i1 %.125, label %rc_release_continue, label %rc_release
-
-entry.endif:                                      ; preds = %rc_release_continue, %entry
-  store ptr %.120, ptr %server, align 8
-  %.147 = load ptr, ptr %server, align 8
-  %.148 = call ptr @malloc(i64 40)
-  %.149 = bitcast ptr %.148 to ptr
-  call void @i64.array.init(ptr %.149)
-  call void @i64.array.append(ptr %.149, i64 49)
-  call void @i64.array.append(ptr %.149, i64 50)
-  call void @i64.array.append(ptr %.149, i64 55)
-  call void @i64.array.append(ptr %.149, i64 46)
-  call void @i64.array.append(ptr %.149, i64 48)
-  call void @i64.array.append(ptr %.149, i64 46)
-  call void @i64.array.append(ptr %.149, i64 48)
-  call void @i64.array.append(ptr %.149, i64 46)
-  call void @i64.array.append(ptr %.149, i64 49)
-  %.160 = call ptr @Server.bind(ptr %.147, ptr %.149, i64 8080)
-  %.161 = icmp eq ptr %.149, null
-  br i1 %.161, label %rc_release_continue.1, label %rc_release.1
-
-rc_release:                                       ; preds = %entry.if
-  %.127 = bitcast ptr %.122 to ptr
-  %.128 = getelementptr i8, ptr %.127, i64 -16
-  %.129 = bitcast ptr %.128 to ptr
-  %.130 = getelementptr %meteor.header, ptr %.129, i64 0, i32 0
-  %.131 = load i32, ptr %.130, align 4
-  %.132 = icmp eq i32 %.131, 1
-  br i1 %.132, label %rc_destroy, label %rc_release_only
-
-rc_release_continue:                              ; preds = %rc_release_only, %rc_destroy, %entry.if
-  br label %entry.endif
-
-rc_destroy:                                       ; preds = %rc_release
-  call void @__destroy_Server__(ptr %.122)
-  %.135 = bitcast ptr %.122 to ptr
-  %.136 = getelementptr i8, ptr %.135, i64 -16
-  %.137 = bitcast ptr %.136 to ptr
-  call void @meteor_release(ptr %.137)
+rc_release:                                       ; preds = %entry
+  %.49 = bitcast ptr %.4 to ptr
+  call void @meteor_release(ptr %.49)
   br label %rc_release_continue
 
-rc_release_only:                                  ; preds = %rc_release
-  %.140 = bitcast ptr %.122 to ptr
-  %.141 = getelementptr i8, ptr %.140, i64 -16
-  %.142 = bitcast ptr %.141 to ptr
-  call void @meteor_release(ptr %.142)
-  br label %rc_release_continue
+rc_release_continue:                              ; preds = %rc_release, %entry
+  %.52 = call ptr @malloc(i64 40)
+  %.53 = call ptr @memset(ptr %.52, i32 0, i64 40)
+  %.54 = bitcast ptr %.52 to ptr
+  call void @i64.array.init(ptr %.54)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 77)
+  call void @i64.array.append(ptr %.54, i64 101)
+  call void @i64.array.append(ptr %.54, i64 116)
+  call void @i64.array.append(ptr %.54, i64 101)
+  call void @i64.array.append(ptr %.54, i64 111)
+  call void @i64.array.append(ptr %.54, i64 114)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 72)
+  call void @i64.array.append(ptr %.54, i64 84)
+  call void @i64.array.append(ptr %.54, i64 84)
+  call void @i64.array.append(ptr %.54, i64 80)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 83)
+  call void @i64.array.append(ptr %.54, i64 101)
+  call void @i64.array.append(ptr %.54, i64 114)
+  call void @i64.array.append(ptr %.54, i64 118)
+  call void @i64.array.append(ptr %.54, i64 101)
+  call void @i64.array.append(ptr %.54, i64 114)
+  call void @i64.array.append(ptr %.54, i64 32)
+  call void @i64.array.append(ptr %.54, i64 68)
+  call void @i64.array.append(ptr %.54, i64 101)
+  call void @i64.array.append(ptr %.54, i64 109)
+  call void @i64.array.append(ptr %.54, i64 111)
+  call void @print(ptr %.54)
+  %.83 = icmp eq ptr %.54, null
+  br i1 %.83, label %rc_release_continue.1, label %rc_release.1
 
-rc_release.1:                                     ; preds = %entry.endif
-  %.163 = bitcast ptr %.149 to ptr
-  call void @meteor_release(ptr %.163)
+rc_release.1:                                     ; preds = %rc_release_continue
+  %.85 = bitcast ptr %.54 to ptr
+  call void @meteor_release(ptr %.85)
   br label %rc_release_continue.1
 
-rc_release_continue.1:                            ; preds = %rc_release.1, %entry.endif
-  %.166 = load ptr, ptr %server, align 8
-  %.167 = call ptr @malloc(i64 40)
-  %.168 = bitcast ptr %.167 to ptr
-  call void @i64.array.init(ptr %.168)
-  call void @i64.array.append(ptr %.168, i64 47)
-  %.171 = call ptr @Server.get(ptr %.166, ptr %.168, ptr @home_handler)
-  %.172 = icmp eq ptr %.168, null
-  br i1 %.172, label %rc_release_continue.2, label %rc_release.2
+rc_release_continue.1:                            ; preds = %rc_release.1, %rc_release_continue
+  %.88 = call ptr @malloc(i64 40)
+  %.89 = call ptr @memset(ptr %.88, i32 0, i64 40)
+  %.90 = bitcast ptr %.88 to ptr
+  call void @i64.array.init(ptr %.90)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @i64.array.append(ptr %.90, i64 61)
+  call void @print(ptr %.90)
+  %.133 = icmp eq ptr %.90, null
+  br i1 %.133, label %rc_release_continue.2, label %rc_release.2
 
 rc_release.2:                                     ; preds = %rc_release_continue.1
-  %.174 = bitcast ptr %.168 to ptr
-  call void @meteor_release(ptr %.174)
+  %.135 = bitcast ptr %.90 to ptr
+  call void @meteor_release(ptr %.135)
   br label %rc_release_continue.2
 
 rc_release_continue.2:                            ; preds = %rc_release.2, %rc_release_continue.1
-  %.177 = load ptr, ptr %server, align 8
-  %.178 = call ptr @malloc(i64 40)
-  %.179 = bitcast ptr %.178 to ptr
-  call void @i64.array.init(ptr %.179)
-  call void @i64.array.append(ptr %.179, i64 47)
-  call void @i64.array.append(ptr %.179, i64 104)
-  call void @i64.array.append(ptr %.179, i64 101)
-  call void @i64.array.append(ptr %.179, i64 108)
-  call void @i64.array.append(ptr %.179, i64 108)
-  call void @i64.array.append(ptr %.179, i64 111)
-  %.187 = call ptr @Server.get(ptr %.177, ptr %.179, ptr @hello_handler)
-  %.188 = icmp eq ptr %.179, null
-  br i1 %.188, label %rc_release_continue.3, label %rc_release.3
+  %.138 = call ptr @create_server()
+  %.140 = load ptr, ptr %server, align 8
+  %.141 = icmp ne ptr %.140, null
+  br i1 %.141, label %rc_release_continue.2.if, label %rc_release_continue.2.endif
 
-rc_release.3:                                     ; preds = %rc_release_continue.2
-  %.190 = bitcast ptr %.179 to ptr
-  call void @meteor_release(ptr %.190)
+rc_release_continue.2.if:                         ; preds = %rc_release_continue.2
+  %.143 = icmp eq ptr %.140, null
+  br i1 %.143, label %rc_release_continue.3, label %rc_release.3
+
+rc_release_continue.2.endif:                      ; preds = %rc_release_continue.3, %rc_release_continue.2
+  store ptr %.138, ptr %server, align 8
+  %.152 = load ptr, ptr %server, align 8
+  %.153 = call ptr @malloc(i64 40)
+  %.154 = call ptr @memset(ptr %.153, i32 0, i64 40)
+  %.155 = bitcast ptr %.153 to ptr
+  call void @i64.array.init(ptr %.155)
+  call void @i64.array.append(ptr %.155, i64 49)
+  call void @i64.array.append(ptr %.155, i64 50)
+  call void @i64.array.append(ptr %.155, i64 55)
+  call void @i64.array.append(ptr %.155, i64 46)
+  call void @i64.array.append(ptr %.155, i64 48)
+  call void @i64.array.append(ptr %.155, i64 46)
+  call void @i64.array.append(ptr %.155, i64 48)
+  call void @i64.array.append(ptr %.155, i64 46)
+  call void @i64.array.append(ptr %.155, i64 49)
+  %.166 = call ptr @Server.bind(ptr %.152, ptr %.155, i64 8080)
+  %.167 = icmp eq ptr %.155, null
+  br i1 %.167, label %rc_release_continue.4, label %rc_release.4
+
+rc_release.3:                                     ; preds = %rc_release_continue.2.if
+  %.145 = bitcast ptr %.140 to ptr
+  %.146 = getelementptr i8, ptr %.145, i64 -16
+  %.147 = bitcast ptr %.146 to ptr
+  call void @meteor_release(ptr %.147)
   br label %rc_release_continue.3
 
-rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.2
-  %.193 = load ptr, ptr %server, align 8
-  %.194 = call ptr @malloc(i64 40)
-  %.195 = bitcast ptr %.194 to ptr
-  call void @i64.array.init(ptr %.195)
-  call void @i64.array.append(ptr %.195, i64 47)
-  call void @i64.array.append(ptr %.195, i64 97)
-  call void @i64.array.append(ptr %.195, i64 112)
-  call void @i64.array.append(ptr %.195, i64 105)
-  call void @i64.array.append(ptr %.195, i64 47)
-  call void @i64.array.append(ptr %.195, i64 105)
-  call void @i64.array.append(ptr %.195, i64 110)
-  call void @i64.array.append(ptr %.195, i64 102)
-  call void @i64.array.append(ptr %.195, i64 111)
-  %.206 = call ptr @Server.get(ptr %.193, ptr %.195, ptr @api_info_handler)
-  %.207 = icmp eq ptr %.195, null
-  br i1 %.207, label %rc_release_continue.4, label %rc_release.4
+rc_release_continue.3:                            ; preds = %rc_release.3, %rc_release_continue.2.if
+  br label %rc_release_continue.2.endif
 
-rc_release.4:                                     ; preds = %rc_release_continue.3
-  %.209 = bitcast ptr %.195 to ptr
-  call void @meteor_release(ptr %.209)
+rc_release.4:                                     ; preds = %rc_release_continue.2.endif
+  %.169 = bitcast ptr %.155 to ptr
+  call void @meteor_release(ptr %.169)
   br label %rc_release_continue.4
 
-rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.3
-  %.212 = load ptr, ptr %server, align 8
-  %.213 = call ptr @malloc(i64 40)
-  %.214 = bitcast ptr %.213 to ptr
-  call void @i64.array.init(ptr %.214)
-  call void @i64.array.append(ptr %.214, i64 47)
-  call void @i64.array.append(ptr %.214, i64 97)
-  call void @i64.array.append(ptr %.214, i64 112)
-  call void @i64.array.append(ptr %.214, i64 105)
-  call void @i64.array.append(ptr %.214, i64 47)
-  call void @i64.array.append(ptr %.214, i64 116)
-  call void @i64.array.append(ptr %.214, i64 105)
-  call void @i64.array.append(ptr %.214, i64 109)
-  call void @i64.array.append(ptr %.214, i64 101)
-  %.225 = call ptr @Server.get(ptr %.212, ptr %.214, ptr @api_time_handler)
-  %.226 = icmp eq ptr %.214, null
-  br i1 %.226, label %rc_release_continue.5, label %rc_release.5
+rc_release_continue.4:                            ; preds = %rc_release.4, %rc_release_continue.2.endif
+  %.172 = load ptr, ptr %server, align 8
+  %.173 = call ptr @malloc(i64 40)
+  %.174 = call ptr @memset(ptr %.173, i32 0, i64 40)
+  %.175 = bitcast ptr %.173 to ptr
+  call void @i64.array.init(ptr %.175)
+  call void @i64.array.append(ptr %.175, i64 47)
+  %.178 = call ptr @Server.get(ptr %.172, ptr %.175, ptr @home_handler)
+  %.179 = icmp eq ptr %.175, null
+  br i1 %.179, label %rc_release_continue.5, label %rc_release.5
 
 rc_release.5:                                     ; preds = %rc_release_continue.4
-  %.228 = bitcast ptr %.214 to ptr
-  call void @meteor_release(ptr %.228)
+  %.181 = bitcast ptr %.175 to ptr
+  call void @meteor_release(ptr %.181)
   br label %rc_release_continue.5
 
 rc_release_continue.5:                            ; preds = %rc_release.5, %rc_release_continue.4
-  %.231 = call ptr @malloc(i64 40)
-  %.232 = bitcast ptr %.231 to ptr
-  call void @i64.array.init(ptr %.232)
-  call void @print(ptr %.232)
-  %.235 = call ptr @malloc(i64 40)
-  %.236 = bitcast ptr %.235 to ptr
-  call void @i64.array.init(ptr %.236)
-  call void @i64.array.append(ptr %.236, i64 82)
-  call void @i64.array.append(ptr %.236, i64 111)
-  call void @i64.array.append(ptr %.236, i64 117)
-  call void @i64.array.append(ptr %.236, i64 116)
-  call void @i64.array.append(ptr %.236, i64 101)
-  call void @i64.array.append(ptr %.236, i64 115)
-  call void @i64.array.append(ptr %.236, i64 32)
-  call void @i64.array.append(ptr %.236, i64 114)
-  call void @i64.array.append(ptr %.236, i64 101)
-  call void @i64.array.append(ptr %.236, i64 103)
-  call void @i64.array.append(ptr %.236, i64 105)
-  call void @i64.array.append(ptr %.236, i64 115)
-  call void @i64.array.append(ptr %.236, i64 116)
-  call void @i64.array.append(ptr %.236, i64 101)
-  call void @i64.array.append(ptr %.236, i64 114)
-  call void @i64.array.append(ptr %.236, i64 101)
-  call void @i64.array.append(ptr %.236, i64 100)
-  call void @i64.array.append(ptr %.236, i64 58)
-  call void @print(ptr %.236)
-  %.257 = call ptr @malloc(i64 40)
-  %.258 = bitcast ptr %.257 to ptr
-  call void @i64.array.init(ptr %.258)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 71)
-  call void @i64.array.append(ptr %.258, i64 69)
-  call void @i64.array.append(ptr %.258, i64 84)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 47)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 45)
-  call void @i64.array.append(ptr %.258, i64 62)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 72)
-  call void @i64.array.append(ptr %.258, i64 111)
-  call void @i64.array.append(ptr %.258, i64 109)
-  call void @i64.array.append(ptr %.258, i64 101)
-  call void @i64.array.append(ptr %.258, i64 32)
-  call void @i64.array.append(ptr %.258, i64 112)
-  call void @i64.array.append(ptr %.258, i64 97)
-  call void @i64.array.append(ptr %.258, i64 103)
-  call void @i64.array.append(ptr %.258, i64 101)
-  call void @print(ptr %.258)
-  %.289 = call ptr @malloc(i64 40)
-  %.290 = bitcast ptr %.289 to ptr
-  call void @i64.array.init(ptr %.290)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 71)
-  call void @i64.array.append(ptr %.290, i64 69)
-  call void @i64.array.append(ptr %.290, i64 84)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 47)
-  call void @i64.array.append(ptr %.290, i64 104)
-  call void @i64.array.append(ptr %.290, i64 101)
-  call void @i64.array.append(ptr %.290, i64 108)
-  call void @i64.array.append(ptr %.290, i64 108)
-  call void @i64.array.append(ptr %.290, i64 111)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 45)
-  call void @i64.array.append(ptr %.290, i64 62)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 84)
-  call void @i64.array.append(ptr %.290, i64 101)
-  call void @i64.array.append(ptr %.290, i64 120)
-  call void @i64.array.append(ptr %.290, i64 116)
-  call void @i64.array.append(ptr %.290, i64 32)
-  call void @i64.array.append(ptr %.290, i64 103)
-  call void @i64.array.append(ptr %.290, i64 114)
-  call void @i64.array.append(ptr %.290, i64 101)
-  call void @i64.array.append(ptr %.290, i64 101)
-  call void @i64.array.append(ptr %.290, i64 116)
-  call void @i64.array.append(ptr %.290, i64 105)
-  call void @i64.array.append(ptr %.290, i64 110)
-  call void @i64.array.append(ptr %.290, i64 103)
-  call void @print(ptr %.290)
-  %.325 = call ptr @malloc(i64 40)
-  %.326 = bitcast ptr %.325 to ptr
-  call void @i64.array.init(ptr %.326)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 71)
-  call void @i64.array.append(ptr %.326, i64 69)
-  call void @i64.array.append(ptr %.326, i64 84)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 47)
-  call void @i64.array.append(ptr %.326, i64 97)
-  call void @i64.array.append(ptr %.326, i64 112)
-  call void @i64.array.append(ptr %.326, i64 105)
-  call void @i64.array.append(ptr %.326, i64 47)
-  call void @i64.array.append(ptr %.326, i64 105)
-  call void @i64.array.append(ptr %.326, i64 110)
-  call void @i64.array.append(ptr %.326, i64 102)
-  call void @i64.array.append(ptr %.326, i64 111)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 45)
-  call void @i64.array.append(ptr %.326, i64 62)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 83)
-  call void @i64.array.append(ptr %.326, i64 101)
-  call void @i64.array.append(ptr %.326, i64 114)
-  call void @i64.array.append(ptr %.326, i64 118)
-  call void @i64.array.append(ptr %.326, i64 101)
-  call void @i64.array.append(ptr %.326, i64 114)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 105)
-  call void @i64.array.append(ptr %.326, i64 110)
-  call void @i64.array.append(ptr %.326, i64 102)
-  call void @i64.array.append(ptr %.326, i64 111)
-  call void @i64.array.append(ptr %.326, i64 32)
-  call void @i64.array.append(ptr %.326, i64 74)
-  call void @i64.array.append(ptr %.326, i64 83)
-  call void @i64.array.append(ptr %.326, i64 79)
-  call void @i64.array.append(ptr %.326, i64 78)
-  call void @print(ptr %.326)
-  %.364 = call ptr @malloc(i64 40)
-  %.365 = bitcast ptr %.364 to ptr
-  call void @i64.array.init(ptr %.365)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 71)
-  call void @i64.array.append(ptr %.365, i64 69)
-  call void @i64.array.append(ptr %.365, i64 84)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 47)
-  call void @i64.array.append(ptr %.365, i64 97)
-  call void @i64.array.append(ptr %.365, i64 112)
-  call void @i64.array.append(ptr %.365, i64 105)
-  call void @i64.array.append(ptr %.365, i64 47)
-  call void @i64.array.append(ptr %.365, i64 116)
-  call void @i64.array.append(ptr %.365, i64 105)
-  call void @i64.array.append(ptr %.365, i64 109)
-  call void @i64.array.append(ptr %.365, i64 101)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 45)
-  call void @i64.array.append(ptr %.365, i64 62)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 84)
-  call void @i64.array.append(ptr %.365, i64 105)
-  call void @i64.array.append(ptr %.365, i64 109)
-  call void @i64.array.append(ptr %.365, i64 101)
-  call void @i64.array.append(ptr %.365, i64 32)
-  call void @i64.array.append(ptr %.365, i64 74)
-  call void @i64.array.append(ptr %.365, i64 83)
-  call void @i64.array.append(ptr %.365, i64 79)
-  call void @i64.array.append(ptr %.365, i64 78)
-  call void @print(ptr %.365)
-  %.396 = call ptr @malloc(i64 40)
-  %.397 = bitcast ptr %.396 to ptr
-  call void @i64.array.init(ptr %.397)
-  call void @print(ptr %.397)
-  %.400 = load ptr, ptr %server, align 8
-  %.401 = call i64 @Server.listen(ptr %.400)
+  %.184 = load ptr, ptr %server, align 8
+  %.185 = call ptr @malloc(i64 40)
+  %.186 = call ptr @memset(ptr %.185, i32 0, i64 40)
+  %.187 = bitcast ptr %.185 to ptr
+  call void @i64.array.init(ptr %.187)
+  call void @i64.array.append(ptr %.187, i64 47)
+  call void @i64.array.append(ptr %.187, i64 104)
+  call void @i64.array.append(ptr %.187, i64 101)
+  call void @i64.array.append(ptr %.187, i64 108)
+  call void @i64.array.append(ptr %.187, i64 108)
+  call void @i64.array.append(ptr %.187, i64 111)
+  %.195 = call ptr @Server.get(ptr %.184, ptr %.187, ptr @hello_handler)
+  %.196 = icmp eq ptr %.187, null
+  br i1 %.196, label %rc_release_continue.6, label %rc_release.6
+
+rc_release.6:                                     ; preds = %rc_release_continue.5
+  %.198 = bitcast ptr %.187 to ptr
+  call void @meteor_release(ptr %.198)
+  br label %rc_release_continue.6
+
+rc_release_continue.6:                            ; preds = %rc_release.6, %rc_release_continue.5
+  %.201 = load ptr, ptr %server, align 8
+  %.202 = call ptr @malloc(i64 40)
+  %.203 = call ptr @memset(ptr %.202, i32 0, i64 40)
+  %.204 = bitcast ptr %.202 to ptr
+  call void @i64.array.init(ptr %.204)
+  call void @i64.array.append(ptr %.204, i64 47)
+  call void @i64.array.append(ptr %.204, i64 97)
+  call void @i64.array.append(ptr %.204, i64 112)
+  call void @i64.array.append(ptr %.204, i64 105)
+  call void @i64.array.append(ptr %.204, i64 47)
+  call void @i64.array.append(ptr %.204, i64 105)
+  call void @i64.array.append(ptr %.204, i64 110)
+  call void @i64.array.append(ptr %.204, i64 102)
+  call void @i64.array.append(ptr %.204, i64 111)
+  %.215 = call ptr @Server.get(ptr %.201, ptr %.204, ptr @api_info_handler)
+  %.216 = icmp eq ptr %.204, null
+  br i1 %.216, label %rc_release_continue.7, label %rc_release.7
+
+rc_release.7:                                     ; preds = %rc_release_continue.6
+  %.218 = bitcast ptr %.204 to ptr
+  call void @meteor_release(ptr %.218)
+  br label %rc_release_continue.7
+
+rc_release_continue.7:                            ; preds = %rc_release.7, %rc_release_continue.6
+  %.221 = load ptr, ptr %server, align 8
+  %.222 = call ptr @malloc(i64 40)
+  %.223 = call ptr @memset(ptr %.222, i32 0, i64 40)
+  %.224 = bitcast ptr %.222 to ptr
+  call void @i64.array.init(ptr %.224)
+  call void @i64.array.append(ptr %.224, i64 47)
+  call void @i64.array.append(ptr %.224, i64 97)
+  call void @i64.array.append(ptr %.224, i64 112)
+  call void @i64.array.append(ptr %.224, i64 105)
+  call void @i64.array.append(ptr %.224, i64 47)
+  call void @i64.array.append(ptr %.224, i64 116)
+  call void @i64.array.append(ptr %.224, i64 105)
+  call void @i64.array.append(ptr %.224, i64 109)
+  call void @i64.array.append(ptr %.224, i64 101)
+  %.235 = call ptr @Server.get(ptr %.221, ptr %.224, ptr @api_time_handler)
+  %.236 = icmp eq ptr %.224, null
+  br i1 %.236, label %rc_release_continue.8, label %rc_release.8
+
+rc_release.8:                                     ; preds = %rc_release_continue.7
+  %.238 = bitcast ptr %.224 to ptr
+  call void @meteor_release(ptr %.238)
+  br label %rc_release_continue.8
+
+rc_release_continue.8:                            ; preds = %rc_release.8, %rc_release_continue.7
+  %.241 = call ptr @malloc(i64 40)
+  %.242 = call ptr @memset(ptr %.241, i32 0, i64 40)
+  %.243 = bitcast ptr %.241 to ptr
+  call void @i64.array.init(ptr %.243)
+  call void @print(ptr %.243)
+  %.246 = icmp eq ptr %.243, null
+  br i1 %.246, label %rc_release_continue.9, label %rc_release.9
+
+rc_release.9:                                     ; preds = %rc_release_continue.8
+  %.248 = bitcast ptr %.243 to ptr
+  call void @meteor_release(ptr %.248)
+  br label %rc_release_continue.9
+
+rc_release_continue.9:                            ; preds = %rc_release.9, %rc_release_continue.8
+  %.251 = call ptr @malloc(i64 40)
+  %.252 = call ptr @memset(ptr %.251, i32 0, i64 40)
+  %.253 = bitcast ptr %.251 to ptr
+  call void @i64.array.init(ptr %.253)
+  call void @i64.array.append(ptr %.253, i64 82)
+  call void @i64.array.append(ptr %.253, i64 111)
+  call void @i64.array.append(ptr %.253, i64 117)
+  call void @i64.array.append(ptr %.253, i64 116)
+  call void @i64.array.append(ptr %.253, i64 101)
+  call void @i64.array.append(ptr %.253, i64 115)
+  call void @i64.array.append(ptr %.253, i64 32)
+  call void @i64.array.append(ptr %.253, i64 114)
+  call void @i64.array.append(ptr %.253, i64 101)
+  call void @i64.array.append(ptr %.253, i64 103)
+  call void @i64.array.append(ptr %.253, i64 105)
+  call void @i64.array.append(ptr %.253, i64 115)
+  call void @i64.array.append(ptr %.253, i64 116)
+  call void @i64.array.append(ptr %.253, i64 101)
+  call void @i64.array.append(ptr %.253, i64 114)
+  call void @i64.array.append(ptr %.253, i64 101)
+  call void @i64.array.append(ptr %.253, i64 100)
+  call void @i64.array.append(ptr %.253, i64 58)
+  call void @print(ptr %.253)
+  %.274 = icmp eq ptr %.253, null
+  br i1 %.274, label %rc_release_continue.10, label %rc_release.10
+
+rc_release.10:                                    ; preds = %rc_release_continue.9
+  %.276 = bitcast ptr %.253 to ptr
+  call void @meteor_release(ptr %.276)
+  br label %rc_release_continue.10
+
+rc_release_continue.10:                           ; preds = %rc_release.10, %rc_release_continue.9
+  %.279 = call ptr @malloc(i64 40)
+  %.280 = call ptr @memset(ptr %.279, i32 0, i64 40)
+  %.281 = bitcast ptr %.279 to ptr
+  call void @i64.array.init(ptr %.281)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 71)
+  call void @i64.array.append(ptr %.281, i64 69)
+  call void @i64.array.append(ptr %.281, i64 84)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 47)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 45)
+  call void @i64.array.append(ptr %.281, i64 62)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 72)
+  call void @i64.array.append(ptr %.281, i64 111)
+  call void @i64.array.append(ptr %.281, i64 109)
+  call void @i64.array.append(ptr %.281, i64 101)
+  call void @i64.array.append(ptr %.281, i64 32)
+  call void @i64.array.append(ptr %.281, i64 112)
+  call void @i64.array.append(ptr %.281, i64 97)
+  call void @i64.array.append(ptr %.281, i64 103)
+  call void @i64.array.append(ptr %.281, i64 101)
+  call void @print(ptr %.281)
+  %.312 = icmp eq ptr %.281, null
+  br i1 %.312, label %rc_release_continue.11, label %rc_release.11
+
+rc_release.11:                                    ; preds = %rc_release_continue.10
+  %.314 = bitcast ptr %.281 to ptr
+  call void @meteor_release(ptr %.314)
+  br label %rc_release_continue.11
+
+rc_release_continue.11:                           ; preds = %rc_release.11, %rc_release_continue.10
+  %.317 = call ptr @malloc(i64 40)
+  %.318 = call ptr @memset(ptr %.317, i32 0, i64 40)
+  %.319 = bitcast ptr %.317 to ptr
+  call void @i64.array.init(ptr %.319)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 71)
+  call void @i64.array.append(ptr %.319, i64 69)
+  call void @i64.array.append(ptr %.319, i64 84)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 47)
+  call void @i64.array.append(ptr %.319, i64 104)
+  call void @i64.array.append(ptr %.319, i64 101)
+  call void @i64.array.append(ptr %.319, i64 108)
+  call void @i64.array.append(ptr %.319, i64 108)
+  call void @i64.array.append(ptr %.319, i64 111)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 45)
+  call void @i64.array.append(ptr %.319, i64 62)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 84)
+  call void @i64.array.append(ptr %.319, i64 101)
+  call void @i64.array.append(ptr %.319, i64 120)
+  call void @i64.array.append(ptr %.319, i64 116)
+  call void @i64.array.append(ptr %.319, i64 32)
+  call void @i64.array.append(ptr %.319, i64 103)
+  call void @i64.array.append(ptr %.319, i64 114)
+  call void @i64.array.append(ptr %.319, i64 101)
+  call void @i64.array.append(ptr %.319, i64 101)
+  call void @i64.array.append(ptr %.319, i64 116)
+  call void @i64.array.append(ptr %.319, i64 105)
+  call void @i64.array.append(ptr %.319, i64 110)
+  call void @i64.array.append(ptr %.319, i64 103)
+  call void @print(ptr %.319)
+  %.354 = icmp eq ptr %.319, null
+  br i1 %.354, label %rc_release_continue.12, label %rc_release.12
+
+rc_release.12:                                    ; preds = %rc_release_continue.11
+  %.356 = bitcast ptr %.319 to ptr
+  call void @meteor_release(ptr %.356)
+  br label %rc_release_continue.12
+
+rc_release_continue.12:                           ; preds = %rc_release.12, %rc_release_continue.11
+  %.359 = call ptr @malloc(i64 40)
+  %.360 = call ptr @memset(ptr %.359, i32 0, i64 40)
+  %.361 = bitcast ptr %.359 to ptr
+  call void @i64.array.init(ptr %.361)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 71)
+  call void @i64.array.append(ptr %.361, i64 69)
+  call void @i64.array.append(ptr %.361, i64 84)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 47)
+  call void @i64.array.append(ptr %.361, i64 97)
+  call void @i64.array.append(ptr %.361, i64 112)
+  call void @i64.array.append(ptr %.361, i64 105)
+  call void @i64.array.append(ptr %.361, i64 47)
+  call void @i64.array.append(ptr %.361, i64 105)
+  call void @i64.array.append(ptr %.361, i64 110)
+  call void @i64.array.append(ptr %.361, i64 102)
+  call void @i64.array.append(ptr %.361, i64 111)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 45)
+  call void @i64.array.append(ptr %.361, i64 62)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 83)
+  call void @i64.array.append(ptr %.361, i64 101)
+  call void @i64.array.append(ptr %.361, i64 114)
+  call void @i64.array.append(ptr %.361, i64 118)
+  call void @i64.array.append(ptr %.361, i64 101)
+  call void @i64.array.append(ptr %.361, i64 114)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 105)
+  call void @i64.array.append(ptr %.361, i64 110)
+  call void @i64.array.append(ptr %.361, i64 102)
+  call void @i64.array.append(ptr %.361, i64 111)
+  call void @i64.array.append(ptr %.361, i64 32)
+  call void @i64.array.append(ptr %.361, i64 74)
+  call void @i64.array.append(ptr %.361, i64 83)
+  call void @i64.array.append(ptr %.361, i64 79)
+  call void @i64.array.append(ptr %.361, i64 78)
+  call void @print(ptr %.361)
+  %.399 = icmp eq ptr %.361, null
+  br i1 %.399, label %rc_release_continue.13, label %rc_release.13
+
+rc_release.13:                                    ; preds = %rc_release_continue.12
+  %.401 = bitcast ptr %.361 to ptr
+  call void @meteor_release(ptr %.401)
+  br label %rc_release_continue.13
+
+rc_release_continue.13:                           ; preds = %rc_release.13, %rc_release_continue.12
+  %.404 = call ptr @malloc(i64 40)
+  %.405 = call ptr @memset(ptr %.404, i32 0, i64 40)
+  %.406 = bitcast ptr %.404 to ptr
+  call void @i64.array.init(ptr %.406)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 71)
+  call void @i64.array.append(ptr %.406, i64 69)
+  call void @i64.array.append(ptr %.406, i64 84)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 47)
+  call void @i64.array.append(ptr %.406, i64 97)
+  call void @i64.array.append(ptr %.406, i64 112)
+  call void @i64.array.append(ptr %.406, i64 105)
+  call void @i64.array.append(ptr %.406, i64 47)
+  call void @i64.array.append(ptr %.406, i64 116)
+  call void @i64.array.append(ptr %.406, i64 105)
+  call void @i64.array.append(ptr %.406, i64 109)
+  call void @i64.array.append(ptr %.406, i64 101)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 45)
+  call void @i64.array.append(ptr %.406, i64 62)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 84)
+  call void @i64.array.append(ptr %.406, i64 105)
+  call void @i64.array.append(ptr %.406, i64 109)
+  call void @i64.array.append(ptr %.406, i64 101)
+  call void @i64.array.append(ptr %.406, i64 32)
+  call void @i64.array.append(ptr %.406, i64 74)
+  call void @i64.array.append(ptr %.406, i64 83)
+  call void @i64.array.append(ptr %.406, i64 79)
+  call void @i64.array.append(ptr %.406, i64 78)
+  call void @print(ptr %.406)
+  %.437 = icmp eq ptr %.406, null
+  br i1 %.437, label %rc_release_continue.14, label %rc_release.14
+
+rc_release.14:                                    ; preds = %rc_release_continue.13
+  %.439 = bitcast ptr %.406 to ptr
+  call void @meteor_release(ptr %.439)
+  br label %rc_release_continue.14
+
+rc_release_continue.14:                           ; preds = %rc_release.14, %rc_release_continue.13
+  %.442 = call ptr @malloc(i64 40)
+  %.443 = call ptr @memset(ptr %.442, i32 0, i64 40)
+  %.444 = bitcast ptr %.442 to ptr
+  call void @i64.array.init(ptr %.444)
+  call void @print(ptr %.444)
+  %.447 = icmp eq ptr %.444, null
+  br i1 %.447, label %rc_release_continue.15, label %rc_release.15
+
+rc_release.15:                                    ; preds = %rc_release_continue.14
+  %.449 = bitcast ptr %.444 to ptr
+  call void @meteor_release(ptr %.449)
+  br label %rc_release_continue.15
+
+rc_release_continue.15:                           ; preds = %rc_release.15, %rc_release_continue.14
+  %.452 = load ptr, ptr %server, align 8
+  %.453 = call i64 @Server.listen(ptr %.452)
   br label %exit
 
-rc_release.6:                                     ; preds = %exit
-  %.406 = bitcast ptr %.403 to ptr
-  %.407 = getelementptr i8, ptr %.406, i64 -16
-  %.408 = bitcast ptr %.407 to ptr
-  %.409 = getelementptr %meteor.header, ptr %.408, i64 0, i32 0
-  %.410 = load i32, ptr %.409, align 4
-  %.411 = icmp eq i32 %.410, 1
-  br i1 %.411, label %rc_destroy.1, label %rc_release_only.1
+rc_release.16:                                    ; preds = %exit
+  %.458 = bitcast ptr %.455 to ptr
+  %.459 = getelementptr i8, ptr %.458, i64 -16
+  %.460 = bitcast ptr %.459 to ptr
+  call void @meteor_release(ptr %.460)
+  br label %rc_release_continue.16
 
-rc_release_continue.6:                            ; preds = %rc_release_only.1, %rc_destroy.1, %exit
+rc_release_continue.16:                           ; preds = %rc_release.16, %exit
   ret void
-
-rc_destroy.1:                                     ; preds = %rc_release.6
-  call void @__destroy_Server__(ptr %.403)
-  %.414 = bitcast ptr %.403 to ptr
-  %.415 = getelementptr i8, ptr %.414, i64 -16
-  %.416 = bitcast ptr %.415 to ptr
-  call void @meteor_release(ptr %.416)
-  br label %rc_release_continue.6
-
-rc_release_only.1:                                ; preds = %rc_release.6
-  %.419 = bitcast ptr %.403 to ptr
-  %.420 = getelementptr i8, ptr %.419, i64 -16
-  %.421 = bitcast ptr %.420 to ptr
-  call void @meteor_release(ptr %.421)
-  br label %rc_release_continue.6
 }
 
 !0 = !{}
